@@ -18,7 +18,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const API_URL = 'http://localhost:3001/api';
+  const API_URL = '/api';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

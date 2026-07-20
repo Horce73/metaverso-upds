@@ -5,7 +5,6 @@ import { CustomAvatar } from './components/CustomAvatar.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { MetaversoCanvas } from './components/MetaversoCanvas.js';
 import { AudioClient } from './components/AudioClient.js';
-import './App.css';
 
 interface User {
   id: string;
@@ -80,7 +79,7 @@ function App() {
   useEffect(() => {
     if (!token) return;
 
-    fetch('http://localhost:3001/api/espacios', {
+    fetch('/api/espacios', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then((res) => res.json())
@@ -98,7 +97,7 @@ function App() {
     setChatMessages([]);
 
     // 1. Inicializar Sockets
-    const newSocket = io('http://localhost:3001');
+    const newSocket = io();
     setSocket(newSocket);
 
     // 2. Inicializar AudioClient (VoIP espacial)
@@ -239,7 +238,7 @@ function App() {
       const ahora = new Date();
       const fin = new Date(ahora.getTime() + 90 * 60000); // 90 minutos de clase
 
-      const res = await fetch('http://localhost:3001/api/sesiones', {
+      const res = await fetch('/api/sesiones', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -269,7 +268,7 @@ function App() {
   const fetchAsistenciasReport = async () => {
     if (!sesionClase) return;
     try {
-      const res = await fetch(`http://localhost:3001/api/asistencias/reporte/${sesionClase.id}`, {
+      const res = await fetch(`/api/asistencias/reporte/${sesionClase.id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
