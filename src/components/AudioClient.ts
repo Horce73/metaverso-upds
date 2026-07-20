@@ -37,12 +37,12 @@ export class AudioClient {
       console.log('🔊 Web Audio Context inicializado');
 
       // 3. Conectarse al servidor PeerJS que corre en nuestro backend Node
-      // Usaremos localhost:3001 para el desarrollo
+      // Conectarse al servidor PeerJS integrado en el backend
       this.peer = new Peer(this.userId, {
-        host: 'localhost',
-        port: 3001,
+        host: window.location.hostname,
+        port: window.location.port ? Number(window.location.port) : (window.location.protocol === 'https:' ? 443 : 80),
         path: '/peer/peerjs',
-        secure: false, // http local
+        secure: window.location.protocol === 'https:',
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },

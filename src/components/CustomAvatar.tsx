@@ -27,7 +27,7 @@ export const CustomAvatar: React.FC<CustomAvatarProps> = ({
     setErrorMsg('');
 
     try {
-      const res = await fetch('http://localhost:3001/api/avatar/custom', {
+      const res = await fetch('/api/avatar/custom', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
