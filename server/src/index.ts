@@ -285,43 +285,71 @@ app.post('/api/auth/logout', authenticateJWT, async (req: any, res) => {
 });
 
 // ----------------------------------------------------------------------------
-// 5. Listar Espacios (RF-02)
+// 5. Listar Espacios (RF-02) con sesion activa
 // ----------------------------------------------------------------------------
 app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
   try {
     const { userId } = req.user;
 
-    // Obtener roles del usuario
     const rolesRes = await pool.query(
       `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
       [userId]
     );
     const roles = rolesRes.rows.map((r: any) => r.nombre);
 
+    let espaciosRes;
     if (roles.includes('admin') || roles.includes('docente')) {
-      const result = await pool.query(
+      espaciosRes = await pool.query(
         `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-                a.nombre AS asignatura
+                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+         LEFT JOIN usuarios u ON u.id = pd.usuario_id
+         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
          WHERE e.activo = TRUE AND (e.tipo = 'campus' OR pd.usuario_id = $1)`,
         [userId]
       );
-      res.json(result.rows);
     } else {
-      const result = await pool.query(
+      espaciosRes = await pool.query(
         `SELECT DISTINCT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-                a.nombre AS asignatura
+                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN inscripciones i ON i.asignatura_id = a.id AND i.usuario_id = $1
+         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+         LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+         LEFT JOIN usuarios u ON u.id = pd.usuario_id
          WHERE e.activo = TRUE
            AND (e.tipo = 'campus' OR i.usuario_id IS NOT NULL)`,
         [userId]
       );
-      res.json(result.rows);
     }
+
+    const espacios = espaciosRes.rows.map((e: any) => ({
+      id: e.id,
+      nombre: e.nombre,
+      tipo: e.tipo,
+      escena_url: e.escena_url,
+      capacidad_max: e.capacidad_max,
+      asignatura: e.asignatura,
+      asignatura_codigo: e.asignatura_codigo,
+      sesion_activa: e.sesion_id ? {
+        id: e.sesion_id,
+        tema: e.sesion_tema,
+        inicio: e.sesion_inicio,
+        estado: e.sesion_estado,
+        docente: e.docente_nombre ? `${e.docente_nombre} ${e.docente_apellido}` : null
+      } : null
+    }));
+
+    res.json(espacios);
   } catch (err) {
     console.error('Error al listar espacios:', err);
     res.status(500).json({ error: 'Error de base de datos' });
@@ -574,6 +602,198 @@ app.post('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) 
     res.status(201).json({ message: 'Consentimiento registrado', consentimiento: result.rows[0] });
   } catch (err) {
     console.error('Error al registrar consentimiento:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 12. Asistencia REST (RF-05) - Solo Estudiantes
+// ----------------------------------------------------------------------------
+app.post('/api/asistencia', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const { espacio_id } = req.body;
+
+  if (!espacio_id) {
+    return res.status(400).json({ error: 'Falta campo: espacio_id' });
+  }
+
+  try {
+    // Verificar que sea estudiante
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const roles = rolesRes.rows.map((r: any) => r.nombre);
+    if (!roles.includes('estudiante')) {
+      return res.status(403).json({ error: 'Solo los estudiantes pueden registrar asistencia' });
+    }
+
+    // Buscar sesion en curso para ese espacio
+    const sesionRes = await pool.query(
+      `SELECT id, COALESCE(inicio_real, inicio_programado) AS inicio, tolerancia_min
+       FROM sesiones_clase
+       WHERE espacio_id = $1 AND estado IN ('en_curso', 'programada')
+       ORDER BY inicio_programado ASC LIMIT 1`,
+      [espacio_id]
+    );
+
+    if (sesionRes.rows.length === 0) {
+      return res.status(404).json({ registrado: false, motivo: 'No hay una clase en curso en este espacio' });
+    }
+
+    const sesion = sesionRes.rows[0];
+    const ahora = new Date();
+    const inicio = new Date(sesion.inicio);
+    const limiteTarde = new Date(inicio.getTime() + (sesion.tolerancia_min || 10) * 60000);
+    const estado = ahora > limiteTarde ? 'tarde' : 'presente';
+
+    // INSERT idempotente (ON CONFLICT DO NOTHING)
+    const result = await pool.query(
+      `INSERT INTO asistencias (sesion_id, usuario_id, hora_ingreso, estado)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (sesion_id, usuario_id) DO NOTHING
+       RETURNING id, hora_ingreso, estado`,
+      [sesion.id, userId, ahora, estado]
+    );
+
+    if (result.rows.length === 0) {
+      // Ya existia un registro previo
+      const existente = await pool.query(
+        'SELECT hora_ingreso, estado FROM asistencias WHERE sesion_id = $1 AND usuario_id = $2',
+        [sesion.id, userId]
+      );
+      return res.json({
+        registrado: false,
+        motivo: 'Ya se registro tu asistencia previamente',
+        ...existente.rows[0]
+      });
+    }
+
+    await bitacora(userId, 'asistencia', `sesion=${sesion.id} estado=${estado}`, req.ip);
+
+    res.json({
+      registrado: true,
+      estado: result.rows[0].estado,
+      hora_ingreso: result.rows[0].hora_ingreso
+    });
+  } catch (err) {
+    console.error('Error al registrar asistencia:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 13. Sesiones por Espacio
+// ----------------------------------------------------------------------------
+app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
+  try {
+    const { espacio_id, estado } = req.query;
+    let sql = `
+      SELECT sc.id, sc.tema, sc.inicio_programado, sc.fin_programado,
+             sc.inicio_real, sc.fin_real, sc.estado, sc.tolerancia_min,
+             sc.espacio_id, e.nombre AS espacio_nombre,
+             u.nombre AS docente_nombre, u.apellido AS docente_apellido
+      FROM sesiones_clase sc
+      JOIN espacios e ON e.id = sc.espacio_id
+      JOIN perfiles_docente pd ON pd.usuario_id = sc.docente_id
+      JOIN usuarios u ON u.id = pd.usuario_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let idx = 1;
+
+    if (espacio_id) {
+      sql += ` AND sc.espacio_id = $${idx++}`;
+      params.push(espacio_id);
+    }
+    if (estado) {
+      sql += ` AND sc.estado = $${idx++}`;
+      params.push(estado);
+    }
+
+    sql += ` ORDER BY sc.inicio_programado DESC LIMIT $${idx}`;
+    params.push(50);
+
+    const result = await pool.query(sql, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener sesiones:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 14. Reporte de Asistencia Mejorado (RF-08) - Exclusivo Docente
+// ----------------------------------------------------------------------------
+app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const { sesionId } = req.params;
+
+  try {
+    const sesionRes = await pool.query(
+      `SELECT sc.*, e.nombre AS espacio_nombre, e.tipo AS espacio_tipo
+       FROM sesiones_clase sc
+       JOIN espacios e ON e.id = sc.espacio_id
+       WHERE sc.id = $1`,
+      [sesionId]
+    );
+    if (sesionRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sesion no encontrada' });
+    }
+    if (sesionRes.rows[0].docente_id !== userId) {
+      return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesion' });
+    }
+
+    const sesion = sesionRes.rows[0];
+
+    const asistenciasRes = await pool.query(
+      `SELECT a.id, a.hora_ingreso, a.hora_salida, a.estado,
+              pe.registro_upds, u.nombre, u.apellido, u.email
+       FROM asistencias a
+       JOIN usuarios u ON u.id = a.usuario_id
+       LEFT JOIN perfiles_estudiante pe ON pe.usuario_id = u.id
+       WHERE a.sesion_id = $1
+       ORDER BY u.apellido ASC, u.nombre ASC`,
+      [sesionId]
+    );
+
+    // Calcular resumen
+    const asistencias = asistenciasRes.rows;
+    const totalEstudiantesRes = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM inscripciones i
+       JOIN asignaturas a ON a.id = i.asignatura_id
+       WHERE a.id = $1`,
+      [sesion.espacio_id === 2 ? 1 : sesion.espacio_id]
+    );
+    const totalInscritos = parseInt(totalEstudiantesRes.rows[0]?.total || '0');
+    const presentes = asistencias.filter((a: any) => a.estado === 'presente').length;
+    const tardes = asistencias.filter((a: any) => a.estado === 'tarde').length;
+    const ausentes = totalInscritos - asistencias.length;
+
+    await bitacora(userId, 'consulta_reporte', `sesion=${sesionId}`, req.ip);
+
+    res.json({
+      sesion: {
+        id: sesion.id,
+        tema: sesion.tema,
+        espacio: sesion.espacio_nombre,
+        tipo_espacio: sesion.espacio_tipo,
+        inicio: sesion.inicio_real || sesion.inicio_programado,
+        fin: sesion.fin_real || sesion.fin_programado,
+        estado: sesion.estado
+      },
+      resumen: {
+        total_inscritos: totalInscritos,
+        presentes,
+        tardes,
+        ausentes,
+        total_registrados: asistencias.length
+      },
+      asistencias
+    });
+  } catch (err) {
+    console.error('Error al obtener reporte de asistencia:', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
