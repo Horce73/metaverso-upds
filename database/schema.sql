@@ -307,6 +307,7 @@ INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES
 -- Datos personales
 INSERT INTO datos_personales
 (usuario_id, documento_identidad, fecha_nacimiento, nacionalidad, genero, domicilio, tipo_sangre, estado_civil) VALUES
+(1, '0000001 LP', '1980-01-15', 'Boliviana/o', 'MASCULINO', 'AV. ADMIN NRO 1', 'A+', 'CASADO(A)'),
 (2, '5566778 CHS', '1985-03-12', 'Boliviana/o', 'MASCULINO', 'AV. EJEMPLO NRO 100', 'A+', 'CASADO(A)'),
 (3, '11223344 CHS', '2003-08-21', 'Boliviana/o', 'FEMENINO',  'CLL. FICTICIA NRO 45', 'O+', 'SOLTERO(A)'),
 (4, '11223355 CHS', '2002-11-05', 'Boliviana/o', 'MASCULINO', 'CLL. FICTICIA NRO 46', 'B+', 'SOLTERO(A)'),
@@ -334,7 +335,15 @@ INSERT INTO consentimientos (usuario_id, tipo, otorgado, version_politica) VALUE
 (2, 'tratamiento_datos', TRUE, 'v1.0'),
 (3, 'tratamiento_datos', TRUE, 'v1.0'),
 (4, 'tratamiento_datos', TRUE, 'v1.0'),
-(5, 'tratamiento_datos', TRUE, 'v1.0');
+(5, 'tratamiento_datos', TRUE, 'v1.0'),
+(2, 'uso_voz', TRUE, 'v1.0'),
+(3, 'uso_voz', TRUE, 'v1.0'),
+(4, 'uso_voz', TRUE, 'v1.0'),
+(5, 'uso_voz', TRUE, 'v1.0'),
+(2, 'grabacion_clase', TRUE, 'v1.0'),
+(3, 'grabacion_clase', TRUE, 'v1.0'),
+(4, 'grabacion_clase', TRUE, 'v1.0'),
+(5, 'grabacion_clase', TRUE, 'v1.0');
 
 -- Avatares
 INSERT INTO avatares (usuario_id, nombre_visible, apariencia) VALUES
@@ -372,3 +381,15 @@ INSERT INTO materiales (asignatura_id, subido_por, tipo, titulo, archivo_url, ta
 
 INSERT INTO sesion_materiales (sesion_id, material_id) VALUES
 (1, 1);
+
+-- Bitacora semilla (eventos de login para que admin tenga datos que consultar)
+INSERT INTO bitacora (usuario_id, evento, detalle, ip, fecha) VALUES
+(1, 'login_ok',    '', '192.168.1.10', NOW() - INTERVAL '2 hours'),
+(2, 'login_ok',    '', '192.168.1.20', NOW() - INTERVAL '1 hour'),
+(3, 'login_ok',    '', '192.168.1.30', NOW() - INTERVAL '50 minutes'),
+(4, 'login_fallido', '', '192.168.1.40', NOW() - INTERVAL '45 minutes'),
+(4, 'login_ok',    '', '192.168.1.40', NOW() - INTERVAL '44 minutes'),
+(5, 'login_ok',    '', '192.168.1.50', NOW() - INTERVAL '30 minutes'),
+(1, 'registro',    'nuevo_estudiante@upds.edu.bo', '192.168.1.10', NOW() - INTERVAL '20 minutes'),
+(2, 'inicio_clase', 'Unidad 2: Ingenieria de Requerimientos', '192.168.1.20', NOW() - INTERVAL '15 minutes'),
+(3, 'consentimiento', 'uso_voz=TRUE', '192.168.1.30', NOW() - INTERVAL '10 minutes');

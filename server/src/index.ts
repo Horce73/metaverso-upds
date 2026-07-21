@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { pool } from './db.js';
 import { setupSockets } from './socketHandler.js';
+import { authenticateJWT, requiereAdmin } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -30,23 +31,6 @@ const peerServer = ExpressPeerServer(server, {
   allow_discovery: true
 });
 app.use('/peer', peerServer);
-
-// ----------------------------------------------------------------------------
-// MIDDLEWARE: JWT
-// ----------------------------------------------------------------------------
-const authenticateJWT = (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader) {
-    const token = authHeader.split(' ')[1];
-    jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-      if (err) return res.sendStatus(403);
-      req.user = user;
-      next();
-    });
-  } else {
-    res.sendStatus(401);
-  }
-};
 
 // Helper: registrar evento en bitacora
 async function bitacora(usuarioId: number | null, evento: string, detalle = '', ip = '') {
@@ -437,6 +421,159 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
     res.json(result.rows);
   } catch (err) {
     console.error('Error al obtener reporte de asistencia:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 9. Bitacora de Auditoria (RNF-05) - Solo Admin
+// ----------------------------------------------------------------------------
+app.get('/api/admin/bitacora', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { evento, desde, hasta, limit: queryLimit } = req.query;
+    let sql = `
+      SELECT b.id, b.usuario_id, b.evento, b.detalle, b.ip, b.fecha,
+             u.email, u.nombre, u.apellido
+      FROM bitacora b
+      LEFT JOIN usuarios u ON u.id = b.usuario_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let idx = 1;
+
+    if (evento) {
+      sql += ` AND b.evento = $${idx++}`;
+      params.push(evento);
+    }
+    if (desde) {
+      sql += ` AND b.fecha >= $${idx++}`;
+      params.push(desde);
+    }
+    if (hasta) {
+      sql += ` AND b.fecha <= $${idx++}`;
+      params.push(hasta);
+    }
+
+    sql += ` ORDER BY b.fecha DESC LIMIT $${idx}`;
+    params.push(Math.min(Number(queryLimit) || 200, 500));
+
+    const result = await pool.query(sql, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener bitacora:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 10. Datos Personales (RNF-03)
+// ----------------------------------------------------------------------------
+app.get('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM datos_personales WHERE usuario_id = $1',
+      [req.user.userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Datos personales no encontrados' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error al obtener datos personales:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const {
+    documento_identidad, fecha_nacimiento, nacionalidad,
+    genero, domicilio, tipo_sangre, estado_civil
+  } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE datos_personales SET
+         documento_identidad = COALESCE($1, documento_identidad),
+         fecha_nacimiento    = COALESCE($2, fecha_nacimiento),
+         nacionalidad        = COALESCE($3, nacionalidad),
+         genero              = COALESCE($4, genero),
+         domicilio           = COALESCE($5, domicilio),
+         tipo_sangre         = COALESCE($6, tipo_sangre),
+         estado_civil        = COALESCE($7, estado_civil),
+         actualizado_en      = NOW()
+       WHERE usuario_id = $8
+       RETURNING *`,
+      [
+        documento_identidad || null,
+        fecha_nacimiento || null,
+        nacionalidad || null,
+        genero || null,
+        domicilio || null,
+        tipo_sangre || null,
+        estado_civil || null,
+        userId
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Datos personales no encontrados' });
+    }
+
+    await bitacora(userId, 'actualizacion_datos', '', req.ip);
+    res.json({ message: 'Datos personales actualizados', datos: result.rows[0] });
+  } catch (err: any) {
+    console.error('Error al actualizar datos personales:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'El documento de identidad ya esta registrado' });
+    }
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 11. Consentimientos (RNF-03: GDPR/LOPD)
+// ----------------------------------------------------------------------------
+app.get('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, tipo, otorgado, fecha, version_politica
+       FROM consentimientos
+       WHERE usuario_id = $1
+       ORDER BY fecha DESC`,
+      [req.user.userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener consentimientos:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+app.post('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) => {
+  const { tipo, otorgado, version_politica } = req.body;
+
+  if (!tipo || otorgado === undefined || !version_politica) {
+    return res.status(400).json({ error: 'Faltan campos: tipo, otorgado, version_politica' });
+  }
+
+  const tiposValidos = ['tratamiento_datos', 'uso_voz', 'grabacion_clase'];
+  if (!tiposValidos.includes(tipo)) {
+    return res.status(400).json({ error: `Tipo invalido. Valores permitidos: ${tiposValidos.join(', ')}` });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO consentimientos (usuario_id, tipo, otorgado, version_politica)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, tipo, otorgado, fecha, version_politica`,
+      [req.user.userId, tipo, otorgado, version_politica]
+    );
+
+    await bitacora(req.user.userId, 'consentimiento', `${tipo}=${otorgado}`, req.ip);
+    res.status(201).json({ message: 'Consentimiento registrado', consentimiento: result.rows[0] });
+  } catch (err) {
+    console.error('Error al registrar consentimiento:', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
