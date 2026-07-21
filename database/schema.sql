@@ -288,7 +288,8 @@ CREATE TABLE pizarra_snapshots (
 INSERT INTO roles (nombre, descripcion) VALUES
 ('administrador', 'Gestiona usuarios, asignaturas e inscripciones'),
 ('docente',       'Dicta clases, sube materiales y consulta asistencia'),
-('estudiante',    'Asiste a clases y descarga materiales');
+('estudiante',    'Asiste a clases y descarga materiales'),
+('invitado',      'Accede solo al campus sin acceso a aulas de clase');
 
 -- Password hash real de bcrypt para '123456'
 INSERT INTO usuarios (email, password_hash, nombre, apellido) VALUES

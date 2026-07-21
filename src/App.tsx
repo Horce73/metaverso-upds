@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
 import { CustomAvatar } from './components/CustomAvatar.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { MetaversoCanvas } from './components/MetaversoCanvas.js';
 import { AudioClient } from './components/AudioClient.js';
+import { AdminPanel } from './components/AdminPanel.js';
+import { TeacherPanel } from './components/TeacherPanel.js';
 
 interface User {
   id: string;
@@ -12,7 +15,8 @@ interface User {
   email: string;
   nombre: string;
   apellido: string;
-  rol: 'estudiante' | 'docente' | 'admin';
+  rol: 'estudiante' | 'docente' | 'admin' | 'invitado';
+  isGuest?: boolean;
 }
 
 interface Avatar {
@@ -32,6 +36,11 @@ interface Espacio {
 }
 
 function App() {
+  // Control de navegación
+  const [showLanding, setShowLanding] = useState(true);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showTeacherPanel, setShowTeacherPanel] = useState(false);
+  
   // Autenticación
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string>('');
@@ -93,6 +102,12 @@ function App() {
 
   // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
+    // Proteger acceso a aulas para invitados
+    if (user?.rol === 'invitado' && espacio.tipo === 'aula') {
+      alert('❌ Los invitados solo pueden acceder al campus.\n\nPara acceder a las aulas, debes registrarte e iniciar sesión con tu cuenta UPDS.');
+      return;
+    }
+
     setEspacioActivo(espacio);
     setChatMessages([]);
 
@@ -291,16 +306,24 @@ function App() {
     setAvatar(null);
   };
 
-  // Flujo 1: No autenticado
+  // Flujo 1: Landing Page
+  if (showLanding) {
+    return <LandingPage onGetStarted={() => {
+      setShowLanding(false);
+    }} />;
+  }
+
+  // Flujo 2: No autenticado
   if (!user) {
     return <Login onLoginSuccess={(u, t, a) => {
       setUser(u);
       setToken(t);
       setAvatar(a);
+      setShowLanding(false);
     }} />;
   }
 
-  // Flujo 2: Espacio 3D Activo
+  // Flujo 3: Espacio 3D Activo
   if (espacioActivo) {
     return (
       <div className="app-layout">
@@ -470,7 +493,7 @@ function App() {
           {/* Silenciar Micrófono */}
           <button
             className={`control-btn ${micMuted ? 'active' : ''}`}
-            onClick={toggleMics}
+            onClick={toggleMic}
             title={micMuted ? 'Activar micrófono' : 'Silenciar micrófono'}
           >
             {micMuted ? '🔇' : '🎙️'}
@@ -491,62 +514,119 @@ function App() {
     );
   }
 
-  // Función proxy para silenciar micrófono
-  function toggleMics() {
-    toggleMic();
+  // Flujo 4: Dashboard de Selección de Espacio
+  if (showAdminPanel) {
+    return <AdminPanel token={token} onClose={() => setShowAdminPanel(false)} />;
   }
 
-  // Flujo 3: Dashboard de Selección de Espacio
+  if (showTeacherPanel) {
+    return <TeacherPanel token={token} user={user} onClose={() => setShowTeacherPanel(false)} />;
+  }
+
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
         <div className="user-info">
           <div className="avatar-badge">{user.nombre.charAt(0)}</div>
           <div>
-            <h1 className="gradient-text" style={{ fontSize: '1.8rem', fontWeight: 700, margin: 0 }}>
-              Bienvenido, {user.nombre} {user.apellido}
+            <h1 className="gradient-text" style={{ fontSize: '1.6rem', fontWeight: 700, margin: 0 }}>
+              {user.nombre} {user.apellido}
             </h1>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              Facultad de Ingeniería UPDS • Rol: {user.rol.toUpperCase()}
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+              Rol: <span style={{ color: 'var(--upds-blue-light)', fontWeight: 600 }}>{user.rol.toUpperCase()}</span>
+              {user.isGuest && <span style={{ marginLeft: '8px', color: '#3b82f6' }}>🚪 Modo Invitado</span>}
             </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button className="btn-secondary" onClick={() => setCustomizingAvatar(true)}>
-            🎨 Personalizar Avatar
-          </button>
-          <button className="btn-secondary" style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--error)' }} onClick={handleLogout}>
-            Cerrar Sesión
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+          {user.rol === 'admin' && (
+            <button className="btn-primary" onClick={() => setShowAdminPanel(true)}>
+              🛡️ Panel Admin
+            </button>
+          )}
+          {user.rol === 'docente' && (
+            <button className="btn-primary" onClick={() => setShowTeacherPanel(true)}>
+              🎓 Mis Clases
+            </button>
+          )}
+          {!user.isGuest && (
+            <button className="btn-secondary" onClick={() => setCustomizingAvatar(true)}>
+              🎨 Avatar
+            </button>
+          )}
+          <button 
+            className="btn-secondary" 
+            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--error)' }} 
+            onClick={handleLogout}
+          >
+            🚪 Logout
           </button>
         </div>
       </header>
 
       <main style={{ flexGrow: 1 }}>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 600, borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}>
-          Espacios en 3D Disponibles
-        </h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--panel-border)', paddingBottom: '16px', marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 600, margin: 0 }}>
+            Espacios Disponibles
+          </h2>
+          {user?.rol === 'invitado' && (
+            <span style={{ 
+              background: 'rgba(59, 130, 246, 0.2)', 
+              border: '1px solid #3b82f6', 
+              color: '#60a5fa', 
+              padding: '8px 16px', 
+              borderRadius: '8px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              🚪 Modo Invitado
+            </span>
+          )}
+        </div>
 
         <div className="spaces-grid">
           {espacios.map((espacio) => (
-            <div key={espacio.id} className="space-card glass-panel">
+            <div key={espacio.id} className="space-card glass-panel" style={{
+              opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.6 : 1,
+              border: user?.rol === 'invitado' && espacio.tipo === 'aula' ? '1px solid rgba(239, 68, 68, 0.3)' : undefined
+            }}>
               <div>
-                <div className="space-type">{espacio.tipo}</div>
+                <div className="space-type">{espacio.tipo === 'campus' ? '🏫 CAMPUS' : '🎓 AULA'}</div>
                 <h3 className="space-name">{espacio.nombre}</h3>
                 <p className="space-desc">
                   {espacio.tipo === 'campus' 
-                    ? 'Zona común de encuentro y esparcimiento estudiantil. Libre de registro.' 
-                    : `Aula privada asignada para clases interactivas de Ingeniería de Software. Capacidad: ${espacio.capacidad_max} alumnos.`}
+                    ? '📍 Zona común para el esparcimiento y encuentro estudiantil de toda la facultad.' 
+                    : `📚 Aula para clases virtuales en 3D. Capacidad: ${espacio.capacidad_max} estudiantes.`}
                 </p>
+                {user?.rol === 'invitado' && espacio.tipo === 'aula' && (
+                  <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontStyle: 'italic', margin: '8px 0 0 0' }}>
+                    🔐 Solo estudiantes registrados pueden acceder
+                  </p>
+                )}
               </div>
-              <button className="btn-primary" onClick={() => handleJoinSpace(espacio)}>
-                Ingresar en 3D
+              <button 
+                className="btn-primary" 
+                onClick={() => handleJoinSpace(espacio)}
+                disabled={user?.rol === 'invitado' && espacio.tipo === 'aula'}
+                style={{
+                  opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.5 : 1,
+                  cursor: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 'not-allowed' : 'pointer',
+                  marginTop: 'auto'
+                }}
+              >
+                {user?.rol === 'invitado' && espacio.tipo === 'aula' ? '🔒 Bloqueado' : '▶️ Entrar'}
               </button>
             </div>
           ))}
           {espacios.length === 0 && (
-            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-              No tienes asignaturas o espacios asignados para esta gestión.
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px 40px', color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '16px' }}>🏗️</div>
+              <p style={{ fontSize: '1.1rem', fontWeight: 500 }}>No hay espacios disponibles en este momento</p>
+              <p style={{ fontSize: '0.9rem', marginTop: '8px' }}>Por favor, regresa más tarde o contacta al administrador</p>
             </div>
           )}
         </div>
