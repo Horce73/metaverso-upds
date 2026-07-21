@@ -1,10 +1,11 @@
 import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
+import { registrarAsistencia, registrarSalida } from './helpers.js';
 
 interface UserState {
-  userId: string;
+  userId: number;
   nombreVisible: string;
-  espacioId: string;
+  espacioId: number;
   position: [number, number, number];
   rotation: [number, number, number];
   apariencia: any;
@@ -18,9 +19,9 @@ export function setupSockets(io: Server) {
     console.log(`🔌 Cliente conectado: ${socket.id}`);
 
     socket.on('join_space', async (data: {
-      userId: string;
+      userId: number;
       nombreVisible: string;
-      espacioId: string;
+      espacioId: number;
       apariencia: any;
       peerId?: string;
     }) => {
@@ -28,8 +29,8 @@ export function setupSockets(io: Server) {
 
       const prevUser = activeUsers.get(socket.id);
       if (prevUser) {
-        socket.leave(prevUser.espacioId);
-        socket.to(prevUser.espacioId).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
+        socket.leave(String(prevUser.espacioId));
+        socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
       }
 
       const userState: UserState = {
@@ -43,7 +44,7 @@ export function setupSockets(io: Server) {
       };
 
       activeUsers.set(socket.id, userState);
-      socket.join(espacioId);
+      socket.join(String(espacioId));
 
       const usersInSpace: { [socketId: string]: UserState } = {};
       activeUsers.forEach((user, sid) => {
@@ -53,7 +54,7 @@ export function setupSockets(io: Server) {
       });
       socket.emit('space_users', usersInSpace);
 
-      socket.to(espacioId).emit('user_joined', {
+      socket.to(String(espacioId)).emit('user_joined', {
         socketId: socket.id,
         user: userState
       });
@@ -71,7 +72,7 @@ export function setupSockets(io: Server) {
       if (user) {
         user.position = data.position;
         user.rotation = data.rotation;
-        socket.to(user.espacioId).emit('user_moved', {
+        socket.to(String(user.espacioId)).emit('user_moved', {
           socketId: socket.id,
           position: user.position,
           rotation: user.rotation
@@ -118,61 +119,10 @@ export function setupSockets(io: Server) {
       const user = activeUsers.get(socket.id);
       if (user) {
         console.log(`🔌 Cliente desconectado: ${user.nombreVisible} (${socket.id})`);
-        socket.to(user.espacioId).emit('user_left', { socketId: socket.id, userId: user.userId });
+        socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
         await registrarSalida(user.userId, user.espacioId);
       }
     });
   });
-}
-
-async function registrarAsistencia(userId: string, espacioId: string) {
-  try {
-    const res = await pool.query(
-      `SELECT id, COALESCE(inicio_real, inicio_programado) AS inicio, tolerancia_min
-       FROM sesiones_clase
-       WHERE espacio_id = $1 AND estado IN ('en_curso', 'programada')
-       ORDER BY inicio_programado ASC LIMIT 1`,
-      [espacioId]
-    );
-
-    if (res.rows.length === 0) return;
-
-    const clase = res.rows[0];
-    const ahora = new Date();
-    const inicio = new Date(clase.inicio);
-    const limiteTarde = new Date(inicio.getTime() + (clase.tolerancia_min || 10) * 60000);
-    const estado = ahora > limiteTarde ? 'tarde' : 'presente';
-
-    await pool.query(
-      `INSERT INTO asistencias (sesion_id, usuario_id, hora_ingreso, estado)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (sesion_id, usuario_id) DO NOTHING`,
-      [clase.id, userId, ahora, estado]
-    );
-    console.log(`📝 Asistencia registrada para ${userId} como: ${estado}`);
-  } catch (err) {
-    console.error('Error al registrar asistencia:', err);
-  }
-}
-
-async function registrarSalida(userId: string, espacioId: string) {
-  try {
-    const res = await pool.query(
-      `SELECT id FROM sesiones_clase
-       WHERE espacio_id = $1 AND estado IN ('en_curso', 'programada')
-       ORDER BY inicio_programado ASC LIMIT 1`,
-      [espacioId]
-    );
-
-    if (res.rows.length === 0) return;
-
-    await pool.query(
-      `UPDATE asistencias SET hora_salida = NOW()
-       WHERE sesion_id = $1 AND usuario_id = $2`,
-      [res.rows[0].id, userId]
-    );
-  } catch (err) {
-    console.error('Error al registrar salida:', err);
-  }
 }
