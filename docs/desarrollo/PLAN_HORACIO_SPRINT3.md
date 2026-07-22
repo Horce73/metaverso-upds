@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use inline execution to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Agregar 3 endpoints de seguridad al backend: bitácora admin, datos personales, y consentimientos.
+**Goal:** Agregar 2 endpoints de seguridad al backend: bitácora admin y datos personales.
 
 **Architecture:** Crear `server/src/middleware/auth.ts` con middleware reutilizable (RBAC + admin check). Agregar los 3 endpoints directamente en `server/src/index.ts` siguiendo la estructura existente.
 
@@ -24,13 +24,13 @@
 **Archivos:**
 - Create: `server/src/middleware/auth.ts`
 
-- [ ] **Step 1: Crear directorio y archivo**
+- [x] **Step 1: Crear directorio y archivo**
 
 ```bash
 mkdir -p server/src/middleware
 ```
 
-- [ ] **Step 2: Crear `server/src/middleware/auth.ts`**
+- [x] **Step 2: Crear `server/src/middleware/auth.ts`**
 
 ```typescript
 import jwt from 'jsonwebtoken';
@@ -79,7 +79,7 @@ export function requiereRol(...rolesPermitidos: string[]) {
 export const requiereAdmin = requiereRol('administrador');
 ```
 
-- [ ] **Step 3: Verificar que compila**
+- [x] **Step 3: Verificar que compila**
 
 ```bash
 npx tsc --noEmit
@@ -94,7 +94,7 @@ Esperado: sin errores.
 **Archivos:**
 - Modify: `server/src/index.ts` (líneas 1-61)
 
-- [ ] **Step 1: Reemplazar import de JWT y middleware inline por import del módulo**
+- [x] **Step 1: Reemplazar import de JWT y middleware inline por import del módulo**
 
 Cambiar las líneas 1-61 de `index.ts` — eliminar la función `authenticateJWT` inline y la función `bitacora` (se reubicarán). Reemplazar con:
 
@@ -148,7 +148,7 @@ async function bitacora(usuarioId: number | null, evento: string, detalle = '', 
 
 Esto elimina la función `authenticateJWT` duplicada (que estaba en líneas 37-49) y reemplaza su uso por el import.
 
-- [ ] **Step 2: Verificar que compila**
+- [x] **Step 2: Verificar que compila**
 
 ```bash
 npx tsc --noEmit
@@ -163,7 +163,7 @@ Esperado: sin errores.
 **Archivos:**
 - Modify: `server/src/index.ts` (agregar después del endpoint 8 — Reporte de Asistencia, antes de "Iniciar Servidor")
 
-- [ ] **Step 1: Agregar endpoint bitácora**
+- [x] **Step 1: Agregar endpoint bitácora**
 
 Agregar antes de la sección "Iniciar Servidor" (antes de `server.listen`):
 
@@ -209,7 +209,7 @@ app.get('/api/admin/bitacora', authenticateJWT, requiereAdmin, async (req: any, 
 });
 ```
 
-- [ ] **Step 2: Verificar que compila**
+- [x] **Step 2: Verificar que compila**
 
 ```bash
 npx tsc --noEmit
@@ -222,7 +222,7 @@ npx tsc --noEmit
 **Archivos:**
 - Modify: `server/src/index.ts` (agregar después del endpoint 9)
 
-- [ ] **Step 1: Agregar endpoints datos personales**
+- [x] **Step 1: Agregar endpoints datos personales**
 
 ```typescript
 // ----------------------------------------------------------------------------
@@ -299,7 +299,7 @@ app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) 
 });
 ```
 
-- [ ] **Step 2: Verificar que compila**
+- [x] **Step 2: Verificar que compila**
 
 ```bash
 npx tsc --noEmit
@@ -307,73 +307,9 @@ npx tsc --noEmit
 
 ---
 
-### Task 5: Endpoints GET/POST /api/usuario/consentimientos
+### Task 5: Verificación final y commit
 
-**Archivos:**
-- Modify: `server/src/index.ts` (agregar después del endpoint 10)
-
-- [ ] **Step 1: Agregar endpoints consentimientos**
-
-```typescript
-// ----------------------------------------------------------------------------
-// 11. Consentimientos (RNF-03: GDPR/LOPD)
-// ----------------------------------------------------------------------------
-app.get('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, tipo, otorgado, fecha, version_politica
-       FROM consentimientos
-       WHERE usuario_id = $1
-       ORDER BY fecha DESC`,
-      [req.user.userId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error al obtener consentimientos:', err);
-    res.status(500).json({ error: 'Error de servidor' });
-  }
-});
-
-app.post('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) => {
-  const { tipo, otorgado, version_politica } = req.body;
-
-  if (!tipo || otorgado === undefined || !version_politica) {
-    return res.status(400).json({ error: 'Faltan campos: tipo, otorgado, version_politica' });
-  }
-
-  const tiposValidos = ['tratamiento_datos', 'uso_voz', 'grabacion_clase'];
-  if (!tiposValidos.includes(tipo)) {
-    return res.status(400).json({ error: `Tipo inválido. Valores permitidos: ${tiposValidos.join(', ')}` });
-  }
-
-  try {
-    const result = await pool.query(
-      `INSERT INTO consentimientos (usuario_id, tipo, otorgado, version_politica)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, tipo, otorgado, fecha, version_politica`,
-      [req.user.userId, tipo, otorgado, version_politica]
-    );
-
-    await bitacora(req.user.userId, 'consentimiento', `${tipo}=${otorgado}`, req.ip);
-    res.status(201).json({ message: 'Consentimiento registrado', consentimiento: result.rows[0] });
-  } catch (err) {
-    console.error('Error al registrar consentimiento:', err);
-    res.status(500).json({ error: 'Error de servidor' });
-  }
-});
-```
-
-- [ ] **Step 2: Verificar que compila**
-
-```bash
-npx tsc --noEmit
-```
-
----
-
-### Task 6: Verificación final y commit
-
-- [ ] **Step 1: Compilar backend completo**
+- [x] **Step 1: Compilar backend completo**
 
 ```bash
 npx tsc --noEmit
@@ -381,7 +317,7 @@ npx tsc --noEmit
 
 Esperado: sin errores.
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 ```bash
 npm run lint
@@ -389,24 +325,15 @@ npm run lint
 
 Esperado: 0 errores (warnings preexistentes de Pizarra2D son aceptables).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add server/src/middleware/auth.ts server/src/index.ts
-git commit -m "feat(seguridad): bitacora admin, datos personales, consentimientos
+git commit -m "feat(seguridad): bitacora admin, datos personales
 
 - GET /api/admin/bitacora: consulta de auditoria con filtros (solo admin)
 - GET/PUT /api/usuario/datos-personales: lectura y actualizacion
-- GET/POST /api/usuario/consentimientos: consulta y registro
 - middleware/auth.ts: authenticateJWT, requiereRol, requiereAdmin"
 ```
 
 ---
-
-## Criterios de Aceptación
-
-1. **Bitácora:** `GET /api/admin/bitacora` retorna eventos filtrables; solo admin puede acceder (403 para otros roles)
-2. **Datos personales:** GET retorna datos del usuario; PUT actualiza con COALESCE (solo campos enviados); violación de unique en documento retorna 409
-3. **Consentimientos:** GET lista; POST registra nuevo con validación de tipo; tipo inválido retorna 400
-4. **Seguridad:** Todos los endpoints requieren JWT; bitácora se registra automáticamente en PUT datos personales y POST consentimiento
-5. **Compilación:** `tsc --noEmit` pasa sin errores

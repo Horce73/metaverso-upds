@@ -537,27 +537,42 @@ app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) 
     genero, domicilio, tipo_sangre, estado_civil
   } = req.body;
 
+  // Validaciones del dominio de los campos (según restricciones CHECK en schema.sql)
+  const GENEROS_VALIDOS = ['MASCULINO', 'FEMENINO', 'OTRO', 'NO_DECLARA'];
+  const TIPOS_SANGRE_VALIDOS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  const ESTADOS_CIVIL_VALIDOS = ['SOLTERO(A)', 'CASADO(A)', 'DIVORCIADO(A)', 'VIUDO(A)', 'UNION LIBRE'];
+
+  if (genero && !GENEROS_VALIDOS.includes(genero.toUpperCase())) {
+    return res.status(400).json({ error: `Género inválido. Valores válidos: ${GENEROS_VALIDOS.join(', ')}` });
+  }
+  if (tipo_sangre && !TIPOS_SANGRE_VALIDOS.includes(tipo_sangre.toUpperCase())) {
+    return res.status(400).json({ error: `Tipo de sangre inválido. Valores válidos: ${TIPOS_SANGRE_VALIDOS.join(', ')}` });
+  }
+  if (estado_civil && !ESTADOS_CIVIL_VALIDOS.includes(estado_civil.toUpperCase())) {
+    return res.status(400).json({ error: `Estado civil inválido. Valores válidos: ${ESTADOS_CIVIL_VALIDOS.join(', ')}` });
+  }
+
   try {
     const result = await pool.query(
       `UPDATE datos_personales SET
-         documento_identidad = $1,
-         fecha_nacimiento    = $2,
-         nacionalidad        = $3,
-         genero              = $4,
-         domicilio           = $5,
-         tipo_sangre         = $6,
-         estado_civil        = $7,
+         documento_identidad = COALESCE($1, documento_identidad),
+         fecha_nacimiento    = COALESCE($2, fecha_nacimiento),
+         nacionalidad        = COALESCE($3, nacionalidad),
+         genero              = COALESCE($4, genero),
+         domicilio           = COALESCE($5, domicilio),
+         tipo_sangre         = COALESCE($6, tipo_sangre),
+         estado_civil        = COALESCE($7, estado_civil),
          actualizado_en      = NOW()
        WHERE usuario_id = $8
        RETURNING *`,
       [
-        documento_identidad ?? null,
-        fecha_nacimiento ?? null,
-        nacionalidad ?? null,
-        genero ?? null,
-        domicilio ?? null,
-        tipo_sangre ?? null,
-        estado_civil ?? null,
+        documento_identidad !== undefined ? (documento_identidad || null) : null,
+        fecha_nacimiento !== undefined ? (fecha_nacimiento || null) : null,
+        nacionalidad !== undefined ? (nacionalidad || null) : null,
+        genero !== undefined ? (genero.toUpperCase() || null) : null,
+        domicilio !== undefined ? (domicilio || null) : null,
+        tipo_sangre !== undefined ? (tipo_sangre.toUpperCase() || null) : null,
+        estado_civil !== undefined ? (estado_civil.toUpperCase() || null) : null,
         userId
       ]
     );
@@ -571,7 +586,7 @@ app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) 
   } catch (err: any) {
     console.error('Error al actualizar datos personales:', err);
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'El documento de identidad ya esta registrado' });
+      return res.status(409).json({ error: 'El documento de identidad ya está registrado' });
     }
     res.status(500).json({ error: 'Error de servidor' });
   }
