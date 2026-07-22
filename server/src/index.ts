@@ -8,6 +8,8 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { pool } from './db.js';
 import { setupSockets } from './socketHandler.js';
+import { authenticateJWT, requiereAdmin } from './middleware/auth.js';
+import { registrarAsistencia } from './helpers.js';
 
 dotenv.config();
 
@@ -30,23 +32,6 @@ const peerServer = ExpressPeerServer(server, {
   allow_discovery: true
 });
 app.use('/peer', peerServer);
-
-// ----------------------------------------------------------------------------
-// MIDDLEWARE: JWT
-// ----------------------------------------------------------------------------
-const authenticateJWT = (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader) {
-    const token = authHeader.split(' ')[1];
-    jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-      if (err) return res.sendStatus(403);
-      req.user = user;
-      next();
-    });
-  } else {
-    res.sendStatus(401);
-  }
-};
 
 // Helper: registrar evento en bitacora
 async function bitacora(usuarioId: number | null, evento: string, detalle = '', ip = '') {
@@ -198,7 +183,7 @@ app.post('/api/auth/login', async (req, res) => {
       const bloqueo = fallos >= 5 ? new Date(Date.now() + 15 * 60000).toISOString() : null;
       await pool.query(
         'UPDATE usuarios SET intentos_fallidos = $1, bloqueado_hasta = $2 WHERE id = $3',
-        [fallos >= 5 ? 0 : fallos, bloqueo, user.id]
+        [fallos, bloqueo, user.id]
       );
       await bitacora(user.id, 'login_fallido', '', req.ip);
       return res.status(401).json({ error: 'Credenciales inválidas' });
@@ -346,7 +331,7 @@ app.post('/api/auth/logout', authenticateJWT, async (req: any, res) => {
 });
 
 // ----------------------------------------------------------------------------
-// 5. Listar Espacios (RF-02)
+// 5. Listar Espacios (RF-02) con sesion activa
 // ----------------------------------------------------------------------------
 app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
   try {
@@ -364,37 +349,65 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       return res.json(result.rows);
     }
 
-    // Obtener roles del usuario registrado
     const rolesRes = await pool.query(
       `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
       [userId]
     );
     const roles = rolesRes.rows.map((r: any) => r.nombre);
 
+    let espaciosRes;
     if (roles.includes('admin') || roles.includes('docente')) {
-      const result = await pool.query(
+      espaciosRes = await pool.query(
         `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-                a.nombre AS asignatura
+                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+         LEFT JOIN usuarios u ON u.id = pd.usuario_id
+         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
          WHERE e.activo = TRUE AND (e.tipo = 'campus' OR pd.usuario_id = $1)`,
         [userId]
       );
-      res.json(result.rows);
     } else {
-      const result = await pool.query(
+      espaciosRes = await pool.query(
         `SELECT DISTINCT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-                a.nombre AS asignatura
+                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN inscripciones i ON i.asignatura_id = a.id AND i.usuario_id = $1
+         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+         LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+         LEFT JOIN usuarios u ON u.id = pd.usuario_id
          WHERE e.activo = TRUE
            AND (e.tipo = 'campus' OR i.usuario_id IS NOT NULL)`,
         [userId]
       );
-      res.json(result.rows);
     }
+
+    const espacios = espaciosRes.rows.map((e: any) => ({
+      id: e.id,
+      nombre: e.nombre,
+      tipo: e.tipo,
+      escena_url: e.escena_url,
+      capacidad_max: e.capacidad_max,
+      asignatura: e.asignatura,
+      asignatura_codigo: e.asignatura_codigo,
+      sesion_activa: e.sesion_id ? {
+        id: e.sesion_id,
+        tema: e.sesion_tema,
+        inicio: e.sesion_inicio,
+        estado: e.sesion_estado,
+        docente: e.docente_nombre ? `${e.docente_nombre} ${e.docente_apellido}` : null
+      } : null
+    }));
+
+    res.json(espacios);
   } catch (err) {
     console.error('Error al listar espacios:', err);
     res.status(500).json({ error: 'Error de base de datos' });
@@ -459,28 +472,264 @@ app.post('/api/sesiones', authenticateJWT, async (req: any, res) => {
 });
 
 // ----------------------------------------------------------------------------
-// 8. Reporte de Asistencia (RF-08) - Exclusivo Docente
+// 9. Bitacora de Auditoria (RNF-05) - Solo Admin
+// ----------------------------------------------------------------------------
+app.get('/api/admin/bitacora', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { evento, desde, hasta, limit: queryLimit } = req.query;
+    let sql = `
+      SELECT b.id, b.usuario_id, b.evento, b.detalle, b.ip, b.fecha,
+             u.email, u.nombre, u.apellido
+      FROM bitacora b
+      LEFT JOIN usuarios u ON u.id = b.usuario_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let idx = 1;
+
+    if (evento) {
+      sql += ` AND b.evento = $${idx++}`;
+      params.push(evento);
+    }
+    if (desde) {
+      sql += ` AND b.fecha >= $${idx++}`;
+      params.push(desde);
+    }
+    if (hasta) {
+      sql += ` AND b.fecha <= $${idx++}`;
+      params.push(hasta);
+    }
+
+    sql += ` ORDER BY b.fecha DESC LIMIT $${idx}`;
+    params.push(Math.min(Number(queryLimit) || 200, 500));
+
+    const result = await pool.query(sql, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener bitacora:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 10. Datos Personales (RNF-03)
+// ----------------------------------------------------------------------------
+app.get('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM datos_personales WHERE usuario_id = $1',
+      [req.user.userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Datos personales no encontrados' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error al obtener datos personales:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const {
+    documento_identidad, fecha_nacimiento, nacionalidad,
+    genero, domicilio, tipo_sangre, estado_civil
+  } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE datos_personales SET
+         documento_identidad = $1,
+         fecha_nacimiento    = $2,
+         nacionalidad        = $3,
+         genero              = $4,
+         domicilio           = $5,
+         tipo_sangre         = $6,
+         estado_civil        = $7,
+         actualizado_en      = NOW()
+       WHERE usuario_id = $8
+       RETURNING *`,
+      [
+        documento_identidad ?? null,
+        fecha_nacimiento ?? null,
+        nacionalidad ?? null,
+        genero ?? null,
+        domicilio ?? null,
+        tipo_sangre ?? null,
+        estado_civil ?? null,
+        userId
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Datos personales no encontrados' });
+    }
+
+    await bitacora(userId, 'actualizacion_datos', '', req.ip);
+    res.json({ message: 'Datos personales actualizados', datos: result.rows[0] });
+  } catch (err: any) {
+    console.error('Error al actualizar datos personales:', err);
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'El documento de identidad ya esta registrado' });
+    }
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 11. Consentimientos (RNF-03: GDPR/LOPD)
+// ----------------------------------------------------------------------------
+app.get('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, tipo, otorgado, fecha, version_politica
+       FROM consentimientos
+       WHERE usuario_id = $1
+       ORDER BY fecha DESC`,
+      [req.user.userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener consentimientos:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+app.post('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) => {
+  const { tipo, otorgado, version_politica } = req.body;
+
+  if (!tipo || otorgado === undefined || !version_politica) {
+    return res.status(400).json({ error: 'Faltan campos: tipo, otorgado, version_politica' });
+  }
+
+  const tiposValidos = ['tratamiento_datos', 'uso_voz', 'grabacion_clase'];
+  if (!tiposValidos.includes(tipo)) {
+    return res.status(400).json({ error: `Tipo invalido. Valores permitidos: ${tiposValidos.join(', ')}` });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO consentimientos (usuario_id, tipo, otorgado, version_politica)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, tipo, otorgado, fecha, version_politica`,
+      [req.user.userId, tipo, otorgado, version_politica]
+    );
+
+    await bitacora(req.user.userId, 'consentimiento', `${tipo}=${otorgado}`, req.ip);
+    res.status(201).json({ message: 'Consentimiento registrado', consentimiento: result.rows[0] });
+  } catch (err) {
+    console.error('Error al registrar consentimiento:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 12. Asistencia REST (RF-05) - Solo Estudiantes
+// ----------------------------------------------------------------------------
+app.post('/api/asistencia', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const { espacio_id } = req.body;
+
+  if (!espacio_id) {
+    return res.status(400).json({ error: 'Falta campo: espacio_id' });
+  }
+
+  try {
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const roles = rolesRes.rows.map((r: any) => r.nombre);
+    if (!roles.includes('estudiante')) {
+      return res.status(403).json({ error: 'Solo los estudiantes pueden registrar asistencia' });
+    }
+
+    const resultado = await registrarAsistencia(userId, espacio_id);
+
+    if (!resultado) {
+      return res.status(404).json({ registrado: false, motivo: 'No hay una clase en curso en este espacio' });
+    }
+
+    if (!resultado.registrado) {
+      return res.json(resultado);
+    }
+
+    await bitacora(userId, 'asistencia', `sesion=${espacio_id} estado=${resultado.estado}`, req.ip);
+    res.json(resultado);
+  } catch (err) {
+    console.error('Error al registrar asistencia:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 13. Sesiones por Espacio
+// ----------------------------------------------------------------------------
+app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
+  try {
+    const { espacio_id, estado } = req.query;
+    let sql = `
+      SELECT sc.id, sc.tema, sc.inicio_programado, sc.fin_programado,
+             sc.inicio_real, sc.fin_real, sc.estado, sc.tolerancia_min,
+             sc.espacio_id, e.nombre AS espacio_nombre,
+             u.nombre AS docente_nombre, u.apellido AS docente_apellido
+      FROM sesiones_clase sc
+      JOIN espacios e ON e.id = sc.espacio_id
+      JOIN perfiles_docente pd ON pd.usuario_id = sc.docente_id
+      JOIN usuarios u ON u.id = pd.usuario_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    let idx = 1;
+
+    if (espacio_id) {
+      sql += ` AND sc.espacio_id = $${idx++}`;
+      params.push(espacio_id);
+    }
+    if (estado) {
+      sql += ` AND sc.estado = $${idx++}`;
+      params.push(estado);
+    }
+
+    sql += ` ORDER BY sc.inicio_programado DESC LIMIT $${idx}`;
+    params.push(50);
+
+    const result = await pool.query(sql, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener sesiones:', err);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 14. Reporte de Asistencia Mejorado (RF-08) - Exclusivo Docente
 // ----------------------------------------------------------------------------
 app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, res) => {
   const { userId } = req.user;
   const { sesionId } = req.params;
 
   try {
-    // Verificar que sea docente de esta sesion
     const sesionRes = await pool.query(
-      'SELECT docente_id FROM sesiones_clase WHERE id = $1',
+      `SELECT sc.*, e.nombre AS espacio_nombre, e.tipo AS espacio_tipo
+       FROM sesiones_clase sc
+       JOIN espacios e ON e.id = sc.espacio_id
+       WHERE sc.id = $1`,
       [sesionId]
     );
     if (sesionRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Sesión no encontrada' });
+      return res.status(404).json({ error: 'Sesion no encontrada' });
     }
     if (sesionRes.rows[0].docente_id !== userId) {
-      return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesión' });
+      return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesion' });
     }
 
-    const result = await pool.query(
+    const sesion = sesionRes.rows[0];
+
+    const asistenciasRes = await pool.query(
       `SELECT a.id, a.hora_ingreso, a.hora_salida, a.estado,
-              pe.registro_upds, u.nombre, u.apellido
+              pe.registro_upds, u.nombre, u.apellido, u.email
        FROM asistencias a
        JOIN usuarios u ON u.id = a.usuario_id
        LEFT JOIN perfiles_estudiante pe ON pe.usuario_id = u.id
@@ -489,9 +738,43 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
       [sesionId]
     );
 
+    // Calcular resumen — buscar asignatura del espacio
+    const asistencias = asistenciasRes.rows;
+    const asignaturaRes = await pool.query(
+      'SELECT asignatura_id FROM espacios WHERE id = $1',
+      [sesion.espacio_id]
+    );
+    const asignaturaId = asignaturaRes.rows[0]?.asignatura_id;
+    const totalEstudiantesRes = await pool.query(
+      'SELECT COUNT(*) AS total FROM inscripciones WHERE asignatura_id = $1',
+      [asignaturaId]
+    );
+    const totalInscritos = parseInt(totalEstudiantesRes.rows[0]?.total || '0');
+    const presentes = asistencias.filter((a: any) => a.estado === 'presente').length;
+    const tardes = asistencias.filter((a: any) => a.estado === 'tarde').length;
+    const ausentes = totalInscritos - asistencias.length;
+
     await bitacora(userId, 'consulta_reporte', `sesion=${sesionId}`, req.ip);
 
-    res.json(result.rows);
+    res.json({
+      sesion: {
+        id: sesion.id,
+        tema: sesion.tema,
+        espacio: sesion.espacio_nombre,
+        tipo_espacio: sesion.espacio_tipo,
+        inicio: sesion.inicio_real || sesion.inicio_programado,
+        fin: sesion.fin_real || sesion.fin_programado,
+        estado: sesion.estado
+      },
+      resumen: {
+        total_inscritos: totalInscritos,
+        presentes,
+        tardes,
+        ausentes,
+        total_registrados: asistencias.length
+      },
+      asistencias
+    });
   } catch (err) {
     console.error('Error al obtener reporte de asistencia:', err);
     res.status(500).json({ error: 'Error de servidor' });
