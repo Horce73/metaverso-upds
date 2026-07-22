@@ -242,6 +242,51 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ----------------------------------------------------------------------------
+// 2.5 Login Invitado (Guest) - Acceso solo a campus
+// ----------------------------------------------------------------------------
+app.post('/api/auth/guest', async (req, res) => {
+  try {
+    // Generar un identificador único para el invitado (temporal)
+    const guestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const guestName = `Invitado ${Math.floor(Math.random() * 10000)}`;
+
+    // Generar JWT con rol de invitado (sin usuario en BD)
+    const token = jwt.sign(
+      { userId: guestId, email: 'guest@metaverso', rol: 'invitado', nombre: guestName, isGuest: true },
+      JWT_SECRET,
+      { expiresIn: '4h' }
+    );
+
+    // Avatar por defecto para invitados
+    const defaultAvatar = {
+      id: `avatar_${guestId}`,
+      nombre_visible: guestName,
+      modelo_url: null,
+      apariencia: { color: '#6b7280', genero: 'n' }
+    };
+
+    await bitacora(null, 'guest_login', guestName, req.ip);
+
+    res.json({
+      token,
+      user: {
+        id: guestId,
+        email: 'guest@metaverso',
+        nombre: guestName,
+        apellido: '',
+        rol: 'invitado',
+        roles: ['invitado'],
+        isGuest: true
+      },
+      avatar: defaultAvatar
+    });
+  } catch (err) {
+    console.error('Error en guest login:', err);
+    res.status(500).json({ error: 'Error al ingresar como invitado' });
+  }
+});
+
+// ----------------------------------------------------------------------------
 // 3. Usuario actual
 // ----------------------------------------------------------------------------
 app.get('/api/auth/yo', authenticateJWT, async (req: any, res) => {
@@ -290,7 +335,19 @@ app.post('/api/auth/logout', authenticateJWT, async (req: any, res) => {
 // ----------------------------------------------------------------------------
 app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
   try {
-    const { userId } = req.user;
+    const { userId, rol, isGuest } = req.user;
+
+    // Invitados solo ven el campus
+    if (isGuest || rol === 'invitado') {
+      const result = await pool.query(
+        `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
+                a.nombre AS asignatura
+         FROM espacios e
+         LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+         WHERE e.activo = TRUE AND e.tipo = 'campus'`
+      );
+      return res.json(result.rows);
+    }
 
     const rolesRes = await pool.query(
       `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
