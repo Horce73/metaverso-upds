@@ -334,6 +334,15 @@ function App() {
           isAula={espacioActivo.tipo === 'aula'}
           localAvatar={avatar}
           remoteUsers={remoteUsers}
+          onUpdateAvatarPersonalization={(nueva) => {
+            setAvatar((prev) => {
+              const updated = prev
+                ? { ...prev, apariencia: nueva }
+                : { id: 'local', nombre_visible: user?.nombre || 'Usuario', modelo_url: null, apariencia: nueva };
+              localStorage.setItem('avatar', JSON.stringify(updated));
+              return updated;
+            });
+          }}
         />
 
         {/* Guía de Teclas */}

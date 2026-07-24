@@ -1,14 +1,20 @@
-import { crearTexturaTexto } from '../utils/texto3d'
+import React, { type ReactNode } from 'react';
+import { crearTexturaTexto } from './texto3d.js';
 
-/**
- * Edificio genérico de una sola planta, con 3 paredes + techo + piso
- * (el frente queda abierto para que el avatar pueda entrar caminando,
- * sin necesidad de un sistema de colisiones con puertas).
- *
- * Se orienta automáticamente para que el frente (lado abierto) mire
- * hacia `mirarHacia` (normalmente el centro del patio/plaza).
- */
-export default function Edificio({
+interface EdificioProps {
+  posicion: [number, number, number];
+  mirarHacia: [number, number, number];
+  ancho?: number;
+  profundidad?: number;
+  alto?: number;
+  colorPared?: string;
+  colorTecho?: string;
+  colorPiso?: string;
+  nombre?: string;
+  children?: ReactNode;
+}
+
+export const Edificio: React.FC<EdificioProps> = ({
   posicion,
   mirarHacia,
   ancho = 8,
@@ -19,12 +25,12 @@ export default function Edificio({
   colorPiso = '#c9b78f',
   nombre,
   children,
-}) {
-  const dx = mirarHacia[0] - posicion[0]
-  const dz = mirarHacia[2] - posicion[2]
-  const rotacionY = Math.atan2(dx, dz)
+}) => {
+  const dx = mirarHacia[0] - posicion[0];
+  const dz = mirarHacia[2] - posicion[2];
+  const rotacionY = Math.atan2(dx, dz);
 
-  const espesor = 0.2
+  const espesor = 0.2;
 
   return (
     <group position={posicion} rotation={[0, rotacionY, 0]}>
@@ -67,5 +73,7 @@ export default function Edificio({
 
       {children}
     </group>
-  )
-}
+  );
+};
+
+export default Edificio;

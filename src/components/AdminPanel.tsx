@@ -22,7 +22,7 @@ interface Espacio {
   capacidad_max: number;
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onClose }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ token: _token, onClose }) => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'spaces' | 'reports'>('dashboard');
   const [showNewUserForm, setShowNewUserForm] = useState(false);
   const [showNewSpaceForm, setShowNewSpaceForm] = useState(false);

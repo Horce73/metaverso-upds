@@ -1,12 +1,12 @@
-import { useRef } from 'react'
+import React, { useRef } from 'react';
+import * as THREE from 'three';
 
-/**
- * Puerta visual simple. La lógica del trigger (distancia, cooldown,
- * llamada a la API) vive en World.jsx para tener un solo lugar
- * de verdad sobre la posición del avatar y de la puerta.
- */
-export default function Door({ position = [0, 0, -5] }) {
-  const ref = useRef()
+interface DoorProps {
+  position?: [number, number, number];
+}
+
+export const Door: React.FC<DoorProps> = ({ position = [0, 0, -5] }) => {
+  const ref = useRef<THREE.Group>(null);
 
   return (
     <group ref={ref} position={position}>
@@ -20,5 +20,7 @@ export default function Door({ position = [0, 0, -5] }) {
         <meshStandardMaterial color="#4a2f18" />
       </mesh>
     </group>
-  )
-}
+  );
+};
+
+export default Door;

@@ -6,12 +6,12 @@ Este es el prototipo piloto de la plataforma de clases virtuales en 3D para la *
 
 ## ✨ Características Principales
 
-*   **👥 Entorno Multijugador 3D**: Explora el *Campus Central UPDS* y el *Aula Virtual de Ingeniería de Software* con avatares en tercera persona usando física de movimiento fluida con las teclas `W` `A` `S` `D`.
-*   **🎙️ VoIP con Audio Espacial**: Comunicación por voz en tiempo real con WebRTC (PeerJS) y Web Audio API. Las voces de otros usuarios se atenúan y posicionan de forma realista según la distancia y rotación de tu avatar en la escena 3D (escuchas más fuerte a quien tienes al lado).
-*   **📋 Pizarra Digital Interactiva**: Pizarra interactiva sincronizada. Los docentes pueden dibujar trazos en vivo visibles para todos los estudiantes en el aula y guardar instantáneas (snapshots vectoriales) en la base de datos.
-*   **📝 Asistencia Automática (RF-05)**: Registro de asistencias automático al cruzar el umbral del aula. El servidor detecta la entrada de los estudiantes, determina su estado ("presente" o "tarde" según la tolerancia configurada por el profesor) y registra la hora de salida al desconectarse.
-*   **🎨 Personalización de Avatares**: Menú de configuración para que los usuarios elijan sus colores de ropa, cabello, rasgos y escala (altura), con un esquema listo para migrar a avatares profesionales externos de Ready Player Me (`.glb`).
-*   **📦 Base de Datos Autónoma**: Esquema optimizado para PostgreSQL 15+ que cuenta con datos semilla de inicio y está configurado para ejecutarse en contenedores Docker o Podman.
+*   **👥 Entorno Multijugador 3D**: Explora el *Campus Central UPDS* (con edificaciones, aulas 101/102, sala de descanso, sala de decanos y mobiliario detallado) y el *Aula Virtual de Ingeniería de Software* con avatares en tercera persona usando física de movimiento fluida con las teclas `W` `A` `S` `D`.
+*   **🎙️ VoIP con Audio Espacial**: Comunicación por voz en tiempo real con WebRTC (PeerJS) y Web Audio API. Las voces de otros usuarios se atenúan y posicionan de forma realista según la distancia y rotación de tu avatar en la escena 3D.
+*   **📋 Pizarra Digital Interactiva**: Pizarra interactiva sincronizada. Los docentes pueden dibujar trazos en vivo visibles para todos los estudiantes en el aula y guardar instantáneas vectoriales en la base de datos.
+*   **📝 Asistencia Automática (RF-05)**: Registro de asistencias automático al cruzar el portón o umbral del aula. El servidor detecta la entrada de los estudiantes, determina su estado ("presente" o "tarde") y registra la hora de salida al desconectarse.
+*   **🎨 Personalización de Avatares en Vivo**: Menú flotante interactivo para personalizar en tiempo real la vestimenta, color de piel, tamaño y accesorios (sombrero, gafas, mochila).
+*   **📦 Base de Datos Autónoma**: Esquema optimizado para PostgreSQL 15+ configurado para ejecutarse en contenedores Docker o Podman.
 
 ---
 
@@ -47,61 +47,64 @@ podman compose up -d
 # Con Docker:
 docker compose up -d
 ```
-> **Nota**: El contenedor se inicializará automáticamente con todas las tablas e índices definidos en `database.md`, además de inyectar datos semilla (docente de prueba, asignatura piloto y aulas).
 
-### Paso 2: Configurar e iniciar el Backend
-Abre una terminal nueva en el directorio `/server`:
+### Paso 2: Iniciar Servidores (Método Rápido Recomendado)
+Puedes iniciar el Backend y el Frontend simultáneamente ejecutando el script incluido:
 ```bash
-cd server
-# Instalar dependencias
-npm install
-# Compilar y arrancar el servidor en modo desarrollo
-npm run dev
-```
-Al arrancar correctamente, verás la salida:
-```text
-✅ Conexión exitosa a PostgreSQL
-🚀 Metaverso UPDS Backend corriendo en http://localhost:3001
+./start-dev.sh
 ```
 
-### Paso 3: Configurar e iniciar el Frontend
-Abre otra terminal diferente en la raíz del proyecto y ejecuta:
-```bash
-# Instalar dependencias 3D y de sockets
-npm install
-# Iniciar el servidor local de Vite
-npm run dev
-```
+### Paso 3: Iniciar Manualmente (Alternativo)
+Si prefieres ejecutarlos en terminales independientes:
+* **Backend:**
+  ```bash
+  cd server
+  npm install
+  npm run dev
+  ```
+* **Frontend:**
+  ```bash
+  npm install
+  npm run dev
+  ```
+
 Vite levantará la interfaz del metaverso en `http://localhost:5173`.
 
 ---
 
 ## 🔑 Credenciales de Prueba por Defecto
 
-Para iniciar sesión de inmediato como docente y probar la administración del aula y pizarras, usa las siguientes credenciales:
-
-*   **Correo Institucional**: `docente.isw@upds.edu.bo`
+*   **Correo Institucional Docente**: `docente.isw@upds.edu.bo`
 *   **Contraseña**: `123456`
 
-> También puedes utilizar la pestaña **"Regístrate aquí"** para crear cuentas rápidas de alumnos de prueba y abrir varias ventanas de navegador (o ventanas en modo incógnito) para comprobar las físicas multijugador y el audio tridimensional.
+> También puedes utilizar la pestaña **"Regístrate aquí"** o el **"Ingreso como Invitado"** para probar la plataforma en ventanas de navegador normales o de modo incógnito.
 
 ---
 
 ## 📂 Estructura del Proyecto
 
 ```text
+├── start-dev.sh           # Script bash para levantar Backend y Frontend simultáneamente
 ├── database.md            # Documentación del diseño físico de base de datos PostgreSQL
 ├── requerimientos.md      # Ingeniería de Requerimientos y trazabilidad RF/RNF
 ├── docker-compose.yml     # Archivo Compose para levantar la BD Postgres 15
-├── package.json           # Dependencias y scripts del Frontend
-├── src/                   # Código fuente del Frontend React
+├── package.json           # Dependencias y scripts del Frontend principal
+├── src/                   # Código fuente del Frontend React 3D
 │   ├── components/
+│   │   ├── mundo3d/       # Módulo 3D unificado del Campus y Avatares
+│   │   │   ├── AvatarModel.tsx       # Geometría del avatar 3D animado y accesorios
+│   │   │   ├── CameraRig.tsx         # Cámara de 3ra persona con raycasting anti-paredes
+│   │   │   ├── Campus.tsx            # Escenario 3D completo del Campus UPDS
+│   │   │   ├── CustomizadorAvatar.tsx# Panel flotante de personalización en vivo
+│   │   │   ├── Door.tsx              # Portón principal de ingreso y asistencia
+│   │   │   ├── Edificio.tsx          # Módulo de arquitectura 3D para aulas y salas
+│   │   │   ├── Mobiliario.tsx        # Muebles, escritorios, pizarras y elementos decorativos
+│   │   │   ├── texto3d.ts            # Texturas Canvas para etiquetas flotantes sobre avatares
+│   │   │   └── useKeyboardControls.ts# Hook optimizado de captura de teclado WASD/Flechas
 │   │   ├── AudioClient.ts      # Cliente VoIP y Web Audio API espacializada
-│   │   ├── Avatar3D.tsx        # Geometría del Avatar 3D configurable
-│   │   ├── CustomAvatar.tsx    # Interfaz 2D para cambiar rasgos/colores
 │   │   ├── Login.tsx           # Interfaz de acceso glassmorphic
-│   │   ├── MetaversoCanvas.tsx # Lienzo principal Three.js y controles de teclado
-│   │   └── Pizarra2D.tsx       # Canvas de dibujo colaborativo
+│   │   ├── MetaversoCanvas.tsx # Lienzo principal Three.js y coordinador Sockets/VoIP
+│   │   └── Pizarra2D.tsx       # Canvas de dibujo colaborativo en vivo
 │   ├── App.tsx                 # Enrutamiento, sockets globales y layouts
 │   ├── index.css               # Estilos globales y tokens visuales premium
 │   └── main.tsx

@@ -1,7 +1,6 @@
-// Piezas de mobiliario simples (geometría básica) para amueblar
-// las aulas, la sala de descanso y la sala de decanos.
+import React from 'react';
 
-export function Pupitre({ position }) {
+export const Pupitre: React.FC<{ position: [number, number, number] }> = ({ position }) => {
   return (
     <group position={position}>
       <mesh castShadow position={[0, 0.45, 0]}>
@@ -17,19 +16,25 @@ export function Pupitre({ position }) {
         <meshStandardMaterial color="#555555" />
       </mesh>
     </group>
-  )
-}
+  );
+};
 
-export function Pizarra({ position, rotation = [0, 0, 0] }) {
+export const Pizarra: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
+  position,
+  rotation = [0, 0, 0],
+}) => {
   return (
     <mesh position={position} rotation={rotation} castShadow>
       <boxGeometry args={[2.6, 1.1, 0.06]} />
       <meshStandardMaterial color="#1b3a2f" />
     </mesh>
-  )
-}
+  );
+};
 
-export function EscritorioProfesor({ position, rotation = [0, 0, 0] }) {
+export const EscritorioProfesor: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
+  position,
+  rotation = [0, 0, 0],
+}) => {
   return (
     <group position={position} rotation={rotation}>
       <mesh castShadow position={[0, 0.4, 0]}>
@@ -45,10 +50,14 @@ export function EscritorioProfesor({ position, rotation = [0, 0, 0] }) {
         <meshStandardMaterial color="#4a2f18" />
       </mesh>
     </group>
-  )
-}
+  );
+};
 
-export function Sofa({ position, rotation = [0, 0, 0], color = '#c0392b' }) {
+export const Sofa: React.FC<{ position: [number, number, number]; rotation?: [number, number, number]; color?: string }> = ({
+  position,
+  rotation = [0, 0, 0],
+  color = '#c0392b',
+}) => {
   return (
     <group position={position} rotation={rotation}>
       <mesh castShadow position={[0, 0.25, 0]}>
@@ -60,10 +69,13 @@ export function Sofa({ position, rotation = [0, 0, 0], color = '#c0392b' }) {
         <meshStandardMaterial color={color} />
       </mesh>
     </group>
-  )
-}
+  );
+};
 
-export function MesaRedonda({ position, color = '#8d6e4a' }) {
+export const MesaRedonda: React.FC<{ position: [number, number, number]; color?: string }> = ({
+  position,
+  color = '#8d6e4a',
+}) => {
   return (
     <group position={position}>
       <mesh castShadow position={[0, 0.4, 0]}>
@@ -75,19 +87,25 @@ export function MesaRedonda({ position, color = '#8d6e4a' }) {
         <meshStandardMaterial color="#333333" />
       </mesh>
     </group>
-  )
-}
+  );
+};
 
-export function MaquinaExpendedora({ position, rotation = [0, 0, 0] }) {
+export const MaquinaExpendedora: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
+  position,
+  rotation = [0, 0, 0],
+}) => {
   return (
     <mesh position={position} rotation={rotation} castShadow>
       <boxGeometry args={[0.8, 1.7, 0.6]} />
       <meshStandardMaterial color="#2980b9" />
     </mesh>
-  )
-}
+  );
+};
 
-export function EscritorioDecano({ position, rotation = [0, 0, 0] }) {
+export const EscritorioDecano: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
+  position,
+  rotation = [0, 0, 0],
+}) => {
   return (
     <group position={position} rotation={rotation}>
       <mesh castShadow position={[0, 0.45, 0]}>
@@ -103,10 +121,13 @@ export function EscritorioDecano({ position, rotation = [0, 0, 0] }) {
         <meshStandardMaterial color="#2a1a10" />
       </mesh>
     </group>
-  )
-}
+  );
+};
 
-export function SillaOficina({ position, rotation = [0, 0, 0] }) {
+export const SillaOficina: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
+  position,
+  rotation = [0, 0, 0],
+}) => {
   return (
     <group position={position} rotation={rotation}>
       <mesh castShadow position={[0, 0.45, 0]}>
@@ -122,10 +143,13 @@ export function SillaOficina({ position, rotation = [0, 0, 0] }) {
         <meshStandardMaterial color="#444444" />
       </mesh>
     </group>
-  )
-}
+  );
+};
 
-export function Estanteria({ position, rotation = [0, 0, 0] }) {
+export const Estanteria: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
+  position,
+  rotation = [0, 0, 0],
+}) => {
   return (
     <group position={position} rotation={rotation}>
       <mesh castShadow position={[0, 0.9, 0]}>
@@ -139,5 +163,5 @@ export function Estanteria({ position, rotation = [0, 0, 0] }) {
         </mesh>
       ))}
     </group>
-  )
-}
+  );
+};

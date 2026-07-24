@@ -1,4 +1,5 @@
-import Edificio from './Edificio'
+import React from 'react';
+import { Edificio } from './Edificio.js';
 import {
   Pupitre,
   Pizarra,
@@ -9,24 +10,24 @@ import {
   EscritorioDecano,
   SillaOficina,
   Estanteria,
-} from './Mobiliario'
-import { crearTexturaTexto } from '../utils/texto3d'
+} from './Mobiliario.js';
+import { crearTexturaTexto } from './texto3d.js';
 
-const CENTRO_PATIO = [0, 0, -20]
+const CENTRO_PATIO: [number, number, number] = [0, 0, -20];
 
 // Genera una grilla de pupitres (3 columnas x 3 filas) para un aula
-function generarPupitres() {
-  const pupitres = []
+function generarPupitres(): [number, number, number][] {
+  const pupitres: [number, number, number][] = [];
   for (let fila = 0; fila < 3; fila++) {
     for (let col = 0; col < 3; col++) {
-      pupitres.push([col * 1.1 - 1.1, 0, fila * 1.1 - 0.8])
+      pupitres.push([col * 1.1 - 1.1, 0, fila * 1.1 - 0.8]);
     }
   }
-  return pupitres
+  return pupitres;
 }
-const POSICIONES_PUPITRES = generarPupitres()
+const POSICIONES_PUPITRES = generarPupitres();
 
-export default function Campus() {
+export const Campus: React.FC = () => {
   return (
     <group>
       {/* Césped general del campus */}
@@ -113,8 +114,8 @@ export default function Campus() {
         <Estanteria position={[0, 0, -3.35]} />
       </Edificio>
     </group>
-  )
-}
+  );
+};
 
 function LetreroCampus() {
   return (
@@ -125,5 +126,7 @@ function LetreroCampus() {
         transparent
       />
     </sprite>
-  )
+  );
 }
+
+export default Campus;

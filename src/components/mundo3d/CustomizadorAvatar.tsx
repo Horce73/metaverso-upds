@@ -1,26 +1,36 @@
-import { useState } from 'react'
+import React, { useState } from 'react';
+import type { PersonalizacionAvatar } from './AvatarModel.js';
 
 const COLORES_ROPA = [
   '#e67e22', '#3498db', '#e74c3c', '#2ecc71',
   '#9b59b6', '#f1c40f', '#1abc9c', '#34495e',
-]
+];
 
-const TONOS_PIEL = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a21']
+const TONOS_PIEL = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a21'];
 
-/**
- * Panel flotante para editar la personalización del avatar en vivo.
- * Es "controlado": recibe el estado actual y una función para actualizarlo,
- * el dueño de la verdad es World.jsx (que además lo persiste en localStorage).
- */
-export default function CustomizadorAvatar({ personalizacion, onCambiar, abierto, onToggle }) {
-  const [pestaña, setPestaña] = useState('ropa')
+interface CustomizadorAvatarProps {
+  personalizacion: PersonalizacionAvatar;
+  onCambiar: (nueva: PersonalizacionAvatar) => void;
+  abierto: boolean;
+  onToggle: () => void;
+}
 
-  const actualizar = (cambios) => onCambiar({ ...personalizacion, ...cambios })
-  const actualizarAccesorio = (clave, valor) =>
+export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
+  personalizacion,
+  onCambiar,
+  abierto,
+  onToggle,
+}) => {
+  const [pestaña, setPestaña] = useState<'ropa' | 'piel' | 'tamaño' | 'accesorios'>('ropa');
+
+  const actualizar = (cambios: Partial<PersonalizacionAvatar>) =>
+    onCambiar({ ...personalizacion, ...cambios });
+
+  const actualizarAccesorio = (clave: 'sombrero' | 'gafas' | 'mochila', valor: boolean) =>
     onCambiar({
       ...personalizacion,
       accesorios: { ...personalizacion.accesorios, [clave]: valor },
-    })
+    });
 
   return (
     <div style={estilos.contenedor}>
@@ -31,7 +41,7 @@ export default function CustomizadorAvatar({ personalizacion, onCambiar, abierto
       {abierto && (
         <div style={estilos.panel}>
           <div style={estilos.tabs}>
-            {['ropa', 'piel', 'tamaño', 'accesorios'].map((t) => (
+            {(['ropa', 'piel', 'tamaño', 'accesorios'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setPestaña(t)}
@@ -118,14 +128,14 @@ export default function CustomizadorAvatar({ personalizacion, onCambiar, abierto
           {pestaña === 'accesorios' && (
             <div style={estilos.seccion}>
               {[
-                { clave: 'sombrero', etiqueta: 'Sombrero' },
-                { clave: 'gafas', etiqueta: 'Gafas' },
-                { clave: 'mochila', etiqueta: 'Mochila' },
+                { clave: 'sombrero' as const, etiqueta: 'Sombrero' },
+                { clave: 'gafas' as const, etiqueta: 'Gafas' },
+                { clave: 'mochila' as const, etiqueta: 'Mochila' },
               ].map(({ clave, etiqueta }) => (
                 <label key={clave} style={estilos.checkboxFila}>
                   <input
                     type="checkbox"
-                    checked={personalizacion.accesorios[clave]}
+                    checked={!!personalizacion.accesorios[clave]}
                     onChange={(e) => actualizarAccesorio(clave, e.target.checked)}
                   />
                   {etiqueta}
@@ -136,10 +146,10 @@ export default function CustomizadorAvatar({ personalizacion, onCambiar, abierto
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-const estilos = {
+const estilos: Record<string, React.CSSProperties> = {
   contenedor: {
     position: 'absolute',
     bottom: '16px',
@@ -150,6 +160,7 @@ const estilos = {
     flexDirection: 'column',
     alignItems: 'flex-end',
     gap: '8px',
+    zIndex: 10,
   },
   botonToggle: {
     background: '#2c3e50',
@@ -161,11 +172,12 @@ const estilos = {
     cursor: 'pointer',
   },
   panel: {
-    background: 'rgba(20,20,20,0.9)',
+    background: 'rgba(20,20,20,0.95)',
     color: '#fff',
     padding: '14px',
     borderRadius: '12px',
     width: '260px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
   },
   tabs: { display: 'flex', gap: '6px', marginBottom: '12px' },
   tab: {
@@ -192,4 +204,6 @@ const estilos = {
   inputColor: { width: '100%', height: '32px', border: 'none', borderRadius: '6px', cursor: 'pointer' },
   slider: { width: '100%' },
   checkboxFila: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' },
-}
+};
+
+export default CustomizadorAvatar;

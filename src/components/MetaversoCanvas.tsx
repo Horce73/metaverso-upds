@@ -1,10 +1,16 @@
-import React, { useRef, useEffect } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import React, { useRef, useEffect, useState } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Stars } from '@react-three/drei';
 import { Socket } from 'socket.io-client';
 import * as THREE from 'three';
-import { Avatar3D } from './Avatar3D.js';
 import { AudioClient } from './AudioClient.js';
+
+// Componentes 3D unificados
+import { Campus } from './mundo3d/Campus.js';
+import { Door } from './mundo3d/Door.js';
+import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
+import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
+import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 
 interface MetaversoCanvasProps {
   socket: Socket;
@@ -12,238 +18,124 @@ interface MetaversoCanvasProps {
   isAula: boolean;
   localAvatar: any;
   remoteUsers: { [socketId: string]: any };
+  onUpdateAvatarPersonalization?: (nueva: PersonalizacionAvatar) => void;
 }
 
 // Subcomponente de Controles de Movimiento y Cámara del Jugador Local
-const PlayerController: React.FC<{
+const LocalPlayerController: React.FC<{
   socket: Socket;
   audioClient: AudioClient | null;
-  isAula: boolean;
   localAvatar: any;
+  personalizacion: PersonalizacionAvatar;
+  avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
-}> = ({ socket, audioClient, isAula, localAvatar, onMove }) => {
-  const { camera } = useThree();
-  const positionRef = useRef<[number, number, number]>([0, 0, 0]);
-  const rotationRef = useRef<[number, number, number]>([0, 0, 0]);
-  
-  // Teclas presionadas
-  const keys = useRef({
-    w: false,
-    a: false,
-    s: false,
-    d: false
-  });
+}> = ({ socket, audioClient, localAvatar, personalizacion, avatarEstadoRef, onMove }) => {
+  const handleUpdatePosicion = (posicion: THREE.Vector3, angulo: number) => {
+    avatarEstadoRef.current.posicion.copy(posicion);
+    avatarEstadoRef.current.angulo = angulo;
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k === 'w' || k === 'arrowup') keys.current.w = true;
-      if (k === 's' || k === 'arrowdown') keys.current.s = true;
-      if (k === 'a' || k === 'arrowleft') keys.current.a = true;
-      if (k === 'd' || k === 'arrowright') keys.current.d = true;
-    };
+    const posArray: [number, number, number] = [posicion.x, posicion.y, posicion.z];
+    const rotArray: [number, number, number] = [0, angulo, 0];
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      const k = e.key.toLowerCase();
-      if (k === 'w' || k === 'arrowup') keys.current.w = false;
-      if (k === 's' || k === 'arrowdown') keys.current.s = false;
-      if (k === 'a' || k === 'arrowleft') keys.current.a = false;
-      if (k === 'd' || k === 'arrowright') keys.current.d = false;
-    };
+    onMove(posArray, rotArray);
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    // Emitir socket
+    socket.emit('move', {
+      position: posArray,
+      rotation: rotArray,
+    });
 
-    // Ubicar la cámara detrás del jugador inicialmente
-    camera.position.set(0, 5, 8);
-    camera.lookAt(0, 0, 0);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [camera]);
-
-  // Actualizar movimiento cada frame (useFrame corre en el loop de R3F)
-  useFrame((_state, delta) => {
-    let moved = false;
-    const speed = 5 * delta; // Velocidad del avatar
-    const rotSpeed = 3 * delta; // Velocidad de rotación de la cámara/avatar
-
-    const currentPos = [...positionRef.current] as [number, number, number];
-    const currentRot = [...rotationRef.current] as [number, number, number];
-
-    // Rotar dirección basándonos en la cámara
-    if (keys.current.a) {
-      currentRot[1] += rotSpeed;
-      moved = true;
+    // Actualizar VoIP listener
+    if (audioClient) {
+      audioClient.updateListenerPosition(posArray, rotArray);
     }
-    if (keys.current.d) {
-      currentRot[1] -= rotSpeed;
-      moved = true;
-    }
-
-    // Avanzar y retroceder en la dirección del ángulo
-    if (keys.current.w) {
-      currentPos[0] -= Math.sin(currentRot[1]) * speed;
-      currentPos[2] -= Math.cos(currentRot[1]) * speed;
-      moved = true;
-    }
-    if (keys.current.s) {
-      currentPos[0] += Math.sin(currentRot[1]) * speed;
-      currentPos[2] += Math.cos(currentRot[1]) * speed;
-      moved = true;
-    }
-
-    // Límites del escenario para evitar caer al vacío (Colisión perimetral básica)
-    const limit = isAula ? 18 : 45; // El aula es más chica que el campus
-    if (currentPos[0] > limit) currentPos[0] = limit;
-    if (currentPos[0] < -limit) currentPos[0] = -limit;
-    if (currentPos[2] > limit) currentPos[2] = limit;
-    if (currentPos[2] < -limit) currentPos[2] = -limit;
-
-    if (moved) {
-      positionRef.current = currentPos;
-      rotationRef.current = currentRot;
-
-      // Notificar al estado padre
-      onMove(currentPos, currentRot);
-
-      // Emitir al servidor mediante Sockets
-      socket.emit('move', {
-        position: currentPos,
-        rotation: currentRot
-      });
-
-      // Actualizar posición del listener en el VoIP para el audio espacial
-      if (audioClient) {
-        audioClient.updateListenerPosition(currentPos, currentRot);
-      }
-    }
-
-    // Hacer que la cámara siga al jugador local suavemente (Third Person Camera)
-    const targetCamX = currentPos[0] + Math.sin(currentRot[1]) * 6;
-    const targetCamY = currentPos[1] + 4;
-    const targetCamZ = currentPos[2] + Math.cos(currentRot[1]) * 6;
-
-    camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetCamX, 0.1);
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, 0.1);
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCamZ, 0.1);
-    
-    // Enfocar la cámara hacia el avatar del jugador
-    camera.lookAt(currentPos[0], currentPos[1] + 1, currentPos[2]);
-  });
+  };
 
   return (
-    <Avatar3D
-      position={positionRef.current}
-      rotation={rotationRef.current}
-      nombreVisible={localAvatar?.nombre_visible || 'Tú'}
-      apariencia={localAvatar?.apariencia || {}}
+    <AvatarModel
+      nombre={localAvatar?.nombre_visible || 'Tú'}
+      personalizacion={personalizacion}
+      position={[0, 0, 5]}
       isLocal={true}
+      onUpdatePosicion={handleUpdatePosicion}
     />
   );
 };
 
-// Componente para renderizar el entorno 3D
-const Escenario: React.FC<{ isAula: boolean }> = ({ isAula }) => {
+// Detector de cercanía al portón de asistencia
+const DetectorPuerta: React.FC<{
+  avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
+  posicionPuerta: THREE.Vector3;
+  onTrigger: () => void;
+}> = ({ avatarEstadoRef, posicionPuerta, onTrigger }) => {
+  const ultimoTriggerRef = useRef(0);
+
+  useFrame(() => {
+    if (!avatarEstadoRef.current?.posicion) return;
+    const distancia = avatarEstadoRef.current.posicion.distanceTo(posicionPuerta);
+    const ahora = Date.now();
+    if (distancia <= 2.5 && ahora - ultimoTriggerRef.current > 10000) {
+      ultimoTriggerRef.current = ahora;
+      onTrigger();
+    }
+  });
+
+  return null;
+};
+
+// Elementos del Aula Virtual (Mesas, Pizarra 3D, Paredes)
+const EscenarioAula: React.FC = () => {
   return (
     <group>
-      {/* Luz Ambiental */}
       <ambientLight intensity={0.7} />
-      
-      {/* Luz Direccional que produce sombras */}
-      <directionalLight
-        position={[10, 20, 10]}
-        intensity={1.2}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
+      <directionalLight position={[10, 20, 10]} intensity={1.2} castShadow />
 
-      {/* Piso principal */}
+      {/* Piso */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[isAula ? 40 : 100, isAula ? 40 : 100]} />
-        <meshStandardMaterial color={isAula ? '#2b2d35' : '#14341c'} roughness={0.9} />
+        <planeGeometry args={[40, 40]} />
+        <meshStandardMaterial color="#2b2d35" roughness={0.9} />
+      </mesh>
+      <gridHelper args={[40, 20, '#5b82f6', '#26344d']} position={[0, 0.01, 0]} />
+
+      {/* Pizarrón del aula (3D) */}
+      <mesh position={[0, 2, -19]}>
+        <boxGeometry args={[12, 5, 0.2]} />
+        <meshStandardMaterial color="#0f172a" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 2, -18.89]}>
+        <boxGeometry args={[11.6, 4.6, 0.02]} />
+        <meshStandardMaterial color="#0b0f19" roughness={0.1} emissive="#111" />
       </mesh>
 
-      {/* Rejilla decorativa */}
-      <gridHelper args={[isAula ? 40 : 100, isAula ? 20 : 50, '#5b82f6', '#26344d']} position={[0, 0.01, 0]} />
+      {/* Escritorio del docente */}
+      <mesh position={[0, 0.5, -14]} castShadow receiveShadow>
+        <boxGeometry args={[4, 1, 1.5]} />
+        <meshStandardMaterial color="#475569" />
+      </mesh>
 
-      {isAula ? (
-        // ELEMENTOS DEL AULA VIRTUAL (Mesas, Sillas, Pizarrón)
-        <group>
-          {/* Pizarrón del aula (3D) */}
-          <mesh position={[0, 2, -19]}>
-            <boxGeometry args={[12, 5, 0.2]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.5} />
+      {/* Sillas / Cubos para estudiantes */}
+      {[-6, -2, 2, 6].map((x) =>
+        [-8, -4, 0, 4].map((z) => (
+          <mesh key={`silla-${x}-${z}`} position={[x, 0.3, z]} castShadow>
+            <boxGeometry args={[0.7, 0.6, 0.7]} />
+            <meshStandardMaterial color="#1e293b" />
           </mesh>
-          <mesh position={[0, 2, -18.89]}>
-            <boxGeometry args={[11.6, 4.6, 0.02]} />
-            <meshStandardMaterial color="#0b0f19" roughness={0.1} emissive="#111" />
-          </mesh>
-          
-          {/* Escritorio del docente */}
-          <mesh position={[0, 0.5, -14]} castShadow receiveShadow>
-            <boxGeometry args={[4, 1, 1.5]} />
-            <meshStandardMaterial color="#475569" />
-          </mesh>
-
-          {/* Sillas / Cubos para estudiantes */}
-          {[-6, -2, 2, 6].map((x) => 
-            [-8, -4, 0, 4].map((z) => (
-              <mesh key={`silla-${x}-${z}`} position={[x, 0.3, z]} castShadow>
-                <boxGeometry args={[0.7, 0.6, 0.7]} />
-                <meshStandardMaterial color="#1e293b" />
-              </mesh>
-            ))
-          )}
-
-          {/* Paredes del Aula */}
-          <mesh position={[0, 4, -20]} receiveShadow>
-            <boxGeometry args={[40, 8, 0.5]} />
-            <meshStandardMaterial color="#1e2028" />
-          </mesh>
-          <mesh position={[-20, 4, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-            <boxGeometry args={[40, 8, 0.5]} />
-            <meshStandardMaterial color="#1e2028" />
-          </mesh>
-          <mesh position={[20, 4, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
-            <boxGeometry args={[40, 8, 0.5]} />
-            <meshStandardMaterial color="#1e2028" />
-          </mesh>
-        </group>
-      ) : (
-        // ELEMENTOS DEL CAMPUS CENTRAL
-        <group>
-          {/* Edificio de la Facultad (Bloque Central) */}
-          <mesh position={[0, 8, -35]} castShadow receiveShadow>
-            <boxGeometry args={[30, 16, 12]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.3} />
-          </mesh>
-          {/* Letrero UPDS */}
-          <mesh position={[0, 14, -28.9]}>
-            <boxGeometry args={[8, 2, 0.2]} />
-            <meshStandardMaterial color="#123bb6" />
-          </mesh>
-
-          {/* Árboles abstractos (Tronco + Esfera) */}
-          {[-25, -15, 15, 25].map((x) => 
-            [-20, 0, 20].map((z) => (
-              <group key={`arbol-${x}-${z}`} position={[x, 0, z]}>
-                <mesh position={[0, 1.5, 0]} castShadow>
-                  <cylinderGeometry args={[0.2, 0.3, 3, 8]} />
-                  <meshStandardMaterial color="#78350f" />
-                </mesh>
-                <mesh position={[0, 3.5, 0]} castShadow>
-                  <sphereGeometry args={[1.5, 16, 16]} />
-                  <meshStandardMaterial color="#065f46" roughness={0.8} />
-                </mesh>
-              </group>
-            ))
-          )}
-        </group>
+        ))
       )}
+
+      {/* Paredes */}
+      <mesh position={[0, 4, -20]} receiveShadow userData={{ esPared: true }}>
+        <boxGeometry args={[40, 8, 0.5]} />
+        <meshStandardMaterial color="#1e2028" />
+      </mesh>
+      <mesh position={[-20, 4, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow userData={{ esPared: true }}>
+        <boxGeometry args={[40, 8, 0.5]} />
+        <meshStandardMaterial color="#1e2028" />
+      </mesh>
+      <mesh position={[20, 4, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow userData={{ esPared: true }}>
+        <boxGeometry args={[40, 8, 0.5]} />
+        <meshStandardMaterial color="#1e2028" />
+      </mesh>
     </group>
   );
 };
@@ -253,19 +145,41 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   audioClient,
   isAula,
   localAvatar,
-  remoteUsers
+  remoteUsers,
+  onUpdateAvatarPersonalization,
 }) => {
-  // Actualizar posiciones de VoIP de otros usuarios a medida que se mueven en 3D
-  const handleLocalMove = (_pos: [number, number, number], _rot: [number, number, number]) => {
-    // Espacio para lógica adicional si se requiere
+  const avatarEstadoRef = useRef<AvatarEstadoRef>({
+    posicion: new THREE.Vector3(0, 0, 5),
+    angulo: 0,
+  });
+
+  const [panelCustomizerAbierto, setPanelCustomizerAbierto] = useState(false);
+  const [personalizacion, setPersonalizacion] = useState<PersonalizacionAvatar>(() => {
+    if (localAvatar?.apariencia && Object.keys(localAvatar.apariencia).length > 0) {
+      return { ...PERSONALIZACION_POR_DEFECTO, ...localAvatar.apariencia };
+    }
+    return PERSONALIZACION_POR_DEFECTO;
+  });
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleCambiarPersonalizacion = (nueva: PersonalizacionAvatar) => {
+    setPersonalizacion(nueva);
+    onUpdateAvatarPersonalization?.(nueva);
+  };
+
+  const POSICION_PUERTA = new THREE.Vector3(0, 0, -5);
+
+  const handleTriggerPuerta = () => {
+    setToastMessage('📍 ¡Has llegado al portón principal del Campus UPDS!');
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
   useEffect(() => {
-    // Sincronizar las posiciones de audio en el cliente VoIP
     if (audioClient) {
       Object.keys(remoteUsers).forEach((socketId) => {
         const user = remoteUsers[socketId];
-        if (user.peerId) {
+        if (user.peerId && user.position) {
           audioClient.updateSourcePosition(user.peerId, user.position);
         }
       });
@@ -273,48 +187,99 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   }, [remoteUsers, audioClient]);
 
   return (
-    <div className="canvas-container">
-      <Canvas shadows>
-        {/* Fondo del cielo estrellado premium */}
-        <color attach="background" args={['#050508']} />
-        <Stars radius={100} depth={50} count={2000} factor={4} saturation={0} fade speed={1} />
+    <div className="canvas-container" style={{ position: 'relative', width: '100%', height: '100vh' }}>
+      <Canvas shadows camera={{ fov: 60, position: [0, 3, 10] }}>
+        <color attach="background" args={[isAula ? '#050508' : '#87ceeb']} />
+        {!isAula && <Stars radius={100} depth={50} count={1500} factor={4} saturation={0} fade speed={1} />}
 
-        {/* Escenario 3D */}
-        <Escenario isAula={isAula} />
-
-        {/* Controlador del Jugador Local */}
-        <PlayerController
-          socket={socket}
-          audioClient={audioClient}
-          isAula={isAula}
-          localAvatar={localAvatar}
-          onMove={handleLocalMove}
+        {/* Luces principales */}
+        <ambientLight intensity={isAula ? 0.6 : 0.7} />
+        <directionalLight
+          position={[10, 20, 10]}
+          intensity={1.2}
+          castShadow
+          shadow-mapSize={[1024, 1024]}
         />
 
-        {/* Renderizado de los demás Avatares en la escena */}
+        {/* Escenario 3D */}
+        {isAula ? (
+          <EscenarioAula />
+        ) : (
+          <group>
+            <Campus />
+            <Door position={[POSICION_PUERTA.x, POSICION_PUERTA.y, POSICION_PUERTA.z]} />
+            <DetectorPuerta
+              avatarEstadoRef={avatarEstadoRef}
+              posicionPuerta={POSICION_PUERTA}
+              onTrigger={handleTriggerPuerta}
+            />
+          </group>
+        )}
+
+        {/* Controlador del Jugador Local */}
+        <LocalPlayerController
+          socket={socket}
+          audioClient={audioClient}
+          localAvatar={localAvatar}
+          personalizacion={personalizacion}
+          avatarEstadoRef={avatarEstadoRef}
+          onMove={() => {}}
+        />
+
+        {/* Cámara en 3ra Persona con seguimiento suave y colisiones */}
+        <CameraRig avatarEstadoRef={avatarEstadoRef} />
+
+        {/* Renderizado de Avatares Remotos */}
         {Object.keys(remoteUsers).map((socketId) => {
           const u = remoteUsers[socketId];
+          const aparienciaRemota: PersonalizacionAvatar = u.apariencia && Object.keys(u.apariencia).length > 0
+            ? { ...PERSONALIZACION_POR_DEFECTO, ...u.apariencia }
+            : PERSONALIZACION_POR_DEFECTO;
+
           return (
-            <Avatar3D
+            <AvatarModel
               key={socketId}
-              position={u.position}
-              rotation={u.rotation}
-              nombreVisible={u.nombreVisible}
-              apariencia={u.apariencia}
+              nombre={u.nombreVisible || 'Estudiante'}
+              personalizacion={aparienciaRemota}
+              position={u.position || [0, 0, 0]}
+              rotation={u.rotation || [0, 0, 0]}
               isLocal={false}
             />
           );
         })}
-
-        {/* Controles para rotar la cámara libremente si se desea (deshabilitado el paneo para mantener el foco en tercera persona) */}
-        <OrbitControls
-          enableZoom={true}
-          enablePan={false}
-          maxPolarAngle={Math.PI / 2.1} // Evitar pasar por debajo del suelo
-          minDistance={3}
-          maxDistance={25}
-        />
       </Canvas>
+
+      {/* UI Flotante de Personalización del Avatar */}
+      <CustomizadorAvatar
+        personalizacion={personalizacion}
+        onCambiar={handleCambiarPersonalizacion}
+        abierto={panelCustomizerAbierto}
+        onToggle={() => setPanelCustomizerAbierto((v) => !v)}
+      />
+
+      {/* Toast Notificación */}
+      {toastMessage && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(30, 41, 59, 0.95)',
+            color: '#fff',
+            padding: '10px 20px',
+            borderRadius: '10px',
+            border: '1px solid #3b82f6',
+            fontWeight: 600,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+            zIndex: 100,
+          }}
+        >
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 };
+
+export default MetaversoCanvas;
