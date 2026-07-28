@@ -15,7 +15,7 @@ interface User {
   email: string;
   nombre: string;
   apellido: string;
-  rol: 'estudiante' | 'docente' | 'admin' | 'invitado';
+  rol: 'estudiante' | 'docente' | 'administrador' | 'invitado';
   isGuest?: boolean;
 }
 
@@ -555,7 +555,7 @@ function App() {
         </div>
 
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {user.rol === 'admin' && (
+          {user.rol === 'administrador' && (
             <button className="btn-primary" onClick={() => setShowAdminPanel(true)}>
               🛡️ Panel Admin
             </button>
