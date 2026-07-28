@@ -356,7 +356,7 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
     const roles = rolesRes.rows.map((r: any) => r.nombre);
 
     let espaciosRes;
-    if (roles.includes('admin') || roles.includes('docente')) {
+    if (roles.includes('administrador') || roles.includes('docente')) {
       espaciosRes = await pool.query(
         `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
                 a.nombre AS asignatura, a.codigo AS asignatura_codigo,
@@ -508,6 +508,762 @@ app.get('/api/admin/bitacora', authenticateJWT, requiereAdmin, async (req: any, 
   } catch (err) {
     console.error('Error al obtener bitacora:', err);
     res.status(500).json({ error: 'Error de servidor' });
+  }
+});
+
+// ── Admin: Dashboard (stats + alertas calculadas al vuelo) ──────────────────
+app.get('/api/admin/dashboard', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { rows: [usuariosRow] } = await pool.query(`
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE activo)::int AS activos,
+             COUNT(*) FILTER (WHERE creado_en >= NOW() - INTERVAL '7 days')::int AS nuevos_7d
+      FROM usuarios
+    `);
+
+    const { rows: rolRows } = await pool.query(`
+      SELECT r.nombre, COUNT(*)::int AS cantidad
+      FROM usuario_roles ur
+      JOIN roles r ON r.id = ur.rol_id
+      JOIN usuarios u ON u.id = ur.usuario_id
+      WHERE u.activo = TRUE
+      GROUP BY r.nombre
+    `);
+    const por_rol: Record<string, number> = { administrador: 0, docente: 0, estudiante: 0 };
+    for (const r of rolRows) {
+      if (r.nombre in por_rol) por_rol[r.nombre] = r.cantidad;
+    }
+
+    const { rows: espacioRows } = await pool.query(`
+      SELECT e.id, e.nombre, e.tipo, e.capacidad_max,
+             COALESCE(oc.ocupacion, 0)::int AS ocupacion_actual
+      FROM espacios e
+      LEFT JOIN (
+        SELECT sc.espacio_id, COUNT(*)::int AS ocupacion
+        FROM sesiones_clase sc
+        JOIN asistencias a ON a.sesion_id = sc.id AND a.hora_salida IS NULL
+        WHERE sc.estado = 'en_curso'
+        GROUP BY sc.espacio_id
+      ) oc ON oc.espacio_id = e.id
+      WHERE e.activo = TRUE
+      ORDER BY e.id
+    `);
+    const espacios = {
+      total_activos: espacioRows.length,
+      campus: espacioRows.filter((e: any) => e.tipo === 'campus').length,
+      aulas: espacioRows.filter((e: any) => e.tipo === 'aula').length,
+      capacidad_total: espacioRows.reduce((sum: number, e: any) => sum + e.capacidad_max, 0),
+      ocupacion_actual: espacioRows.reduce((sum: number, e: any) => sum + e.ocupacion_actual, 0),
+      detalle: espacioRows.map((e: any) => ({
+        id: e.id, nombre: e.nombre, tipo: e.tipo,
+        capacidad_max: e.capacidad_max, ocupacion_actual: e.ocupacion_actual
+      }))
+    };
+
+    const { rows: [carrerasRow] } = await pool.query(`SELECT COUNT(*) FILTER (WHERE activa)::int AS n FROM carreras`);
+    const { rows: [asignaturasRow] } = await pool.query(`SELECT COUNT(*) FILTER (WHERE activa)::int AS n FROM asignaturas`);
+    const { rows: [inscripcionesRow] } = await pool.query(`SELECT COUNT(*)::int AS n FROM inscripciones`);
+    const { rows: [asistenciasRow] } = await pool.query(`
+      SELECT COUNT(*) FILTER (WHERE estado IN ('presente','tarde'))::int AS buenas,
+             COUNT(*)::int AS total
+      FROM asistencias
+    `);
+    const asistencia_promedio_pct = asistenciasRow.total > 0
+      ? Math.round((asistenciasRow.buenas / asistenciasRow.total) * 100)
+      : 0;
+
+    const academico = {
+      carreras_activas: carrerasRow.n,
+      asignaturas_activas: asignaturasRow.n,
+      inscripciones_total: inscripcionesRow.n,
+      asistencia_promedio_pct
+    };
+
+    const { rows: diaRows } = await pool.query(`
+      SELECT TO_CHAR(fecha, 'YYYY-MM-DD') AS dia, COUNT(*)::int AS eventos
+      FROM bitacora
+      WHERE fecha >= NOW() - INTERVAL '7 days'
+      GROUP BY dia
+      ORDER BY dia
+    `);
+    const porDiaMap = new Map<string, number>(diaRows.map((r: any) => [r.dia, r.eventos]));
+    const por_dia_7d: { fecha: string; eventos: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      por_dia_7d.push({ fecha: key, eventos: porDiaMap.get(key) || 0 });
+    }
+
+    const { rows: [eventos24hRow] } = await pool.query(`
+      SELECT COUNT(*)::int AS n FROM bitacora WHERE fecha >= NOW() - INTERVAL '24 hours'
+    `);
+
+    const { rows: ultimosRows } = await pool.query(`
+      SELECT b.id, b.usuario_id, b.evento, b.detalle, b.ip, b.fecha, u.email, u.nombre, u.apellido
+      FROM bitacora b
+      LEFT JOIN usuarios u ON u.id = b.usuario_id
+      ORDER BY b.fecha DESC
+      LIMIT 10
+    `);
+
+    const actividad = {
+      por_dia_7d,
+      eventos_24h: eventos24hRow.n,
+      ultimos: ultimosRows
+    };
+
+    // ── Alertas (calculadas al vuelo, sin tabla nueva) ──────────────────────
+    const alertas: Array<{ tipo: string; severidad: string; mensaje: string; entidad?: { tipo: string; id: number } }> = [];
+
+    for (const e of espacioRows) {
+      const ratio = e.capacidad_max > 0 ? e.ocupacion_actual / e.capacidad_max : 0;
+      if (ratio >= 1) {
+        alertas.push({
+          tipo: 'capacidad', severidad: 'critical',
+          mensaje: `"${e.nombre}" está a capacidad máxima (${e.ocupacion_actual}/${e.capacidad_max})`,
+          entidad: { tipo: 'espacio', id: e.id }
+        });
+      } else if (ratio >= 0.9) {
+        alertas.push({
+          tipo: 'capacidad', severidad: 'warning',
+          mensaje: `"${e.nombre}" cerca de su capacidad máxima (${e.ocupacion_actual}/${e.capacidad_max})`,
+          entidad: { tipo: 'espacio', id: e.id }
+        });
+      }
+    }
+
+    const { rows: usuariosSinRol } = await pool.query(`
+      SELECT u.id, u.nombre, u.apellido
+      FROM usuarios u
+      LEFT JOIN usuario_roles ur ON ur.usuario_id = u.id
+      WHERE u.activo = TRUE AND ur.usuario_id IS NULL
+    `);
+    for (const u of usuariosSinRol) {
+      alertas.push({
+        tipo: 'integridad', severidad: 'warning',
+        mensaje: `El usuario "${u.nombre} ${u.apellido}" está activo pero no tiene ningún rol asignado`,
+        entidad: { tipo: 'usuario', id: u.id }
+      });
+    }
+
+    const { rows: aulasInactivas } = await pool.query(`
+      SELECT e.id, e.nombre
+      FROM espacios e
+      JOIN asignaturas a ON a.id = e.asignatura_id
+      WHERE e.tipo = 'aula' AND e.activo = TRUE AND a.activa = FALSE
+    `);
+    for (const e of aulasInactivas) {
+      alertas.push({
+        tipo: 'integridad', severidad: 'warning',
+        mensaje: `El aula "${e.nombre}" está activa pero su asignatura fue desactivada`,
+        entidad: { tipo: 'espacio', id: e.id }
+      });
+    }
+
+    const { rows: asignaturasSinEspacio } = await pool.query(`
+      SELECT a.id, a.nombre
+      FROM asignaturas a
+      LEFT JOIN espacios e ON e.asignatura_id = a.id
+      WHERE a.activa = TRUE
+      GROUP BY a.id, a.nombre
+      HAVING COUNT(e.id) = 0
+    `);
+    for (const a of asignaturasSinEspacio) {
+      alertas.push({
+        tipo: 'integridad', severidad: 'warning',
+        mensaje: `La asignatura "${a.nombre}" está activa pero no tiene ningún aula creada`,
+        entidad: { tipo: 'asignatura', id: a.id }
+      });
+    }
+
+    const { rows: carrerasSinAsignaturas } = await pool.query(`
+      SELECT c.id, c.nombre
+      FROM carreras c
+      LEFT JOIN asignaturas a ON a.carrera_id = c.id AND a.activa = TRUE
+      WHERE c.activa = TRUE
+      GROUP BY c.id, c.nombre
+      HAVING COUNT(a.id) = 0
+    `);
+    for (const c of carrerasSinAsignaturas) {
+      alertas.push({
+        tipo: 'integridad', severidad: 'warning',
+        mensaje: `La carrera "${c.nombre}" está activa pero no tiene ninguna asignatura activa`,
+        entidad: { tipo: 'carrera', id: c.id }
+      });
+    }
+
+    const { rows: [nuevos24hRow] } = await pool.query(`
+      SELECT COUNT(*)::int AS n FROM usuarios WHERE creado_en >= NOW() - INTERVAL '24 hours'
+    `);
+    if (nuevos24hRow.n > 0) {
+      alertas.push({ tipo: 'info', severidad: 'info', mensaje: `${nuevos24hRow.n} usuario(s) nuevo(s) en las últimas 24 horas` });
+    }
+
+    const { rows: [clasesHoyRow] } = await pool.query(`
+      SELECT COUNT(*)::int AS n FROM sesiones_clase WHERE inicio_real >= CURRENT_DATE
+    `);
+    if (clasesHoyRow.n > 0) {
+      alertas.push({ tipo: 'info', severidad: 'info', mensaje: `${clasesHoyRow.n} sesión(es) de clase iniciada(s) hoy` });
+    }
+
+    const orden: Record<string, number> = { critical: 0, warning: 1, info: 2 };
+    alertas.sort((a, b) => orden[a.severidad] - orden[b.severidad]);
+
+    res.json({
+      stats: {
+        usuarios: { total: usuariosRow.total, activos: usuariosRow.activos, por_rol, nuevos_7d: usuariosRow.nuevos_7d },
+        espacios,
+        academico,
+        actividad
+      },
+      alertas
+    });
+  } catch (err) {
+    console.error('Error al obtener dashboard:', err);
+    res.status(500).json({ error: 'Error al obtener el dashboard' });
+  }
+});
+
+// ── Admin: Gestión de Usuarios ──────────────────────────────────────────────
+
+// Listar todos los usuarios (con roles y perfil)
+app.get('/api/admin/usuarios', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { rows: usuarios } = await pool.query(`
+      SELECT u.id, u.email, u.nombre, u.apellido, u.activo, u.creado_en,
+             COALESCE(
+               ARRAY_AGG(r.nombre) FILTER (WHERE r.nombre IS NOT NULL),
+               '{}'
+             ) AS roles
+      FROM usuarios u
+      LEFT JOIN usuario_roles ur ON ur.usuario_id = u.id
+      LEFT JOIN roles r ON r.id = ur.rol_id
+      GROUP BY u.id
+      ORDER BY u.id
+    `);
+    res.json(usuarios);
+  } catch (err) {
+    console.error('Error al listar usuarios:', err);
+    res.status(500).json({ error: 'Error al listar usuarios' });
+  }
+});
+
+// Obtener un usuario por ID
+app.get('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(`
+      SELECT u.id, u.email, u.nombre, u.apellido, u.activo, u.creado_en,
+             COALESCE(
+               ARRAY_AGG(r.nombre) FILTER (WHERE r.nombre IS NOT NULL),
+               '{}'
+             ) AS roles
+      FROM usuarios u
+      LEFT JOIN usuario_roles ur ON ur.usuario_id = u.id
+      LEFT JOIN roles r ON r.id = ur.rol_id
+      WHERE u.id = $1
+      GROUP BY u.id
+    `, [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error al obtener usuario:', err);
+    res.status(500).json({ error: 'Error al obtener usuario' });
+  }
+});
+
+// Crear usuario (admin puede crear cualquier rol)
+app.post('/api/admin/usuarios', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  const client = await pool.connect();
+  try {
+    const { email, password, nombre, apellido, rol } = req.body;
+    if (!email || !password || !nombre || !apellido || !rol) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios: email, password, nombre, apellido, rol' });
+    }
+
+    // Validar que el rol exista
+    const { rows: rolesRows } = await pool.query('SELECT id, nombre FROM roles WHERE nombre = $1', [rol]);
+    if (rolesRows.length === 0) {
+      return res.status(400).json({ error: `Rol inválido: ${rol}` });
+    }
+
+    await client.query('BEGIN');
+
+    const hash = await bcrypt.hash(password, 10);
+    const { rows: [newUser] } = await client.query(
+      `INSERT INTO usuarios (email, password_hash, nombre, apellido)
+       VALUES ($1, $2, $3, $4) RETURNING id, email, nombre, apellido, activo, creado_en`,
+      [email, hash, nombre, apellido]
+    );
+
+    await client.query(
+      'INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES ($1, $2, $3)',
+      [newUser.id, rolesRows[0].id, req.user!.userId]
+    );
+
+    // Crear perfil vacío según rol
+    if (rol === 'estudiante') {
+      await client.query('INSERT INTO perfiles_estudiante (usuario_id) VALUES ($1)', [newUser.id]);
+    } else if (rol === 'docente') {
+      await client.query('INSERT INTO perfiles_docente (usuario_id) VALUES ($1)', [newUser.id]);
+    }
+
+    await client.query('COMMIT');
+
+    await bitacora(req.user!.userId, 'crear_usuario', `Creó usuario ${email} (${rol})`, req.ip || '');
+
+    res.status(201).json({ ...newUser, roles: [rol] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if ((err as any).code === '23505') {
+      return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
+    }
+    console.error('Error al crear usuario:', err);
+    res.status(500).json({ error: 'Error al crear usuario' });
+  } finally {
+    client.release();
+  }
+});
+
+// Actualizar usuario (email, nombre, apellido, activo, roles)
+app.put('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { email, nombre, apellido, activo, roles } = req.body;
+
+    await client.query('BEGIN');
+
+    // Actualizar campos básicos
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramIdx = 1;
+
+    if (email !== undefined) { fields.push(`email = $${paramIdx++}`); values.push(email); }
+    if (nombre !== undefined) { fields.push(`nombre = $${paramIdx++}`); values.push(nombre); }
+    if (apellido !== undefined) { fields.push(`apellido = $${paramIdx++}`); values.push(apellido); }
+    if (activo !== undefined) { fields.push(`activo = $${paramIdx++}`); values.push(activo); }
+
+    if (fields.length > 0) {
+      values.push(id);
+      await client.query(`UPDATE usuarios SET ${fields.join(', ')} WHERE id = $${paramIdx}`, values);
+    }
+
+    // Actualizar roles si se proveen
+    if (Array.isArray(roles)) {
+      await client.query('DELETE FROM usuario_roles WHERE usuario_id = $1', [id]);
+      for (const roleName of roles) {
+        const { rows } = await client.query('SELECT id FROM roles WHERE nombre = $1', [roleName]);
+        if (rows.length > 0) {
+          await client.query(
+            'INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES ($1, $2, $3)',
+            [id, rows[0].id, req.user!.userId]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+
+    await bitacora(req.user!.userId, 'editar_usuario', `Editó usuario ID ${id}`, req.ip || '');
+
+    // Devolver usuario actualizado
+    const { rows } = await pool.query(`
+      SELECT u.id, u.email, u.nombre, u.apellido, u.activo, u.creado_en,
+             COALESCE(ARRAY_AGG(r.nombre) FILTER (WHERE r.nombre IS NOT NULL), '{}') AS roles
+      FROM usuarios u
+      LEFT JOIN usuario_roles ur ON ur.usuario_id = u.id
+      LEFT JOIN roles r ON r.id = ur.rol_id
+      WHERE u.id = $1
+      GROUP BY u.id
+    `, [id]);
+    res.json(rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error al actualizar usuario:', err);
+    res.status(500).json({ error: 'Error al actualizar usuario' });
+  } finally {
+    client.release();
+  }
+});
+
+// Resetear contraseña de usuario
+app.put('/api/admin/usuarios/:id/password', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { password } = req.body;
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    const { rowCount } = await pool.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [hash, id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    await bitacora(req.user!.userId, 'reset_password', `Reseteó contraseña del usuario ID ${id}`, req.ip || '');
+    res.json({ message: 'Contraseña actualizada' });
+  } catch (err) {
+    console.error('Error al resetear contraseña:', err);
+    res.status(500).json({ error: 'Error al actualizar contraseña' });
+  }
+});
+
+// Eliminar usuario
+app.delete('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    // No permitir eliminar el propio usuario
+    if (Number(id) === req.user!.userId) {
+      return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
+    }
+    const { rowCount } = await pool.query('DELETE FROM usuarios WHERE id = $1', [id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    await bitacora(req.user!.userId, 'eliminar_usuario', `Eliminó usuario ID ${id}`, req.ip || '');
+    res.json({ message: 'Usuario eliminado' });
+  } catch (err) {
+    console.error('Error al eliminar usuario:', err);
+    res.status(500).json({ error: 'Error al eliminar usuario' });
+  }
+});
+
+// ── Admin: Gestión de Espacios ──────────────────────────────────────────────
+
+// Listar todos los espacios
+app.get('/api/admin/espacios', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT e.id, e.nombre, e.tipo, e.asignatura_id, e.escena_url, e.capacidad_max, e.activo,
+             a.nombre AS asignatura_nombre,
+             c.nombre AS carrera_nombre
+      FROM espacios e
+      LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+      LEFT JOIN carreras c ON c.id = a.carrera_id
+      ORDER BY e.id
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error al listar espacios:', err);
+    res.status(500).json({ error: 'Error al listar espacios' });
+  }
+});
+
+// Crear espacio
+app.post('/api/admin/espacios', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { nombre, tipo, asignatura_id, escena_url, capacidad_max } = req.body;
+    if (!nombre || !tipo) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios: nombre, tipo' });
+    }
+    if (!['campus', 'aula'].includes(tipo)) {
+      return res.status(400).json({ error: 'Tipo inválido. Debe ser: campus o aula' });
+    }
+    if (tipo === 'aula' && !asignatura_id) {
+      return res.status(400).json({ error: 'Las aulas deben estar vinculadas a una asignatura' });
+    }
+    if (tipo === 'campus' && asignatura_id) {
+      return res.status(400).json({ error: 'Los campus no deben tener asignatura' });
+    }
+
+    const url = escena_url || 'https://metaverso-upds.s3.amazonaws.com/scenes/campus-central.glb';
+    const cap = capacidad_max || 40;
+
+    const { rows } = await pool.query(
+      `INSERT INTO espacios (nombre, tipo, asignatura_id, escena_url, capacidad_max)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [nombre, tipo, asignatura_id || null, url, cap]
+    );
+
+    await bitacora(req.user!.userId, 'crear_espacio', `Creó espacio "${nombre}" (${tipo})`, req.ip || '');
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Error al crear espacio:', err);
+    res.status(500).json({ error: 'Error al crear espacio' });
+  }
+});
+
+// Actualizar espacio
+app.put('/api/admin/espacios/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, tipo, asignatura_id, capacidad_max, activo } = req.body;
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramIdx = 1;
+
+    if (nombre !== undefined) { fields.push(`nombre = $${paramIdx++}`); values.push(nombre); }
+    if (tipo !== undefined) { fields.push(`tipo = $${paramIdx++}`); values.push(tipo); }
+    if (asignatura_id !== undefined) { fields.push(`asignatura_id = $${paramIdx++}`); values.push(asignatura_id || null); }
+    if (capacidad_max !== undefined) { fields.push(`capacidad_max = $${paramIdx++}`); values.push(capacidad_max); }
+    if (activo !== undefined) { fields.push(`activo = $${paramIdx++}`); values.push(activo); }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    values.push(id);
+    const { rowCount } = await pool.query(
+      `UPDATE espacios SET ${fields.join(', ')} WHERE id = $${paramIdx}`,
+      values
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Espacio no encontrado' });
+
+    await bitacora(req.user!.userId, 'editar_espacio', `Editó espacio ID ${id}`, req.ip || '');
+
+    const { rows } = await pool.query(`
+      SELECT e.*, a.nombre AS asignatura_nombre, c.nombre AS carrera_nombre
+      FROM espacios e
+      LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+      LEFT JOIN carreras c ON c.id = a.carrera_id
+      WHERE e.id = $1
+    `, [id]);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error al actualizar espacio:', err);
+    res.status(500).json({ error: 'Error al actualizar espacio' });
+  }
+});
+
+// Eliminar espacio
+app.delete('/api/admin/espacios/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { rowCount } = await pool.query('DELETE FROM espacios WHERE id = $1', [id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Espacio no encontrado' });
+
+    await bitacora(req.user!.userId, 'eliminar_espacio', `Eliminó espacio ID ${id}`, req.ip || '');
+    res.json({ message: 'Espacio eliminado' });
+  } catch (err) {
+    console.error('Error al eliminar espacio:', err);
+    res.status(500).json({ error: 'Error al eliminar espacio' });
+  }
+});
+
+// ── Admin: Gestión de Carreras ──────────────────────────────────────────────
+
+// Listar carreras (con conteo de materias)
+app.get('/api/admin/carreras', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT c.*,
+             COALESCE(m.count, 0) AS materias_count
+      FROM carreras c
+      LEFT JOIN (
+        SELECT carrera_id, COUNT(*) AS count
+        FROM asignaturas WHERE activa = TRUE
+        GROUP BY carrera_id
+      ) m ON m.carrera_id = c.id
+      ORDER BY c.id
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error al listar carreras:', err);
+    res.status(500).json({ error: 'Error al listar carreras' });
+  }
+});
+
+// Crear carrera
+app.post('/api/admin/carreras', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { sigla, nombre, titulo_academico, sistema_ensenanza, modelo_estudio } = req.body;
+    if (!sigla || !nombre || !titulo_academico) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios: sigla, nombre, titulo_academico' });
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO carreras (sigla, nombre, titulo_academico, sistema_ensenanza, modelo_estudio)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [sigla, nombre, titulo_academico, sistema_ensenanza || 'MODULAR', modelo_estudio || 'POR COMPETENCIAS']
+    );
+
+    await bitacora(req.user!.userId, 'crear_carrera', `Creó carrera "${nombre}"`, req.ip || '');
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if ((err as any).code === '23505') {
+      return res.status(409).json({ error: 'Ya existe una carrera con esa sigla o nombre' });
+    }
+    console.error('Error al crear carrera:', err);
+    res.status(500).json({ error: 'Error al crear carrera' });
+  }
+});
+
+// Actualizar carrera
+app.put('/api/admin/carreras/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { sigla, nombre, titulo_academico, sistema_ensenanza, modelo_estudio, activa } = req.body;
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (sigla !== undefined) { fields.push(`sigla = $${idx++}`); values.push(sigla); }
+    if (nombre !== undefined) { fields.push(`nombre = $${idx++}`); values.push(nombre); }
+    if (titulo_academico !== undefined) { fields.push(`titulo_academico = $${idx++}`); values.push(titulo_academico); }
+    if (sistema_ensenanza !== undefined) { fields.push(`sistema_ensenanza = $${idx++}`); values.push(sistema_ensenanza); }
+    if (modelo_estudio !== undefined) { fields.push(`modelo_estudio = $${idx++}`); values.push(modelo_estudio); }
+    if (activa !== undefined) { fields.push(`activa = $${idx++}`); values.push(activa); }
+
+    if (fields.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
+
+    values.push(id);
+    const { rowCount } = await pool.query(`UPDATE carreras SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    if (rowCount === 0) return res.status(404).json({ error: 'Carrera no encontrada' });
+
+    await bitacora(req.user!.userId, 'editar_carrera', `Editó carrera ID ${id}`, req.ip || '');
+    const { rows } = await pool.query('SELECT * FROM carreras WHERE id = $1', [id]);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error al actualizar carrera:', err);
+    res.status(500).json({ error: 'Error al actualizar carrera' });
+  }
+});
+
+// Eliminar carrera
+app.delete('/api/admin/carreras/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    // Verificar que no tenga materias activas
+    const { rows } = await pool.query('SELECT COUNT(*) FROM asignaturas WHERE carrera_id = $1 AND activa = TRUE', [id]);
+    if (Number(rows[0].count) > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar: la carrera tiene materias activas. Desactívela primero.' });
+    }
+    const { rowCount } = await pool.query('DELETE FROM carreras WHERE id = $1', [id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Carrera no encontrada' });
+
+    await bitacora(req.user!.userId, 'eliminar_carrera', `Eliminó carrera ID ${id}`, req.ip || '');
+    res.json({ message: 'Carrera eliminada' });
+  } catch (err) {
+    console.error('Error al eliminar carrera:', err);
+    res.status(500).json({ error: 'Error al eliminar carrera' });
+  }
+});
+
+// ── Admin: Gestión de Asignaturas ───────────────────────────────────────────
+
+// Listar asignaturas (con info de carrera y docente)
+app.get('/api/admin/asignaturas', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT a.*, c.nombre AS carrera_nombre, c.sigla AS carrera_sigla,
+             u.nombre || ' ' || u.apellido AS docente_nombre
+      FROM asignaturas a
+      LEFT JOIN carreras c ON c.id = a.carrera_id
+      LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+      LEFT JOIN usuarios u ON u.id = pd.usuario_id
+      ORDER BY a.id
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error al listar asignaturas:', err);
+    res.status(500).json({ error: 'Error al listar asignaturas' });
+  }
+});
+
+// Crear asignatura
+app.post('/api/admin/asignaturas', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { codigo, nombre, carrera_id, docente_id, gestion } = req.body;
+    if (!codigo || !nombre || !carrera_id || !docente_id || !gestion) {
+      return res.status(400).json({ error: 'Faltan campos obligatorios: codigo, nombre, carrera_id, docente_id, gestion' });
+    }
+
+    // Verificar que el docente tenga perfil de docente
+    const { rows: perfilDocente } = await pool.query('SELECT 1 FROM perfiles_docente WHERE usuario_id = $1', [docente_id]);
+    if (perfilDocente.length === 0) {
+      return res.status(400).json({ error: 'El docente seleccionado no tiene perfil de docente registrado' });
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO asignaturas (codigo, nombre, carrera_id, docente_id, gestion)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [codigo, nombre, carrera_id, docente_id, gestion]
+    );
+
+    await bitacora(req.user!.userId, 'crear_asignatura', `Creó asignatura "${nombre}"`, req.ip || '');
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if ((err as any).code === '23505') {
+      return res.status(409).json({ error: 'Ya existe una asignatura con ese código' });
+    }
+    console.error('Error al crear asignatura:', err);
+    res.status(500).json({ error: 'Error al crear asignatura' });
+  }
+});
+
+// Actualizar asignatura
+app.put('/api/admin/asignaturas/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { codigo, nombre, carrera_id, docente_id, gestion, activa } = req.body;
+
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+
+    if (codigo !== undefined) { fields.push(`codigo = $${idx++}`); values.push(codigo); }
+    if (nombre !== undefined) { fields.push(`nombre = $${idx++}`); values.push(nombre); }
+    if (carrera_id !== undefined) { fields.push(`carrera_id = $${idx++}`); values.push(carrera_id); }
+    if (docente_id !== undefined) { fields.push(`docente_id = $${idx++}`); values.push(docente_id); }
+    if (gestion !== undefined) { fields.push(`gestion = $${idx++}`); values.push(gestion); }
+    if (activa !== undefined) { fields.push(`activa = $${idx++}`); values.push(activa); }
+
+    if (fields.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
+
+    values.push(id);
+    const { rowCount } = await pool.query(`UPDATE asignaturas SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    if (rowCount === 0) return res.status(404).json({ error: 'Asignatura no encontrada' });
+
+    await bitacora(req.user!.userId, 'editar_asignatura', `Editó asignatura ID ${id}`, req.ip || '');
+    const { rows } = await pool.query('SELECT * FROM asignaturas WHERE id = $1', [id]);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error al actualizar asignatura:', err);
+    res.status(500).json({ error: 'Error al actualizar asignatura' });
+  }
+});
+
+// Eliminar asignatura
+app.delete('/api/admin/asignaturas/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
+  try {
+    const { id } = req.params;
+    // Verificar inscripciones activas
+    const { rows } = await pool.query('SELECT COUNT(*) FROM inscripciones WHERE asignatura_id = $1', [id]);
+    if (Number(rows[0].count) > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar: hay estudiantes inscritos en esta asignatura' });
+    }
+    const { rowCount } = await pool.query('DELETE FROM asignaturas WHERE id = $1', [id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Asignatura no encontrada' });
+
+    await bitacora(req.user!.userId, 'eliminar_asignatura', `Eliminó asignatura ID ${id}`, req.ip || '');
+    res.json({ message: 'Asignatura eliminada' });
+  } catch (err) {
+    console.error('Error al eliminar asignatura:', err);
+    res.status(500).json({ error: 'Error al eliminar asignatura' });
+  }
+});
+
+// Helper: listar docentes (para formularios de asignatura)
+app.get('/api/admin/docentes', authenticateJWT, requiereAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT u.id, u.nombre, u.apellido, u.email,
+             pd.codigo_docente, pd.especialidad
+      FROM usuarios u
+      INNER JOIN usuario_roles ur ON ur.usuario_id = u.id
+      INNER JOIN roles r ON r.id = ur.rol_id
+      LEFT JOIN perfiles_docente pd ON pd.usuario_id = u.id
+      WHERE r.nombre = 'docente' AND u.activo = TRUE
+      ORDER BY u.apellido, u.nombre
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('Error al listar docentes:', err);
+    res.status(500).json({ error: 'Error al listar docentes' });
   }
 });
 
