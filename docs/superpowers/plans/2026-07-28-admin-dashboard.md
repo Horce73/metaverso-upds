@@ -629,8 +629,10 @@ git commit -m "feat(admin): add AdminDashboardTab with stat cards, charts, and a
 At the top of `src/components/AdminPanel.tsx`, after the existing imports, add:
 
 ```tsx
-import AdminDashboardTab, { DashboardData, ROLE_COLORS } from './AdminDashboardTab';
+import AdminDashboardTab, { type DashboardData, ROLE_COLORS } from './AdminDashboardTab';
 ```
+
+(Note: `type` is required on `DashboardData` here — this repo's `tsconfig` has `verbatimModuleSyntax` enabled, which rejects importing a type as a plain value import.)
 
 - [ ] **Step 2: Extend the `Tab` type and default tab**
 
