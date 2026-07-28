@@ -86,11 +86,13 @@ app.post('/api/auth/register', async (req, res) => {
 
       await client.query('INSERT INTO datos_personales (usuario_id) VALUES ($1)', [newUser.id]);
 
-      // Crear avatar por defecto (RF-01)
-      const apariencia = JSON.stringify({ color: '#3b82f6', genero: 'n' });
+      // Crear avatar (RF-01)
+      const aparienciaData = req.body.apariencia || { colorRopa: '#3b82f6', colorPiel: '#e0ac69', colorCabello: '#2c1d11', estiloCabello: 'corto', expresionRostro: 'alegre', escala: 1, accesorios: { sombrero: false, gafas: false, mochila: false } };
+      const aparienciaStr = typeof aparienciaData === 'string' ? aparienciaData : JSON.stringify(aparienciaData);
+      const nombreVis = req.body.nombre_visible || `${nombre} ${apellido.charAt(0)}.`;
       await client.query(
         'INSERT INTO avatares (usuario_id, nombre_visible, apariencia) VALUES ($1, $2, $3)',
-        [newUser.id, `${nombre} ${apellido.charAt(0)}.`, apariencia]
+        [newUser.id, nombreVis, aparienciaStr]
       );
 
       // Consentimiento (RNF-03)
