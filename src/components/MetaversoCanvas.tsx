@@ -30,12 +30,12 @@ const LocalPlayerController: React.FC<{
   avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
 }> = ({ socket, audioClient, localAvatar, personalizacion, avatarEstadoRef, onMove }) => {
-  const handleUpdatePosicion = (posicion: THREE.Vector3, angulo: number) => {
+  const handleUpdatePosicion = (posicion: THREE.Vector3, anguloAvatar: number) => {
     avatarEstadoRef.current.posicion.copy(posicion);
-    avatarEstadoRef.current.angulo = angulo;
+    // El angulo de la camara (avatarEstadoRef.current.angulo) se mantiene y controla mediante el arrastre de mouse en CameraRig
 
     const posArray: [number, number, number] = [posicion.x, posicion.y, posicion.z];
-    const rotArray: [number, number, number] = [0, angulo, 0];
+    const rotArray: [number, number, number] = [0, anguloAvatar, 0];
 
     onMove(posArray, rotArray);
 
