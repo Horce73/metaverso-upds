@@ -347,10 +347,9 @@ function App() {
 
         {/* Guía de Teclas */}
         <div className="keys-guide">
-          <div className="keys-row"><span className="key-cap">W</span><span>Avanzar</span></div>
-          <div className="keys-row"><span className="key-cap">S</span><span>Retroceder</span></div>
-          <div className="keys-row"><span className="key-cap">A</span><span className="key-cap">D</span><span>Girar avatar</span></div>
-          <div className="keys-row"><span>Usa el mouse para arrastrar y rotar cámara</span></div>
+          <div className="keys-row"><span className="key-cap">W</span><span className="key-cap">S</span><span>Avanzar / Retroceder</span></div>
+          <div className="keys-row"><span className="key-cap">A</span><span className="key-cap">D</span><span>Mover Izquierda / Derecha</span></div>
+          <div className="keys-row"><span>Arrastra el mouse para rotar la cámara</span></div>
         </div>
 
         {/* Barra superior */}
