@@ -2,11 +2,29 @@ import React, { useState } from 'react';
 import type { PersonalizacionAvatar } from './AvatarModel.js';
 
 const COLORES_ROPA = [
-  '#e67e22', '#3498db', '#e74c3c', '#2ecc71',
+  '#3498db', '#e67e22', '#e74c3c', '#2ecc71',
   '#9b59b6', '#f1c40f', '#1abc9c', '#34495e',
 ];
 
 const TONOS_PIEL = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a21'];
+
+const COLORES_CABELLO = ['#1e1b18', '#2c1d11', '#5a3d28', '#b87333', '#eab308', '#94a3b8', '#3b82f6'];
+
+const ESTILOS_CABELLO: { id: NonNullable<PersonalizacionAvatar['estiloCabello']>; etiqueta: string }[] = [
+  { id: 'corto', etiqueta: 'Corto' },
+  { id: 'tupe', etiqueta: 'Tupé' },
+  { id: 'largo', etiqueta: 'Largo' },
+  { id: 'rizado', etiqueta: 'Rizado' },
+  { id: 'bun', etiqueta: 'Moño' },
+  { id: 'calvo', etiqueta: 'Calvo' },
+];
+
+const EXPRESIONES_ROSTRO: { id: NonNullable<PersonalizacionAvatar['expresionRostro']>; etiqueta: string; emoji: string }[] = [
+  { id: 'alegre', etiqueta: 'Alegre', emoji: '😊' },
+  { id: 'guiño', etiqueta: 'Guiño', emoji: '😉' },
+  { id: 'serio', etiqueta: 'Serio', emoji: '😐' },
+  { id: 'sorprendido', etiqueta: 'Sorprendido', emoji: '😮' },
+];
 
 interface CustomizadorAvatarProps {
   personalizacion: PersonalizacionAvatar;
@@ -21,7 +39,7 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
   abierto,
   onToggle,
 }) => {
-  const [pestaña, setPestaña] = useState<'ropa' | 'piel' | 'tamaño' | 'accesorios'>('ropa');
+  const [pestaña, setPestaña] = useState<'cabello' | 'rostro' | 'ropa' | 'piel' | 'accesorios'>('cabello');
 
   const actualizar = (cambios: Partial<PersonalizacionAvatar>) =>
     onCambiar({ ...personalizacion, ...cambios });
@@ -35,13 +53,13 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
   return (
     <div style={estilos.contenedor}>
       <button style={estilos.botonToggle} onClick={onToggle}>
-        {abierto ? 'Cerrar personalización ✕' : 'Personalizar avatar ✎'}
+        {abierto ? 'Cerrar personalización ✕' : '✨ Personalizar avatar'}
       </button>
 
       {abierto && (
         <div style={estilos.panel}>
           <div style={estilos.tabs}>
-            {(['ropa', 'piel', 'tamaño', 'accesorios'] as const).map((t) => (
+            {(['cabello', 'rostro', 'ropa', 'piel', 'accesorios'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setPestaña(t)}
@@ -55,6 +73,64 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
             ))}
           </div>
 
+          {/* Pestaña Cabello */}
+          {pestaña === 'cabello' && (
+            <div style={estilos.seccion}>
+              <span style={estilos.subtitulo}>Estilo de Cabello:</span>
+              <div style={estilos.gridBotones}>
+                {ESTILOS_CABELLO.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => actualizar({ estiloCabello: item.id })}
+                    style={{
+                      ...estilos.btnOpcion,
+                      ...(personalizacion.estiloCabello === item.id ? estilos.btnOpcionActivo : {}),
+                    }}
+                  >
+                    {item.etiqueta}
+                  </button>
+                ))}
+              </div>
+
+              <span style={{ ...estilos.subtitulo, marginTop: '8px' }}>Color de Cabello:</span>
+              <div style={estilos.swatches}>
+                {COLORES_CABELLO.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => actualizar({ colorCabello: c })}
+                    style={{
+                      ...estilos.swatch,
+                      background: c,
+                      outline: personalizacion.colorCabello === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pestaña Rostro */}
+          {pestaña === 'rostro' && (
+            <div style={estilos.seccion}>
+              <span style={estilos.subtitulo}>Expresión Facial:</span>
+              <div style={estilos.gridBotones}>
+                {EXPRESIONES_ROSTRO.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => actualizar({ expresionRostro: item.id })}
+                    style={{
+                      ...estilos.btnOpcion,
+                      ...(personalizacion.expresionRostro === item.id ? estilos.btnOpcionActivo : {}),
+                    }}
+                  >
+                    {item.emoji} {item.etiqueta}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pestaña Ropa */}
           {pestaña === 'ropa' && (
             <div style={estilos.seccion}>
               <div style={estilos.swatches}>
@@ -65,12 +141,8 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline:
-                        personalizacion.colorRopa === c
-                          ? '3px solid #fff'
-                          : '2px solid rgba(255,255,255,0.2)',
+                      outline: personalizacion.colorRopa === c ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
                     }}
-                    aria-label={`color de ropa ${c}`}
                   />
                 ))}
               </div>
@@ -78,7 +150,7 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 Color personalizado:
                 <input
                   type="color"
-                  value={personalizacion.colorRopa}
+                  value={personalizacion.colorRopa || '#3498db'}
                   onChange={(e) => actualizar({ colorRopa: e.target.value })}
                   style={estilos.inputColor}
                 />
@@ -86,6 +158,7 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
             </div>
           )}
 
+          {/* Pestaña Piel */}
           {pestaña === 'piel' && (
             <div style={estilos.seccion}>
               <div style={estilos.swatches}>
@@ -96,46 +169,26 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline:
-                        personalizacion.colorPiel === c
-                          ? '3px solid #fff'
-                          : '2px solid rgba(255,255,255,0.2)',
+                      outline: personalizacion.colorPiel === c ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
                     }}
-                    aria-label={`tono de piel ${c}`}
                   />
                 ))}
               </div>
             </div>
           )}
 
-          {pestaña === 'tamaño' && (
-            <div style={estilos.seccion}>
-              <label style={estilos.etiquetaInput}>
-                Tamaño: {personalizacion.escala.toFixed(2)}x
-                <input
-                  type="range"
-                  min="0.7"
-                  max="1.4"
-                  step="0.05"
-                  value={personalizacion.escala}
-                  onChange={(e) => actualizar({ escala: parseFloat(e.target.value) })}
-                  style={estilos.slider}
-                />
-              </label>
-            </div>
-          )}
-
+          {/* Pestaña Accesorios */}
           {pestaña === 'accesorios' && (
             <div style={estilos.seccion}>
               {[
-                { clave: 'sombrero' as const, etiqueta: 'Sombrero' },
-                { clave: 'gafas' as const, etiqueta: 'Gafas' },
+                { clave: 'sombrero' as const, etiqueta: 'Sombrero Vaquero' },
+                { clave: 'gafas' as const, etiqueta: 'Gafas de Sol' },
                 { clave: 'mochila' as const, etiqueta: 'Mochila' },
               ].map(({ clave, etiqueta }) => (
                 <label key={clave} style={estilos.checkboxFila}>
                   <input
                     type="checkbox"
-                    checked={!!personalizacion.accesorios[clave]}
+                    checked={!!personalizacion.accesorios?.[clave]}
                     onChange={(e) => actualizarAccesorio(clave, e.target.checked)}
                   />
                   {etiqueta}
@@ -152,58 +205,81 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
 const estilos: Record<string, React.CSSProperties> = {
   contenedor: {
     position: 'absolute',
-    bottom: '16px',
-    right: '16px',
+    bottom: '20px',
+    right: '20px',
     pointerEvents: 'auto',
-    fontFamily: 'system-ui, sans-serif',
+    fontFamily: 'Inter, system-ui, sans-serif',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-end',
     gap: '8px',
-    zIndex: 10,
+    zIndex: 60,
   },
   botonToggle: {
-    background: '#2c3e50',
+    background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)',
     color: '#fff',
-    border: 'none',
-    padding: '10px 16px',
-    borderRadius: '8px',
+    border: '1px solid rgba(255,255,255,0.2)',
+    padding: '10px 18px',
+    borderRadius: '12px',
     fontWeight: 600,
+    fontSize: '0.9rem',
     cursor: 'pointer',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+    transition: 'all 0.2s ease',
   },
   panel: {
-    background: 'rgba(20,20,20,0.95)',
+    background: 'rgba(15, 23, 42, 0.95)',
+    backdropFilter: 'blur(16px)',
+    border: '1px solid rgba(255,255,255,0.1)',
     color: '#fff',
-    padding: '14px',
-    borderRadius: '12px',
-    width: '260px',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+    padding: '16px',
+    borderRadius: '16px',
+    width: '280px',
+    boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
   },
-  tabs: { display: 'flex', gap: '6px', marginBottom: '12px' },
+  tabs: { display: 'flex', gap: '4px', marginBottom: '14px', flexWrap: 'wrap' },
   tab: {
-    flex: 1,
-    background: 'rgba(255,255,255,0.08)',
-    color: '#ccc',
+    flex: '1 1 30%',
+    background: 'rgba(255,255,255,0.06)',
+    color: '#94a3b8',
     border: 'none',
     padding: '6px 4px',
-    borderRadius: '6px',
-    fontSize: '12px',
+    borderRadius: '8px',
+    fontSize: '11px',
+    fontWeight: 500,
     cursor: 'pointer',
   },
-  tabActiva: { background: '#3498db', color: '#fff', fontWeight: 600 },
+  tabActiva: { background: '#2563eb', color: '#fff', fontWeight: 600 },
   seccion: { display: 'flex', flexDirection: 'column', gap: '10px' },
+  subtitulo: { fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 },
+  gridBotones: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' },
+  btnOpcion: {
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '8px',
+    color: '#e2e8f0',
+    padding: '8px',
+    fontSize: '0.8rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  btnOpcionActivo: {
+    background: 'rgba(59, 130, 246, 0.3)',
+    borderColor: '#3b82f6',
+    color: '#60a5fa',
+    fontWeight: 600,
+  },
   swatches: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   swatch: {
-    width: '28px',
-    height: '28px',
+    width: '30px',
+    height: '30px',
     borderRadius: '50%',
     border: 'none',
     cursor: 'pointer',
   },
-  etiquetaInput: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px' },
+  etiquetaInput: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', color: '#cbd5e1' },
   inputColor: { width: '100%', height: '32px', border: 'none', borderRadius: '6px', cursor: 'pointer' },
-  slider: { width: '100%' },
-  checkboxFila: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' },
+  checkboxFila: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#e2e8f0', cursor: 'pointer' },
 };
 
 export default CustomizadorAvatar;
