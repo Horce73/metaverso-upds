@@ -15,7 +15,8 @@ interface User {
   email: string;
   nombre: string;
   apellido: string;
-  rol: 'estudiante' | 'docente' | 'admin' | 'invitado';
+  rol: 'estudiante' | 'docente' | 'admin' | 'administrador' | 'invitado';
+  roles?: string[];
   isGuest?: boolean;
 }
 
@@ -35,12 +36,15 @@ interface Espacio {
   capacidad_max: number;
 }
 
+function getHashRoute(): string {
+  const hash = window.location.hash.replace(/^#/, '');
+  return hash || '/';
+}
+
 function App() {
-  // Control de navegación
-  const [showLanding, setShowLanding] = useState(true);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [showTeacherPanel, setShowTeacherPanel] = useState(false);
-  
+  // Enrutador basado en Hash (URL independiente y persistente)
+  const [route, setRoute] = useState<string>(getHashRoute);
+
   // Autenticación
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string>('');
@@ -55,32 +59,46 @@ function App() {
   const [audioClient, setAudioClient] = useState<AudioClient | null>(null);
   const [peerId, setPeerId] = useState<string>('');
   const [remoteUsers, setRemoteUsers] = useState<{ [socketId: string]: any }>({});
-  
+
   // UI States
   const [customizingAvatar, setCustomizingAvatar] = useState(false);
   const [pizarraAbierta, setPizarraAbierta] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
-  
+
   // Clases y Asistencia (Docente)
   const [sesionClase, setSesionClase] = useState<any>(null);
   const [temaClase, setTemaClase] = useState('');
   const [verReporte, setVerReporte] = useState(false);
   const [reporteAsistencia, setReporteAsistencia] = useState<any[]>([]);
 
-  // Inicializar autenticación desde LocalStorage
+  const navigateTo = (path: string) => {
+    window.location.hash = `#${path}`;
+    setRoute(path);
+  };
+
+  // Escuchar cambios de Hash en la URL
+  useEffect(() => {
+    const handleHashChange = () => {
+      setRoute(getHashRoute());
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Inicializar y restaurar autenticación y espacio activo tras F5
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     const savedAvatar = localStorage.getItem('avatar');
+    const savedEspacio = sessionStorage.getItem('espacioActivo');
 
     if (savedToken && savedUser) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
-      if (savedAvatar) {
-        setAvatar(JSON.parse(savedAvatar));
-      }
+      if (savedAvatar) setAvatar(JSON.parse(savedAvatar));
+      if (savedEspacio) setEspacioActivo(JSON.parse(savedEspacio));
     }
   }, []);
 
@@ -89,7 +107,7 @@ function App() {
     if (!token) return;
 
     fetch('/api/espacios', {
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
       .then((data) => {
@@ -100,84 +118,119 @@ function App() {
       .catch((err) => console.error('Error cargando espacios:', err));
   }, [token]);
 
+  // Manejador para ingreso directo como invitado desde Landing Page
+  const handleGuestLoginDirect = async () => {
+    try {
+      const res = await fetch('/api/auth/guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al ingresar como invitado');
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.avatar) {
+        localStorage.setItem('avatar', JSON.stringify(data.avatar));
+      }
+
+      setToken(data.token);
+      setUser(data.user);
+      setAvatar(data.avatar || null);
+
+      navigateTo('/espacios');
+    } catch (err: any) {
+      alert('⚠️ Error al ingresar como invitado: ' + (err.message || 'Error de conexión'));
+    }
+  };
+
   // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
-    // Proteger acceso a aulas para invitados
     if (user?.rol === 'invitado' && espacio.tipo === 'aula') {
-      alert('❌ Los invitados solo pueden acceder al campus.\n\nPara acceder a las aulas, debes registrarte e iniciar sesión con tu cuenta UPDS.');
+      alert(
+        '❌ Los invitados solo pueden acceder al campus.\n\nPara acceder a las aulas, debes registrarte e iniciar sesión con tu cuenta UPDS.'
+      );
       return;
     }
 
     setEspacioActivo(espacio);
+    sessionStorage.setItem('espacioActivo', JSON.stringify(espacio));
     setChatMessages([]);
 
     // 1. Inicializar Sockets
     const newSocket = io();
     setSocket(newSocket);
 
+    const myUserId = String(user?.id || 'guest_' + Date.now());
+
     let joinedSpace = false;
     const emitJoin = (pId?: string) => {
       if (joinedSpace) return;
       joinedSpace = true;
       newSocket.emit('join_space', {
-        userId: user!.id,
-        nombreVisible: avatar?.nombre_visible || `${user!.nombre} ${user!.apellido.charAt(0)}.`,
         espacioId: espacio.id,
-        apariencia: avatar?.apariencia || {},
-        peerId: pId || null
+        user: {
+          id: user?.id,
+          nombreVisible: avatar?.nombre_visible || user?.nombre || 'Estudiante UPDS',
+          peerId: pId || '',
+          apariencia: avatar?.apariencia || {},
+        },
       });
     };
 
-    // 2. Inicializar AudioClient (VoIP espacial)
-    const client = new AudioClient(
-      user!.id,
-      (pId) => {
-        setPeerId(pId);
-        emitJoin(pId);
+    // 2. Inicializar VoIP Espacial WebRTC (PeerJS)
+    const newAudioClient = new AudioClient(
+      myUserId,
+      (myPeerId: string) => {
+        console.log('✅ PeerJS Inicializado con ID:', myPeerId);
+        setPeerId(myPeerId);
+        emitJoin(myPeerId);
       },
-      (err) => {
-        console.warn('VoIP Error:', err);
-        emitJoin(undefined);
+      (err: any) => {
+        console.error('⚠️ Error al iniciar audio espacial:', err);
+        emitJoin();
       }
     );
+    setAudioClient(newAudioClient);
 
-    setAudioClient(client);
+    // 3. Escuchar eventos del socket (usuarios existentes)
+    const handleInitialUsers = (users: any) => {
+      console.log('👥 Usuarios en el espacio:', users);
+      setRemoteUsers(users);
+      Object.keys(users).forEach((sId) => {
+        const u = users[sId];
+        if (u.peerId && newAudioClient) {
+          newAudioClient.callUser(u.peerId);
+        }
+      });
+    };
 
-    // 3. Registrar llamadas VoIP entrantes/salientes
-    client.onCallConnected((connectedPeerId) => {
-      console.log(`Llamada VoIP establecida con: ${connectedPeerId}`);
+    newSocket.on('space_users', handleInitialUsers);
+    newSocket.on('current_users', handleInitialUsers);
+
+    newSocket.on('user_joined', (data) => {
+      setRemoteUsers((prev) => ({ ...prev, [data.socketId]: data.user }));
+      if (data.user.peerId && newAudioClient) {
+        newAudioClient.callUser(data.user.peerId);
+      }
     });
 
-    // 4. Escuchar eventos de sockets
-    newSocket.on('space_users', (users: { [socketId: string]: any }) => {
-      setRemoteUsers(users);
-      
-      // Llamar VoIP a todos los que ya están en la sala
-      Object.keys(users).forEach((socketId) => {
-        const u = users[socketId];
-        if (u.peerId) {
-          // Pequeño retardo para dar tiempo a que los canales WebRTC se estabilicen
-          setTimeout(() => {
-            client.callUser(u.peerId);
-          }, 1000);
+    newSocket.on('user_left', (data) => {
+      setRemoteUsers((prev) => {
+        const copy = { ...prev };
+        const leftUser = copy[data.socketId];
+        if (leftUser && leftUser.peerId && newAudioClient) {
+          newAudioClient.removeUserAudio(leftUser.peerId);
         }
+        delete copy[data.socketId];
+        return copy;
       });
     });
 
-    newSocket.on('user_joined', (data: { socketId: string; user: any }) => {
-      setRemoteUsers((prev) => ({
-        ...prev,
-        [data.socketId]: data.user
-      }));
-      
-      // Mostrar notificación en chat
-      setChatMessages((prev) => [
-        ...prev,
-        { sender: 'Sistema', text: `${data.user.nombreVisible} ingresó al espacio.` }
-      ]);
-    });
-
-    newSocket.on('user_moved', (data: { socketId: string; position: any; rotation: any }) => {
+    newSocket.on('user_moved', (data) => {
       setRemoteUsers((prev) => {
         if (!prev[data.socketId]) return prev;
         return {
@@ -185,30 +238,26 @@ function App() {
           [data.socketId]: {
             ...prev[data.socketId],
             position: data.position,
-            rotation: data.rotation
-          }
+            rotation: data.rotation,
+          },
         };
       });
     });
 
-    newSocket.on('user_left', (data: { socketId: string; userId: string }) => {
-      setRemoteUsers((prev) => {
-        const copy = { ...prev };
-        const exitingUser = copy[data.socketId];
-        if (exitingUser && exitingUser.peerId) {
-          client.removeUserAudio(exitingUser.peerId);
-        }
-        delete copy[data.socketId];
-        return copy;
-      });
+    newSocket.on('chat_message', (data) => {
+      setChatMessages((prev) => [...prev, data]);
     });
 
-    newSocket.on('chat_msg_received', (msg: { sender: string; text: string }) => {
-      setChatMessages((prev) => [...prev, msg]);
+    newSocket.on('pizarra_actualizada', (_data) => {});
+
+    newSocket.on('clase_iniciada', (sesion) => {
+      setSesionClase(sesion);
     });
+
+    navigateTo('/metaverso');
   };
 
-  // Salir de la sala 3D
+  // Salir del escenario 3D
   const handleLeaveSpace = () => {
     if (socket) {
       socket.disconnect();
@@ -218,84 +267,65 @@ function App() {
       audioClient.destroy();
       setAudioClient(null);
     }
-    setRemoteUsers({});
     setEspacioActivo(null);
-    setPizarraAbierta(false);
-    setSesionClase(null);
-    setVerReporte(false);
+    sessionStorage.removeItem('espacioActivo');
+    setRemoteUsers({});
+    setPeerId('');
+    navigateTo('/espacios');
   };
 
-  // Enviar un mensaje de chat
-  const sendChatMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || !socket || !espacioActivo) return;
-
-    const msg = {
-      sender: avatar?.nombre_visible || user!.nombre,
-      text: chatInput
-    };
-
-    socket.emit('chat_msg_send', { espacioId: espacioActivo.id, message: msg });
-    
-    // El servidor retransmite el mensaje, pero también lo agregamos localmente
-    setChatMessages((prev) => [...prev, msg]);
-    setChatInput('');
+  // Cerrar sesión
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('avatar');
+    sessionStorage.removeItem('espacioActivo');
+    setUser(null);
+    setToken('');
+    setAvatar(null);
+    setEspacioActivo(null);
+    if (socket) socket.disconnect();
+    if (audioClient) audioClient.destroy();
+    navigateTo('/');
   };
 
-  // Silenciar/Activar Micrófono
-  const toggleMic = () => {
-    const newMuted = !micMuted;
-    setMicMuted(newMuted);
-    if (audioClient) {
-      audioClient.setMute(newMuted);
-    }
-  };
-
-  // Programar e Iniciar clase (Docente)
+  // Iniciar clase (Docente)
   const handleStartClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!temaClase.trim() || !espacioActivo) return;
+    if (!temaClase || !espacioActivo) return;
 
     try {
-      const ahora = new Date();
-      const fin = new Date(ahora.getTime() + 90 * 60000); // 90 minutos de clase
-
-      const res = await fetch('/api/sesiones', {
+      const res = await fetch('/api/clases/iniciar', {
         method: 'POST',
         headers: {
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          espacio_id: espacioActivo.id,
-          tema: temaClase,
-          inicio_programado: ahora.toISOString(),
-          fin_programado: fin.toISOString(),
-          tolerancia_min: 10
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setSesionClase(data.sesion);
-      setTemaClase('');
-      alert(`¡Clase iniciada! Estudiantes que ingresen a partir de ahora registrarán asistencia.`);
-    } catch (err: any) {
-      alert(`Error al iniciar clase: ${err.message}`);
-    }
-  };
-
-  // Ver reporte de asistencia
-  const fetchAsistenciasReport = async () => {
-    if (!sesionClase) return;
-    try {
-      const res = await fetch(`/api/asistencias/reporte/${sesionClase.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        body: JSON.stringify({ espacio_id: espacioActivo.id, tema: temaClase }),
       });
       const data = await res.json();
       if (res.ok) {
-        setReporteAsistencia(data);
+        setSesionClase(data.sesion);
+        socket?.emit('iniciar_clase', { espacioId: espacioActivo.id, sesion: data.sesion });
+        alert('🎉 Clase iniciada correctamente. Asistencia habilitada.');
+      } else {
+        alert(`❌ Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Consultar reporte de asistencia (Docente)
+  const fetchAsistenciasReport = async () => {
+    if (!sesionClase) return;
+    try {
+      const res = await fetch(`/api/asistencias/reporte?sesion_id=${sesionClase.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setReporteAsistencia(data.asistencias);
         setVerReporte(true);
       }
     } catch (err) {
@@ -303,50 +333,111 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
-    handleLeaveSpace();
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('avatar');
-    setUser(null);
-    setToken('');
-    setAvatar(null);
+  // Enviar mensaje de chat
+  const handleSendChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !socket || !espacioActivo) return;
+
+    const senderName = avatar?.nombre_visible || user?.nombre || 'Estudiante';
+    socket.emit('send_chat', {
+      espacioId: espacioActivo.id,
+      message: { sender: senderName, text: chatInput },
+    });
+    setChatInput('');
   };
 
-  // Flujo 1: Landing Page
-  if (showLanding) {
-    return <LandingPage onGetStarted={() => {
-      setShowLanding(false);
-    }} />;
-  }
+  // Alternar Micrófono
+  const toggleMic = () => {
+    if (audioClient) {
+      const newMuted = !micMuted;
+      audioClient.setMute(newMuted);
+      setMicMuted(newMuted);
+    }
+  };
 
-  // Flujo 2: No autenticado
-  if (!user) {
-    return <Login onLoginSuccess={(u, t, a) => {
-      setUser(u);
-      setToken(t);
-      setAvatar(a);
-      setShowLanding(false);
-    }} />;
-  }
+  // RENDERIZADO DE RUTAS DE NAVEGACIÓN INDEPENDIENTES
 
-  // Flujo 3: Espacio 3D Activo
-  if (espacioActivo) {
+  // 1. Ruta / (Landing Page)
+  if (route === '/') {
     return (
-      <div className="app-layout">
-        {/* Renderizado de la Escena 3D */}
+      <LandingPage
+        onNavigateLogin={() => navigateTo('/login')}
+        onGuestLoginDirect={handleGuestLoginDirect}
+      />
+    );
+  }
+
+  // 2. Ruta /login (Formulario de Autenticación)
+  if (route === '/login') {
+    return (
+      <Login
+        onLoginSuccess={(userData, tokenData, avatarData) => {
+          setToken(tokenData);
+          setUser(userData);
+          setAvatar(avatarData);
+          navigateTo('/espacios');
+        }}
+      />
+    );
+  }
+
+  // Si no hay token o usuario en rutas protegidas, redirigir a /login
+  if (!token || !user) {
+    return (
+      <Login
+        onLoginSuccess={(userData, tokenData, avatarData) => {
+          setToken(tokenData);
+          setUser(userData);
+          setAvatar(avatarData);
+          navigateTo('/espacios');
+        }}
+      />
+    );
+  }
+
+  const isAdmin =
+    user?.rol === 'admin' ||
+    user?.rol === 'administrador' ||
+    (Array.isArray((user as any)?.roles) &&
+      ((user as any).roles.includes('admin') || (user as any).roles.includes('administrador')));
+
+  const isDocente =
+    user?.rol === 'docente' ||
+    (Array.isArray((user as any)?.roles) && (user as any).roles.includes('docente'));
+
+  // 3. Ruta /admin (Panel de Administración)
+  if (route === '/admin') {
+    if (!isAdmin) {
+      navigateTo('/espacios');
+      return null;
+    }
+    return <AdminPanel token={token} onClose={() => navigateTo('/espacios')} />;
+  }
+
+  // 4. Ruta /docente (Panel del Docente)
+  if (route === '/docente') {
+    if (!isDocente) {
+      navigateTo('/espacios');
+      return null;
+    }
+    return <TeacherPanel token={token} user={user} onClose={() => navigateTo('/espacios')} />;
+  }
+
+  // 5. Ruta /metaverso (Escenario 3D)
+  if (route === '/metaverso' && espacioActivo) {
+    return (
+      <div className="metaverso-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+        {/* Canvas 3D de Three.js */}
         <MetaversoCanvas
           socket={socket!}
           audioClient={audioClient}
           isAula={espacioActivo.tipo === 'aula'}
-          localAvatar={avatar}
+          localAvatar={{ ...user, apariencia: avatar?.apariencia }}
           remoteUsers={remoteUsers}
-          onUpdateAvatarPersonalization={(nueva) => {
+          onUpdateAvatarPersonalization={(nuevaApariencia) => {
             setAvatar((prev) => {
-              const updated = prev
-                ? { ...prev, apariencia: nueva }
-                : { id: 'local', nombre_visible: user?.nombre || 'Usuario', modelo_url: null, apariencia: nueva };
-              localStorage.setItem('avatar', JSON.stringify(updated));
+              const updated = prev ? { ...prev, apariencia: nuevaApariencia } : null;
+              if (updated) localStorage.setItem('avatar', JSON.stringify(updated));
               return updated;
             });
           }}
@@ -354,9 +445,19 @@ function App() {
 
         {/* Guía de Teclas */}
         <div className="keys-guide">
-          <div className="keys-row"><span className="key-cap">W</span><span className="key-cap">S</span><span>Avanzar / Retroceder</span></div>
-          <div className="keys-row"><span className="key-cap">A</span><span className="key-cap">D</span><span>Mover Izquierda / Derecha</span></div>
-          <div className="keys-row"><span>Arrastra el mouse para rotar la cámara</span></div>
+          <div className="keys-row">
+            <span className="key-cap">W</span>
+            <span className="key-cap">S</span>
+            <span>Avanzar / Retroceder</span>
+          </div>
+          <div className="keys-row">
+            <span className="key-cap">A</span>
+            <span className="key-cap">D</span>
+            <span>Mover Izquierda / Derecha</span>
+          </div>
+          <div className="keys-row">
+            <span>Arrastra el mouse para rotar la cámara</span>
+          </div>
         </div>
 
         {/* Barra superior */}
@@ -369,7 +470,7 @@ function App() {
               Conectados: {Object.keys(remoteUsers).length + 1} usuarios
             </p>
           </div>
-          
+
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             {user.rol === 'docente' && espacioActivo.tipo === 'aula' && (
               <>
@@ -383,12 +484,20 @@ function App() {
                       onChange={(e) => setTemaClase(e.target.value)}
                       required
                     />
-                    <button type="submit" className="btn-primary" style={{ margin: 0, padding: '4px 12px', fontSize: '0.85rem' }}>
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      style={{ margin: 0, padding: '4px 12px', fontSize: '0.85rem' }}
+                    >
                       Iniciar Clase
                     </button>
                   </form>
                 ) : (
-                  <button className="btn-primary" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }} onClick={fetchAsistenciasReport}>
+                  <button
+                    className="btn-primary"
+                    style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }}
+                    onClick={fetchAsistenciasReport}
+                  >
                     Reporte Asistencia
                   </button>
                 )}
@@ -432,14 +541,14 @@ function App() {
                 <tbody>
                   {reporteAsistencia.map((a: any) => (
                     <tr key={a.id}>
-                      <td>{a.nombre} {a.apellido}</td>
+                      <td>
+                        {a.nombre} {a.apellido}
+                      </td>
                       <td>{a.registro_upds}</td>
                       <td>{new Date(a.hora_ingreso).toLocaleTimeString()}</td>
                       <td>{a.hora_salida ? new Date(a.hora_salida).toLocaleTimeString() : 'En clase'}</td>
                       <td>
-                        <span className={`status-badge ${a.estado}`}>
-                          {a.estado.toUpperCase()}
-                        </span>
+                        <span className={`status-badge ${a.estado}`}>{a.estado.toUpperCase()}</span>
                       </td>
                     </tr>
                   ))}
@@ -453,7 +562,11 @@ function App() {
                 </tbody>
               </table>
             </div>
-            <button className="btn-secondary" style={{ width: '100%', marginTop: '20px' }} onClick={() => setVerReporte(false)}>
+            <button
+              className="btn-secondary"
+              style={{ width: '100%', marginTop: '20px' }}
+              onClick={() => setVerReporte(false)}
+            >
               Cerrar Reporte
             </button>
           </div>
@@ -465,17 +578,30 @@ function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '150px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
-              <span>{avatar?.nombre_visible || `${user.nombre} ${user.apellido}`} (Tú - {user.rol.toUpperCase()})</span>
+              <span>
+                {avatar?.nombre_visible || `${user.nombre} ${user.apellido}`} (Tú - {user.rol.toUpperCase()})
+              </span>
             </div>
             {Object.keys(remoteUsers).map((socketId) => (
               <div key={socketId} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
-                <span>{remoteUsers[socketId].nombreVisible} ({remoteUsers[socketId].peerId ? 'VoIP Conectado' : 'VoIP Cargando'})</span>
+                <span>
+                  {remoteUsers[socketId].nombreVisible} ({remoteUsers[socketId].peerId ? 'VoIP Conectado' : 'VoIP Cargando'})
+                </span>
               </div>
             ))}
           </div>
 
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '16px', padding: '4px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px' }}>
+          <div
+            style={{
+              fontSize: '0.8rem',
+              color: 'var(--text-secondary)',
+              marginBottom: '16px',
+              padding: '4px 8px',
+              background: 'rgba(255,255,255,0.03)',
+              borderRadius: '6px',
+            }}
+          >
             🎙️ Canal de Voz ID: <span style={{ fontFamily: 'monospace', color: 'white' }}>{peerId || 'conectando...'}</span>
           </div>
 
@@ -489,7 +615,7 @@ function App() {
             ))}
           </div>
 
-          <form onSubmit={sendChatMessage} className="chat-input-row">
+          <form onSubmit={handleSendChat} className="chat-input-wrapper">
             <input
               type="text"
               className="chat-input"
@@ -497,24 +623,22 @@ function App() {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
             />
-            <button type="submit" className="btn-send">
-              ✈️
+            <button type="submit" className="btn-primary" style={{ padding: '6px 12px' }}>
+              Enviar
             </button>
           </form>
         </div>
 
-        {/* Controles de audio y herramientas de la barra inferior */}
-        <div className="overlay-panel bottom-controls">
-          {/* Silenciar Micrófono */}
+        {/* Controles de HUD Inferiores */}
+        <div className="hud-bottom-controls">
           <button
-            className={`control-btn ${micMuted ? 'active' : ''}`}
+            className={`control-btn ${micMuted ? 'muted' : ''}`}
             onClick={toggleMic}
-            title={micMuted ? 'Activar micrófono' : 'Silenciar micrófono'}
+            title={micMuted ? 'Activar Micrófono' : 'Silenciar Micrófono'}
           >
             {micMuted ? '🔇' : '🎙️'}
           </button>
 
-          {/* Compartir Pizarra (Solo visible si estás en el Aula Virtual) */}
           {espacioActivo.tipo === 'aula' && (
             <button
               className={`control-btn ${pizarraAbierta ? 'active' : ''}`}
@@ -529,15 +653,7 @@ function App() {
     );
   }
 
-  // Flujo 4: Dashboard de Selección de Espacio
-  if (showAdminPanel) {
-    return <AdminPanel token={token} onClose={() => setShowAdminPanel(false)} />;
-  }
-
-  if (showTeacherPanel) {
-    return <TeacherPanel token={token} user={user} onClose={() => setShowTeacherPanel(false)} />;
-  }
-
+  // 6. Ruta /espacios (Dashboard de Selección de Espacio) - Default
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
@@ -555,13 +671,13 @@ function App() {
         </div>
 
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {user.rol === 'admin' && (
-            <button className="btn-primary" onClick={() => setShowAdminPanel(true)}>
+          {isAdmin && (
+            <button className="btn-primary" onClick={() => navigateTo('/admin')}>
               🛡️ Panel Admin
             </button>
           )}
-          {user.rol === 'docente' && (
-            <button className="btn-primary" onClick={() => setShowTeacherPanel(true)}>
+          {isDocente && (
+            <button className="btn-primary" onClick={() => navigateTo('/docente')}>
               🎓 Mis Clases
             </button>
           )}
@@ -570,9 +686,9 @@ function App() {
               🎨 Avatar
             </button>
           )}
-          <button 
-            className="btn-secondary" 
-            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--error)' }} 
+          <button
+            className="btn-secondary"
+            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--error)' }}
             onClick={handleLogout}
           >
             🚪 Logout
@@ -581,23 +697,32 @@ function App() {
       </header>
 
       <main style={{ flexGrow: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--panel-border)', paddingBottom: '16px', marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 600, margin: 0 }}>
-            Espacios Disponibles
-          </h2>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid var(--panel-border)',
+            paddingBottom: '16px',
+            marginBottom: '24px',
+          }}
+        >
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 600, margin: 0 }}>Espacios Disponibles</h2>
           {user?.rol === 'invitado' && (
-            <span style={{ 
-              background: 'rgba(59, 130, 246, 0.2)', 
-              border: '1px solid #3b82f6', 
-              color: '#60a5fa', 
-              padding: '8px 16px', 
-              borderRadius: '8px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
+            <span
+              style={{
+                background: 'rgba(59, 130, 246, 0.2)',
+                border: '1px solid #3b82f6',
+                color: '#60a5fa',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
               🚪 Modo Invitado
             </span>
           )}
@@ -605,16 +730,20 @@ function App() {
 
         <div className="spaces-grid">
           {espacios.map((espacio) => (
-            <div key={espacio.id} className="space-card glass-panel" style={{
-              opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.6 : 1,
-              border: user?.rol === 'invitado' && espacio.tipo === 'aula' ? '1px solid rgba(239, 68, 68, 0.3)' : undefined
-            }}>
+            <div
+              key={espacio.id}
+              className="space-card glass-panel"
+              style={{
+                opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.6 : 1,
+                border: user?.rol === 'invitado' && espacio.tipo === 'aula' ? '1px solid rgba(239, 68, 68, 0.3)' : undefined,
+              }}
+            >
               <div>
                 <div className="space-type">{espacio.tipo === 'campus' ? '🏫 CAMPUS' : '🎓 AULA'}</div>
                 <h3 className="space-name">{espacio.nombre}</h3>
                 <p className="space-desc">
-                  {espacio.tipo === 'campus' 
-                    ? '📍 Zona común para el esparcimiento y encuentro estudiantil de toda la facultad.' 
+                  {espacio.tipo === 'campus'
+                    ? '📍 Zona común para el esparcimiento y encuentro estudiantil de toda la facultad.'
                     : `📚 Aula para clases virtuales en 3D. Capacidad: ${espacio.capacidad_max} estudiantes.`}
                 </p>
                 {user?.rol === 'invitado' && espacio.tipo === 'aula' && (
@@ -623,14 +752,14 @@ function App() {
                   </p>
                 )}
               </div>
-              <button 
-                className="btn-primary" 
+              <button
+                className="btn-primary"
                 onClick={() => handleJoinSpace(espacio)}
                 disabled={user?.rol === 'invitado' && espacio.tipo === 'aula'}
                 style={{
                   opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.5 : 1,
                   cursor: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 'not-allowed' : 'pointer',
-                  marginTop: 'auto'
+                  marginTop: 'auto',
                 }}
               >
                 {user?.rol === 'invitado' && espacio.tipo === 'aula' ? '🔒 Bloqueado' : '▶️ Entrar'}
