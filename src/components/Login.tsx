@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { AvatarCustomizer3D } from './AvatarCustomizer3D.js';
+import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo3d/AvatarModel.js';
 
 interface LoginProps {
   onLoginSuccess: (userData: any, token: string, avatarData: any) => void;
@@ -6,6 +8,8 @@ interface LoginProps {
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [isRegister, setIsRegister] = useState(false);
+  const [registerStep, setRegisterStep] = useState<1 | 2>(1);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nombre, setNombre] = useState('');
@@ -14,7 +18,6 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [rol, setRol] = useState<'estudiante' | 'docente'>('estudiante');
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
   const [nombreVisible, setNombreVisible] = useState('');
-  const [colorAvatar, setColorAvatar] = useState('#0033A0');
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -70,82 +73,139 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Avanzar del Paso 1 al Paso 2 en el Registro
+  const handleProceedToStep2 = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (!nombre.trim() || !apellido.trim() || !email.trim() || !password) {
+      setErrorMsg('Por favor completa todos los campos obligatorios.');
+      return;
+    }
+    if (password.length < 6) {
+      setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+    if (!aceptaTerminos) {
+      setErrorMsg('Debes aceptar los términos y condiciones para ingresar al Metaverso UPDS.');
+      return;
+    }
+
+    setRegisterStep(2);
+  };
+
+  // Finalizar Registro (enviando apariencia o usando por defecto al omitir)
+  const handleFinalizeRegister = async (aparienciaFinal: PersonalizacionAvatar) => {
+    setErrorMsg('');
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registro_upds: registroUpds || null,
+          email,
+          password,
+          nombre,
+          apellido,
+          rol,
+          acepta_terminos: aceptaTerminos,
+          nombre_visible: nombreVisible || `${nombre} ${apellido}`,
+          apariencia: aparienciaFinal
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al registrar usuario');
+      }
+
+      // Tras registro exitoso, iniciar sesión automáticamente
+      const loginRes = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const loginData = await loginRes.json();
+
+      if (loginRes.ok) {
+        localStorage.setItem('token', loginData.token);
+        localStorage.setItem('user', JSON.stringify(loginData.user));
+        if (loginData.avatar) {
+          localStorage.setItem('avatar', JSON.stringify(loginData.avatar));
+        }
+        onLoginSuccess(loginData.user, loginData.token, loginData.avatar);
+      } else {
+        setSuccessMsg('🎉 ¡Registro exitoso! Ya puedes iniciar sesión.');
+        setIsRegister(false);
+        setRegisterStep(1);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error de conexión con el servidor');
+      setRegisterStep(1);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
     setLoading(true);
 
-    if (isRegister && !aceptaTerminos) {
-      setErrorMsg('Debes aceptar los términos y condiciones para ingresar al Metaverso UPDS.');
-      setLoading(false);
-      return;
-    }
-
     try {
-      if (isRegister) {
-        const res = await fetch(`${API_URL}/auth/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            registro_upds: registroUpds || null,
-            email,
-            password,
-            nombre,
-            apellido,
-            rol,
-            acepta_terminos: aceptaTerminos,
-            nombre_visible: nombreVisible || `${nombre} ${apellido}`,
-            color_avatar: colorAvatar
-          })
-        });
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Error al registrar usuario');
-        }
+      const data = await res.json();
 
-        setSuccessMsg('🎉 ¡Registro exitoso! Ya puedes iniciar sesión.');
-        setIsRegister(false);
-        setPassword('');
-        setNombre('');
-        setApellido('');
-        setRegistroUpds('');
-      } else {
-        const res = await fetch(`${API_URL}/auth/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
-        });
-
-        const data = await res.json();
-
-        if (res.status === 423) {
-          setBloqueado(true);
-          setTiempoRestante(15 * 60);
-          setErrorMsg(`🔒 ${data.error || 'Cuenta bloqueada temporalmente. Intenta en 15 minutos.'}`);
-          setLoading(false);
-          return;
-        }
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Error al iniciar sesión');
-        }
-
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        if (data.avatar) {
-          localStorage.setItem('avatar', JSON.stringify(data.avatar));
-        }
-
-        onLoginSuccess(data.user, data.token, data.avatar);
+      if (res.status === 423) {
+        setBloqueado(true);
+        setTiempoRestante(15 * 60);
+        setErrorMsg(`🔒 ${data.error || 'Cuenta bloqueada temporalmente. Intenta en 15 minutos.'}`);
+        setLoading(false);
+        return;
       }
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Error al iniciar sesión');
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.avatar) {
+        localStorage.setItem('avatar', JSON.stringify(data.avatar));
+      }
+
+      onLoginSuccess(data.user, data.token, data.avatar);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error de conexión con el servidor');
     } finally {
       setLoading(false);
     }
   };
+
+  // Si está en Registro - Paso 2: Mostrar Customizador 3D Rotable con Opción de Omitir
+  if (isRegister && registerStep === 2) {
+    return (
+      <AvatarCustomizer3D
+        nombreVisible={nombreVisible || `${nombre} ${apellido}`}
+        aparienciaInicial={PERSONALIZACION_POR_DEFECTO}
+        title="🎉 ¡Casi listo! Personaliza tu Avatar 3D"
+        subtitle="Arrastra con el mouse para rotarlo 360° y elige tu estilo"
+        saveButtonText={loading ? 'Creando cuenta...' : '🚀 Finalizar y Entrar al Metaverso'}
+        showSkipButton={true}
+        onSave={handleFinalizeRegister}
+        onSkip={() => handleFinalizeRegister(PERSONALIZACION_POR_DEFECTO)}
+        onCancel={() => setRegisterStep(1)}
+      />
+    );
+  }
 
   return (
     <div className="login-container">
@@ -174,11 +234,11 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
           <div className="login-header">
             <h2 className="login-title">
-              {isRegister ? 'Crear Cuenta UPDS' : 'Acceso al Metaverso'}
+              {isRegister ? 'Crear Cuenta UPDS (Paso 1 de 2)' : 'Acceso al Metaverso'}
             </h2>
             <p className="login-subtitle">
               {isRegister
-                ? 'Regístrate para acceder a tus clases virtuales 3D'
+                ? 'Ingresa tus datos personales institucionales'
                 : 'Ingresa al campus y aulas en tiempo real'}
             </p>
           </div>
@@ -203,7 +263,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="login-form">
+          <form onSubmit={isRegister ? handleProceedToStep2 : handleLoginSubmit} className="login-form">
             {isRegister && (
               <div className="form-section">
                 <div className="form-row">
@@ -258,32 +318,16 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                   </div>
                 </div>
 
-                <div className="form-row avatar-custom">
-                  <div className="form-group">
-                    <label className="form-label">Nombre en el Metaverso</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ej. JuanDev"
-                      value={nombreVisible}
-                      onChange={(e) => setNombreVisible(e.target.value)}
-                    />
-                    <span className="form-hint">Cómo te verán los demás en el campus 3D</span>
-                  </div>
-
-                  <div className="form-group color-picker-group">
-                    <label className="form-label">Color de Avatar</label>
-                    <div className="color-picker-wrapper">
-                      <input
-                        type="color"
-                        className="color-picker-input"
-                        value={colorAvatar}
-                        onChange={(e) => setColorAvatar(e.target.value)}
-                      />
-                      <span className="color-preview" style={{ backgroundColor: colorAvatar }}></span>
-                      <span className="color-hex">{colorAvatar}</span>
-                    </div>
-                  </div>
+                <div className="form-group">
+                  <label className="form-label">Nombre en el Metaverso</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Ej. JuanDev"
+                    value={nombreVisible}
+                    onChange={(e) => setNombreVisible(e.target.value)}
+                  />
+                  <span className="form-hint">Cómo te verán los demás en el campus 3D</span>
                 </div>
               </div>
             )}
@@ -353,7 +397,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 </span>
               ) : (
                 <span className="btn-content">
-                  {isRegister ? '🚀 Crear Cuenta' : '🎯 Acceder al Metaverso'}
+                  {isRegister ? '🎨 Siguiente: Personalizar Avatar 3D ➔' : '🎯 Acceder al Metaverso'}
                 </span>
               )}
             </button>
@@ -366,7 +410,10 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                   <span className="toggle-text">¿Ya tienes cuenta?</span>
                   <button
                     className="toggle-btn"
-                    onClick={() => setIsRegister(false)}
+                    onClick={() => {
+                      setIsRegister(false);
+                      setRegisterStep(1);
+                    }}
                     type="button"
                   >
                     Inicia sesión aquí
@@ -377,7 +424,10 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                   <span className="toggle-text">¿Eres nuevo en UPDS?</span>
                   <button
                     className="toggle-btn"
-                    onClick={() => setIsRegister(true)}
+                    onClick={() => {
+                      setIsRegister(true);
+                      setRegisterStep(1);
+                    }}
                     type="button"
                   >
                     Regístrate aquí
