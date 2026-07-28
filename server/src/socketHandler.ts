@@ -48,7 +48,7 @@ export function setupSockets(io: Server) {
 
       const usersInSpace: { [socketId: string]: UserState } = {};
       activeUsers.forEach((user, sid) => {
-        if (user.espacioId === espacioId && sid !== socket.id) {
+        if (String(user.espacioId) === String(espacioId) && sid !== socket.id) {
           usersInSpace[sid] = user;
         }
       });
