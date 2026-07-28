@@ -12,6 +12,9 @@ const AMPLITUD_CAMINAR = 0.6;
 export interface PersonalizacionAvatar {
   colorRopa: string;
   colorPiel: string;
+  colorCabello?: string;
+  estiloCabello?: 'corto' | 'largo' | 'tupe' | 'rizado' | 'bun' | 'calvo';
+  expresionRostro?: 'alegre' | 'guiño' | 'serio' | 'sorprendido';
   escala: number;
   accesorios: {
     sombrero?: boolean;
@@ -23,6 +26,9 @@ export interface PersonalizacionAvatar {
 export const PERSONALIZACION_POR_DEFECTO: PersonalizacionAvatar = {
   colorRopa: '#3498db',
   colorPiel: '#e0ac69',
+  colorCabello: '#2c1d11',
+  estiloCabello: 'corto',
+  expresionRostro: 'alegre',
   escala: 1,
   accesorios: { sombrero: false, gafas: false, mochila: false },
 };
@@ -39,7 +45,7 @@ interface AvatarModelProps {
 export const AvatarModel: React.FC<AvatarModelProps> = ({
   nombre,
   personalizacion = PERSONALIZACION_POR_DEFECTO,
-  position = [0, 0, 5],
+  position = [0, 0, 11],
   rotation = [0, 0, 0],
   isLocal = false,
   onUpdatePosicion,
@@ -58,7 +64,15 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   const piernaIzqRef = useRef<THREE.Group>(null);
   const piernaDerRef = useRef<THREE.Group>(null);
 
-  const { colorRopa, colorPiel, escala, accesorios } = personalizacion;
+  const {
+    colorRopa = '#3498db',
+    colorPiel = '#e0ac69',
+    colorCabello = '#2c1d11',
+    estiloCabello = 'corto',
+    expresionRostro = 'alegre',
+    escala = 1,
+    accesorios,
+  } = personalizacion;
 
   useFrame((_state, delta) => {
     if (!grupoRef.current) return;
@@ -85,7 +99,23 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           .normalize()
           .multiplyScalar(VELOCIDAD * delta);
 
-        grupoRef.current.position.add(mover);
+        const posActual = grupoRef.current.position;
+        const posDeseada = posActual.clone().add(mover);
+
+        if (esPosicionValida(posDeseada)) {
+          grupoRef.current.position.copy(posDeseada);
+        } else {
+          // Deslizamiento en colisiones (eje X e Z independientes)
+          const posPruebaX = posActual.clone().add(new THREE.Vector3(mover.x, 0, 0));
+          if (esPosicionValida(posPruebaX)) {
+            grupoRef.current.position.copy(posPruebaX);
+          } else {
+            const posPruebaZ = posActual.clone().add(new THREE.Vector3(0, 0, mover.z));
+            if (esPosicionValida(posPruebaZ)) {
+              grupoRef.current.position.copy(posPruebaZ);
+            }
+          }
+        }
 
         direccionActual.current.lerp(mover.clone().normalize(), 0.3);
         const angulo = Math.atan2(direccionActual.current.x, direccionActual.current.z);
@@ -118,7 +148,6 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
 
       onUpdatePosicion?.(grupoRef.current.position, grupoRef.current.rotation.y);
     } else {
-      // Para usuarios remotos, animar suavemente hacia la posición y rotación recibidas
       grupoRef.current.position.lerp(new THREE.Vector3(...position), 0.2);
       grupoRef.current.rotation.y = THREE.MathUtils.lerp(grupoRef.current.rotation.y, rotation[1] || 0, 0.2);
     }
@@ -127,70 +156,72 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   return (
     <group ref={grupoRef} position={position} rotation={rotation}>
       <group scale={escala}>
-        {/* Piernas */}
-        <group ref={piernaDerRef} position={[-0.16, 0.9, 0]}>
+        {/* Piernas y Calzado */}
+        <group ref={piernaDerRef} position={[-0.14, 1.05, 0]}>
           <mesh castShadow position={[0, -0.4, 0]}>
             <boxGeometry args={[0.22, 0.8, 0.24]} />
-            <meshStandardMaterial color="#2c3e50" />
+            <meshStandardMaterial color="#1e293b" />
           </mesh>
           <mesh castShadow position={[0, -0.85, 0.05]}>
             <boxGeometry args={[0.24, 0.12, 0.32]} />
-            <meshStandardMaterial color="#1b1b1b" />
+            <meshStandardMaterial color="#0f172a" />
           </mesh>
         </group>
-        <group ref={piernaIzqRef} position={[0.16, 0.9, 0]}>
+        <group ref={piernaIzqRef} position={[0.14, 1.05, 0]}>
           <mesh castShadow position={[0, -0.4, 0]}>
             <boxGeometry args={[0.22, 0.8, 0.24]} />
-            <meshStandardMaterial color="#2c3e50" />
+            <meshStandardMaterial color="#1e293b" />
           </mesh>
           <mesh castShadow position={[0, -0.85, 0.05]}>
             <boxGeometry args={[0.24, 0.12, 0.32]} />
-            <meshStandardMaterial color="#1b1b1b" />
+            <meshStandardMaterial color="#0f172a" />
           </mesh>
         </group>
 
         {/* Torso */}
         <mesh castShadow position={[0, 1.35, 0]}>
           <boxGeometry args={[0.55, 0.7, 0.32]} />
-          <meshStandardMaterial color={colorRopa || '#3498db'} />
+          <meshStandardMaterial color={colorRopa} roughness={0.4} />
         </mesh>
 
         {/* Brazos */}
-        <group ref={brazoDerRef} position={[-0.38, 1.65, 0]}>
+        <group ref={brazoDerRef} position={[-0.33, 1.62, 0]}>
           <mesh castShadow position={[0, -0.35, 0]}>
             <boxGeometry args={[0.18, 0.7, 0.18]} />
-            <meshStandardMaterial color={colorRopa || '#3498db'} />
+            <meshStandardMaterial color={colorRopa} roughness={0.4} />
           </mesh>
           <mesh castShadow position={[0, -0.72, 0]}>
-            <sphereGeometry args={[0.1, 10, 10]} />
-            <meshStandardMaterial color={colorPiel || '#e0ac69'} />
+            <sphereGeometry args={[0.1, 12, 12]} />
+            <meshStandardMaterial color={colorPiel} />
           </mesh>
         </group>
-        <group ref={brazoIzqRef} position={[0.38, 1.65, 0]}>
+        <group ref={brazoIzqRef} position={[0.33, 1.62, 0]}>
           <mesh castShadow position={[0, -0.35, 0]}>
             <boxGeometry args={[0.18, 0.7, 0.18]} />
-            <meshStandardMaterial color={colorRopa || '#3498db'} />
+            <meshStandardMaterial color={colorRopa} roughness={0.4} />
           </mesh>
           <mesh castShadow position={[0, -0.72, 0]}>
-            <sphereGeometry args={[0.1, 10, 10]} />
-            <meshStandardMaterial color={colorPiel || '#e0ac69'} />
+            <sphereGeometry args={[0.1, 12, 12]} />
+            <meshStandardMaterial color={colorPiel} />
           </mesh>
         </group>
 
-        {/* Cabeza */}
+        {/* Cabeza Base */}
         <mesh castShadow position={[0, 2.05, 0]}>
-          <sphereGeometry args={[0.26, 20, 20]} />
-          <meshStandardMaterial color={colorPiel || '#e0ac69'} />
-        </mesh>
-        {/* Cabello simple */}
-        <mesh castShadow position={[0, 2.18, -0.02]}>
-          <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
-          <meshStandardMaterial color="#2b1d12" />
+          <sphereGeometry args={[0.26, 24, 24]} />
+          <meshStandardMaterial color={colorPiel} roughness={0.5} />
         </mesh>
 
+        {/* Rostro Estilizado (Ojos, Cejas, Boca, Rubor) */}
+        <Rostro expresion={expresionRostro} />
+
+        {/* Cabello Dinámico */}
+        <Cabello estilo={estiloCabello} color={colorCabello} />
+
+        {/* Accesorios */}
         {accesorios?.sombrero && <Sombrero />}
         {accesorios?.gafas && <Gafas />}
-        {accesorios?.mochila && <Mochila color={oscurecer(colorRopa || '#3498db')} />}
+        {accesorios?.mochila && <Mochila color={oscurecer(colorRopa)} />}
       </group>
 
       <Etiqueta nombre={nombre} />
@@ -198,9 +229,200 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   );
 };
 
+// Componente de Rostro Estilizado Xbox / Mii
+function Rostro({ expresion = 'alegre' }: { expresion: string }) {
+  const esGuinio = expresion === 'guiño';
+  const esSerio = expresion === 'serio';
+  const esSorprendido = expresion === 'sorprendido';
+
+  return (
+    <group position={[0, 2.05, 0]}>
+      {/* Ojo Izquierdo (Siempre Abierto) */}
+      <group position={[-0.09, 0.03, 0.23]}>
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[0.07, 0.08, 0.02]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+        <mesh position={[0, -0.005, 0.01]}>
+          <boxGeometry args={[0.045, 0.055, 0.02]} />
+          <meshBasicMaterial color="#0f172a" />
+        </mesh>
+        {/* Destello de luz en la pupila */}
+        <mesh position={[-0.012, 0.012, 0.02]}>
+          <boxGeometry args={[0.015, 0.015, 0.02]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+      </group>
+
+      {/* Ojo Derecho (Normal o Guiño) */}
+      {esGuinio ? (
+        /* Ojo guiñado (Arco cerrado) */
+        <mesh position={[0.09, 0.03, 0.24]} rotation={[0, 0, -0.1]}>
+          <boxGeometry args={[0.07, 0.018, 0.02]} />
+          <meshBasicMaterial color="#0f172a" />
+        </mesh>
+      ) : (
+        <group position={[0.09, 0.03, 0.23]}>
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[0.07, 0.08, 0.02]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          <mesh position={[0, -0.005, 0.01]}>
+            <boxGeometry args={[0.045, 0.055, 0.02]} />
+            <meshBasicMaterial color="#0f172a" />
+          </mesh>
+          <mesh position={[-0.012, 0.012, 0.02]}>
+            <boxGeometry args={[0.015, 0.015, 0.02]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        </group>
+      )}
+
+      {/* Cejas */}
+      <mesh position={[-0.09, 0.09, 0.23]} rotation={[0, 0, esSerio ? 0.15 : 0]}>
+        <boxGeometry args={[0.08, 0.018, 0.02]} />
+        <meshBasicMaterial color="#1e1b18" />
+      </mesh>
+      <mesh position={[0.09, 0.09, 0.23]} rotation={[0, 0, esSerio ? -0.15 : 0]}>
+        <boxGeometry args={[0.08, 0.018, 0.02]} />
+        <meshBasicMaterial color="#1e1b18" />
+      </mesh>
+
+      {/* Rubor en las mejillas */}
+      <mesh position={[-0.14, -0.03, 0.22]}>
+        <sphereGeometry args={[0.035, 10, 10]} />
+        <meshBasicMaterial color="#f43f5e" transparent opacity={0.5} />
+      </mesh>
+      <mesh position={[0.14, -0.03, 0.22]}>
+        <sphereGeometry args={[0.035, 10, 10]} />
+        <meshBasicMaterial color="#f43f5e" transparent opacity={0.5} />
+      </mesh>
+
+      {/* Boca */}
+      {esSorprendido ? (
+        <mesh position={[0, -0.08, 0.24]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.03, 0.03, 0.02, 16]} />
+          <meshBasicMaterial color="#7f1d1d" />
+        </mesh>
+      ) : esSerio ? (
+        <mesh position={[0, -0.08, 0.24]}>
+          <boxGeometry args={[0.08, 0.016, 0.02]} />
+          <meshBasicMaterial color="#450a0a" />
+        </mesh>
+      ) : (
+        /* Sonrisa Sonriente */
+        <group position={[0, -0.07, 0.23]}>
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[0.1, 0.025, 0.02]} />
+            <meshBasicMaterial color="#991b1b" />
+          </mesh>
+          <mesh position={[0, -0.01, 0.005]}>
+            <boxGeometry args={[0.07, 0.015, 0.02]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
+
+// Componente de Cabello Dinámico con varios estilos
+function Cabello({ estilo = 'corto', color = '#2c1d11' }: { estilo: string; color: string }) {
+  if (estilo === 'calvo') return null;
+
+  return (
+    <group position={[0, 2.05, 0]}>
+      {estilo === 'corto' && (
+        <group>
+          <mesh castShadow position={[0, 0.12, -0.02]}>
+            <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+          <mesh castShadow position={[0, 0.2, 0.16]} rotation={[0.4, 0, 0]}>
+            <boxGeometry args={[0.34, 0.08, 0.12]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+        </group>
+      )}
+
+      {estilo === 'tupe' && (
+        <group>
+          <mesh castShadow position={[0, 0.12, -0.02]}>
+            <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.8]} />
+            <meshStandardMaterial color={color} roughness={0.5} />
+          </mesh>
+          {/* Tupé frontal con volumen */}
+          <mesh castShadow position={[0, 0.27, 0.1]} rotation={[-0.2, 0, 0]}>
+            <boxGeometry args={[0.3, 0.16, 0.22]} />
+            <meshStandardMaterial color={color} roughness={0.5} />
+          </mesh>
+        </group>
+      )}
+
+      {estilo === 'largo' && (
+        <group>
+          <mesh castShadow position={[0, 0.12, -0.02]}>
+            <sphereGeometry args={[0.275, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+          {/* Caída lateral derecha */}
+          <mesh castShadow position={[-0.22, -0.15, 0.02]}>
+            <boxGeometry args={[0.1, 0.42, 0.26]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+          {/* Caída lateral izquierda */}
+          <mesh castShadow position={[0.22, -0.15, 0.02]}>
+            <boxGeometry args={[0.1, 0.42, 0.26]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+          {/* Caída posterior */}
+          <mesh castShadow position={[0, -0.18, -0.16]}>
+            <boxGeometry args={[0.44, 0.46, 0.12]} />
+            <meshStandardMaterial color={color} roughness={0.6} />
+          </mesh>
+        </group>
+      )}
+
+      {estilo === 'rizado' && (
+        <group>
+          {/* Racimo de rizos esféricos */}
+          {[
+            [0, 0.22, 0],
+            [-0.14, 0.2, 0.08],
+            [0.14, 0.2, 0.08],
+            [-0.16, 0.18, -0.1],
+            [0.16, 0.18, -0.1],
+            [0, 0.24, 0.12],
+            [0, 0.22, -0.16],
+          ].map((pos, idx) => (
+            <mesh key={idx} castShadow position={pos as [number, number, number]}>
+              <sphereGeometry args={[0.14, 12, 12]} />
+              <meshStandardMaterial color={color} roughness={0.8} />
+            </mesh>
+          ))}
+        </group>
+      )}
+
+      {estilo === 'bun' && (
+        <group>
+          <mesh castShadow position={[0, 0.12, -0.02]}>
+            <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
+            <meshStandardMaterial color={color} roughness={0.5} />
+          </mesh>
+          {/* Moño / Bun superior posterior */}
+          <mesh castShadow position={[0, 0.28, -0.18]}>
+            <sphereGeometry args={[0.13, 14, 14]} />
+            <meshStandardMaterial color={color} roughness={0.5} />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
+
 function Sombrero() {
   return (
-    <group position={[0, 2.42, 0]}>
+    <group position={[0, 2.45, 0]}>
       <mesh castShadow>
         <coneGeometry args={[0.3, 0.36, 16]} />
         <meshStandardMaterial color="#7a3b12" />
@@ -215,7 +437,7 @@ function Sombrero() {
 
 function Gafas() {
   return (
-    <mesh castShadow position={[0, 2.07, 0.24]}>
+    <mesh castShadow position={[0, 2.08, 0.24]}>
       <boxGeometry args={[0.42, 0.1, 0.05]} />
       <meshStandardMaterial color="#111111" />
     </mesh>
@@ -239,10 +461,43 @@ function oscurecer(hex: string): THREE.Color {
 
 function Etiqueta({ nombre }: { nombre: string }) {
   return (
-    <sprite position={[0, 2.75, 0]} scale={[1.5, 0.4, 1]}>
+    <sprite position={[0, 2.8, 0]} scale={[1.5, 0.4, 1]}>
       <spriteMaterial attach="material" map={crearTexturaTexto(nombre)} transparent />
     </sprite>
   );
+}
+
+function esPosicionValida(pos: THREE.Vector3): boolean {
+  const x = pos.x;
+  const z = pos.z;
+
+  // 1. Verificación de Terreno Firme (Límites de Islas Flotantes y Puente)
+  const enIslaSocial = Math.abs(x) <= 10.5 && z >= -0.8 && z <= 14.8;
+  const enIslaAcademica = Math.abs(x) <= 18.5 && z >= -41.8 && z <= -12.2;
+  const enPuente = Math.abs(x) <= 1.9 && z >= -12.2 && z <= -0.8;
+
+  if (!enIslaSocial && !enIslaAcademica && !enPuente) {
+    return false; // Impedir que el jugador caiga al vacío de la isla flotante
+  }
+
+  // 2. Colisión con Fuente Central (Isla Social z: 7)
+  const distFuente = Math.hypot(x - 0, z - 7);
+  if (distFuente < 2.3) return false;
+
+  // 3. Colisión con Edificios (Isla Académica)
+  // Aula 101: centro x: -12, z: -21
+  if (x >= -16.5 && x <= -7.5 && z >= -25.5 && z <= -16.5) return false;
+
+  // Aula 102: centro x: 12, z: -21
+  if (x >= 7.5 && x <= 16.5 && z >= -25.5 && z <= -16.5) return false;
+
+  // Sala Descanso: centro x: -12, z: -37
+  if (x >= -16.5 && x <= -7.5 && z >= -41.5 && z <= -32.5) return false;
+
+  // Sala Decanos: centro x: 12, z: -37
+  if (x >= 7.5 && x <= 16.5 && z >= -41.5 && z <= -32.5) return false;
+
+  return true;
 }
 
 export default AvatarModel;

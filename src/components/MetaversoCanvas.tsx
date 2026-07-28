@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas } from '@react-three/fiber';
 import { Stars } from '@react-three/drei';
 import { Socket } from 'socket.io-client';
 import * as THREE from 'three';
@@ -7,7 +7,6 @@ import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
 import { Campus } from './mundo3d/Campus.js';
-import { Door } from './mundo3d/Door.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
@@ -55,33 +54,14 @@ const LocalPlayerController: React.FC<{
     <AvatarModel
       nombre={localAvatar?.nombre_visible || 'Tú'}
       personalizacion={personalizacion}
-      position={[0, 0, 5]}
+      position={[0, 0, 11]}
       isLocal={true}
       onUpdatePosicion={handleUpdatePosicion}
     />
   );
 };
 
-// Detector de cercanía al portón de asistencia
-const DetectorPuerta: React.FC<{
-  avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
-  posicionPuerta: THREE.Vector3;
-  onTrigger: () => void;
-}> = ({ avatarEstadoRef, posicionPuerta, onTrigger }) => {
-  const ultimoTriggerRef = useRef(0);
 
-  useFrame(() => {
-    if (!avatarEstadoRef.current?.posicion) return;
-    const distancia = avatarEstadoRef.current.posicion.distanceTo(posicionPuerta);
-    const ahora = Date.now();
-    if (distancia <= 2.5 && ahora - ultimoTriggerRef.current > 10000) {
-      ultimoTriggerRef.current = ahora;
-      onTrigger();
-    }
-  });
-
-  return null;
-};
 
 // Elementos del Aula Virtual (Mesas, Pizarra 3D, Paredes)
 const EscenarioAula: React.FC = () => {
@@ -149,7 +129,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   onUpdateAvatarPersonalization,
 }) => {
   const avatarEstadoRef = useRef<AvatarEstadoRef>({
-    posicion: new THREE.Vector3(0, 0, 5),
+    posicion: new THREE.Vector3(0, 0, 11),
     angulo: 0,
   });
 
@@ -161,19 +141,14 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return PERSONALIZACION_POR_DEFECTO;
   });
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
 
   const handleCambiarPersonalizacion = (nueva: PersonalizacionAvatar) => {
     setPersonalizacion(nueva);
     onUpdateAvatarPersonalization?.(nueva);
   };
 
-  const POSICION_PUERTA = new THREE.Vector3(0, 0, -5);
 
-  const handleTriggerPuerta = () => {
-    setToastMessage('📍 ¡Has llegado al portón principal del Campus UPDS!');
-    setTimeout(() => setToastMessage(null), 4000);
-  };
 
   useEffect(() => {
     if (audioClient) {
@@ -207,12 +182,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         ) : (
           <group>
             <Campus />
-            <Door position={[POSICION_PUERTA.x, POSICION_PUERTA.y, POSICION_PUERTA.z]} />
-            <DetectorPuerta
-              avatarEstadoRef={avatarEstadoRef}
-              posicionPuerta={POSICION_PUERTA}
-              onTrigger={handleTriggerPuerta}
-            />
           </group>
         )}
 
@@ -223,7 +192,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           localAvatar={localAvatar}
           personalizacion={personalizacion}
           avatarEstadoRef={avatarEstadoRef}
-          onMove={() => {}}
+          onMove={() => { }}
         />
 
         {/* Cámara en 3ra Persona con seguimiento suave y colisiones */}
@@ -257,27 +226,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         onToggle={() => setPanelCustomizerAbierto((v) => !v)}
       />
 
-      {/* Toast Notificación */}
-      {toastMessage && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '80px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(30, 41, 59, 0.95)',
-            color: '#fff',
-            padding: '10px 20px',
-            borderRadius: '10px',
-            border: '1px solid #3b82f6',
-            fontWeight: 600,
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-            zIndex: 100,
-          }}
-        >
-          {toastMessage}
-        </div>
-      )}
+
     </div>
   );
 };
