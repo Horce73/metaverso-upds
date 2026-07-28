@@ -115,23 +115,30 @@ function App() {
     const newSocket = io();
     setSocket(newSocket);
 
+    let joinedSpace = false;
+    const emitJoin = (pId?: string) => {
+      if (joinedSpace) return;
+      joinedSpace = true;
+      newSocket.emit('join_space', {
+        userId: user!.id,
+        nombreVisible: avatar?.nombre_visible || `${user!.nombre} ${user!.apellido.charAt(0)}.`,
+        espacioId: espacio.id,
+        apariencia: avatar?.apariencia || {},
+        peerId: pId || null
+      });
+    };
+
     // 2. Inicializar AudioClient (VoIP espacial)
-    // El peerId será el mismo userId para que sea fácil llamarlos
     const client = new AudioClient(
       user!.id,
       (pId) => {
         setPeerId(pId);
-        
-        // Unirse al espacio con socket y peerId listo
-        newSocket.emit('join_space', {
-          userId: user!.id,
-          nombreVisible: avatar?.nombre_visible || `${user!.nombre} ${user!.apellido.charAt(0)}.`,
-          espacioId: espacio.id,
-          apariencia: avatar?.apariencia || {},
-          peerId: pId
-        });
+        emitJoin(pId);
       },
-      (err) => console.warn('VoIP Error:', err)
+      (err) => {
+        console.warn('VoIP Error:', err);
+        emitJoin(undefined);
+      }
     );
 
     setAudioClient(client);

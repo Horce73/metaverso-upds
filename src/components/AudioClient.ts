@@ -92,7 +92,7 @@ export class AudioClient {
 
     call.on('stream', (remoteStream: MediaStream) => {
       console.log(`🔊 Recibido stream de audio de: ${remotePeerId}`);
-      
+
       // Evitar crear múltiples nodos para el mismo Peer
       if (this.pannerNodes.has(remotePeerId)) return;
 
@@ -112,9 +112,9 @@ export class AudioClient {
       const panner = this.audioCtx.createPanner();
       panner.panningModel = 'HRTF'; // Modelo de alta fidelidad espacial (Head-Related Transfer Function)
       panner.distanceModel = 'inverse';
-      panner.refDistance = 1;      // Distancia de referencia
+      panner.refDistance = 6;      // Distancia de referencia
       panner.maxDistance = 10000;   // Distancia máxima de atenuación
-      panner.rolloffFactor = 1;     // Factor de reducción de volumen con la distancia
+      panner.rolloffFactor = 0.3;     // Factor de reducción de volumen con la distancia
       panner.coneInnerAngle = 360;
       panner.coneOuterAngle = 360;
 
@@ -128,7 +128,7 @@ export class AudioClient {
       panner.connect(this.audioCtx.destination);
 
       this.pannerNodes.set(remotePeerId, panner);
-      
+
       if (this.onCallConnectedCallback) {
         this.onCallConnectedCallback(remotePeerId);
       }
@@ -197,7 +197,7 @@ export class AudioClient {
   // Limpiar y remover audio de un usuario desconectado
   public removeUserAudio(remotePeerId: string) {
     console.log(`🗑️ Removiendo audio del Peer: ${remotePeerId}`);
-    
+
     const call = this.activeCalls.get(remotePeerId);
     if (call) {
       call.close();
@@ -237,11 +237,11 @@ export class AudioClient {
       audio.srcObject = null;
     });
     this.pannerNodes.forEach((panner) => panner.disconnect());
-    
+
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
     }
-    
+
     if (this.peer) {
       this.peer.destroy();
     }
