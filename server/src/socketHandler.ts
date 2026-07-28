@@ -53,6 +53,7 @@ export function setupSockets(io: Server) {
         }
       });
       socket.emit('space_users', usersInSpace);
+      socket.emit('current_users', usersInSpace);
 
       socket.to(String(espacioId)).emit('user_joined', {
         socketId: socket.id,

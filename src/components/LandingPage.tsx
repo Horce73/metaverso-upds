@@ -1,25 +1,14 @@
-import React, { useState } from 'react';
-import { Login } from './Login.js';
+import React from 'react';
 
 interface LandingPageProps {
-  onGetStarted: () => void;
+  onNavigateLogin: () => void;
+  onGuestLoginDirect: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
-  const [showLogin, setShowLogin] = useState(false);
-
-  if (showLogin) {
-    return (
-      <Login onLoginSuccess={(u, t, a) => {
-        // Pasar datos al padre
-        localStorage.setItem('token', t);
-        localStorage.setItem('user', JSON.stringify(u));
-        if (a) localStorage.setItem('avatar', JSON.stringify(a));
-        onGetStarted();
-      }} />
-    );
-  }
-
+export const LandingPage: React.FC<LandingPageProps> = ({
+  onNavigateLogin,
+  onGuestLoginDirect,
+}) => {
   return (
     <div className="landing-page">
       {/* Header Profesional */}
@@ -36,7 +25,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             <a href="#about">Sobre UPDS</a>
             <a href="#features">Características</a>
             <a href="#contact">Contacto</a>
-            <button className="btn-nav" onClick={() => setShowLogin(true)}>Ingresar</button>
+            <button className="btn-nav" onClick={onNavigateLogin}>
+              Ingresar
+            </button>
           </nav>
         </div>
       </header>
@@ -49,12 +40,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
           <p className="hero-description">
             Educación innovadora en un metaverso educativo 3D para clases virtuales interactivas
           </p>
-          <button className="btn-primary large" onClick={() => setShowLogin(true)}>
-            Acceder al Metaverso
-          </button>
-          <button className="btn-secondary large" onClick={() => setShowLogin(true)}>
-            Ingresar como Invitado 🚪
-          </button>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <button className="btn-primary large" onClick={onNavigateLogin}>
+              Acceder al Metaverso
+            </button>
+            <button className="btn-secondary large" onClick={onGuestLoginDirect}>
+              Ingresar como Invitado 🚪
+            </button>
+          </div>
         </div>
         <div className="hero-visual">
           <div className="hero-cube">3D</div>
@@ -124,7 +117,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
         </div>
       </section>
 
-      {/* Dirección */}
+      {/* Ubicación y Contacto */}
       <section className="contact" id="contact">
         <div className="container">
           <h2>Ubicación y Contacto</h2>

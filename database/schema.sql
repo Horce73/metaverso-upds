@@ -92,7 +92,7 @@ CREATE TABLE carreras (
 CREATE TABLE perfiles_estudiante (
     usuario_id      INT PRIMARY KEY,
     registro_upds   VARCHAR(20) NULL UNIQUE,
-    carrera_id      SMALLINT NULL,
+    carrera_id      INT NULL,
     fecha_inicio    DATE NULL,
     sistema_estudio VARCHAR(20) NULL CHECK (sistema_estudio IN ('PRESENCIAL','SEMIPRESENCIAL','VIRTUAL')),
     turno           VARCHAR(10) NULL CHECK (turno IN ('MANANA','TARDE','NOCHE')),
@@ -163,7 +163,7 @@ CREATE TABLE asignaturas (
     id         SERIAL PRIMARY KEY,
     codigo     VARCHAR(20) NOT NULL UNIQUE,
     nombre     VARCHAR(120) NOT NULL,
-    carrera_id SMALLINT NOT NULL,
+    carrera_id INT NOT NULL,
     docente_id INT NOT NULL,
     gestion    VARCHAR(10) NOT NULL,
     activa     BOOLEAN NOT NULL DEFAULT TRUE,
