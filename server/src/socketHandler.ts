@@ -18,25 +18,28 @@ export function setupSockets(io: Server) {
   io.on('connection', (socket: Socket) => {
     console.log(`🔌 Cliente conectado: ${socket.id}`);
 
-    socket.on('join_space', async (data: {
-      userId: number;
-      nombreVisible: string;
-      espacioId: number;
-      apariencia: any;
-      peerId?: string;
-    }) => {
-      const { userId, nombreVisible, espacioId, apariencia, peerId } = data;
+    socket.on('join_space', async (data: any) => {
+      const userId = data.userId ?? data.user?.id;
+      const nombreVisible = data.nombreVisible || data.user?.nombreVisible || data.user?.nombre || 'Estudiante';
+      const espacioId = data.espacioId;
+      const apariencia = data.apariencia || data.user?.apariencia || {};
+      const peerId = data.peerId || data.user?.peerId || '';
 
-      const prevUser = activeUsers.get(socket.id);
-      if (prevUser) {
-        socket.leave(String(prevUser.espacioId));
-        socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
-      }
+      const numUserId = Number(userId) || 0;
+
+      // Limpiar registros o conexiones previas del mismo usuario
+      activeUsers.forEach((user, sid) => {
+        if (sid === socket.id || (numUserId > 0 && user.userId === numUserId)) {
+          socket.leave(String(user.espacioId));
+          socket.to(String(user.espacioId)).emit('user_left', { socketId: sid, userId: user.userId });
+          activeUsers.delete(sid);
+        }
+      });
 
       const userState: UserState = {
-        userId,
+        userId: numUserId,
         nombreVisible,
-        espacioId,
+        espacioId: Number(espacioId) || 1,
         position: [0, 0.5, 0],
         rotation: [0, 0, 0],
         apariencia,
@@ -48,7 +51,7 @@ export function setupSockets(io: Server) {
 
       const usersInSpace: { [socketId: string]: UserState } = {};
       activeUsers.forEach((user, sid) => {
-        if (String(user.espacioId) === String(espacioId) && sid !== socket.id) {
+        if (String(user.espacioId) === String(espacioId) && sid !== socket.id && (numUserId === 0 || user.userId !== numUserId)) {
           usersInSpace[sid] = user;
         }
       });
@@ -62,7 +65,9 @@ export function setupSockets(io: Server) {
 
       console.log(`👤 ${nombreVisible} (${userId}) se unió al espacio ${espacioId}`);
 
-      await registrarAsistencia(userId, espacioId);
+      if (numUserId > 0) {
+        await registrarAsistencia(numUserId, Number(espacioId));
+      }
     });
 
     socket.on('move', (data: {
@@ -109,12 +114,55 @@ export function setupSockets(io: Server) {
       }
     });
 
-    socket.on('chat_msg_send', (data: {
+    // Solicitud de acceso a un aula por un estudiante
+    socket.on('solicitar_acceso_aula', (data: {
+      espacioId: string;
+      usuario: { id: string; nombre: string };
+      temaClase?: string;
+    }) => {
+      console.log(`📩 Solicitud de acceso recibida de ${data.usuario.nombre} para el espacio ${data.espacioId}`);
+      // Emitir a todos los docentes EXCEPTO al propio remitente
+      socket.broadcast.emit('nueva_solicitud_acceso', {
+        estudianteSocketId: socket.id,
+        usuario: data.usuario,
+        espacioId: data.espacioId,
+        temaClase: data.temaClase,
+      });
+    });
+
+    // Respuesta del docente a la solicitud de acceso
+    socket.on('responder_solicitud_acceso', (data: {
+      estudianteSocketId: string;
+      espacioId: string;
+      aprobado: boolean;
+    }) => {
+      console.log(`✉️ Docente respondió a solicitud de ${data.estudianteSocketId}: ${data.aprobado ? 'APROBADO' : 'RECHAZADO'}`);
+      io.to(data.estudianteSocketId).emit('respuesta_solicitud_acceso', {
+        espacioId: data.espacioId,
+        aprobado: data.aprobado,
+      });
+    });
+
+    socket.on('clase_iniciada', (sesion: any) => {
+      console.log('🎓 Clase iniciada por el docente:', sesion);
+      io.emit('clase_iniciada', sesion);
+    });
+
+    socket.on('clase_finalizada', (data: { espacioId: string }) => {
+      console.log('🛑 Clase finalizada en espacio:', data.espacioId);
+      io.emit('clase_finalizada', data);
+    });
+
+    const handleSendChat = (data: {
       espacioId: string;
       message: { sender: string; text: string };
     }) => {
-      socket.to(data.espacioId).emit('chat_msg_received', data.message);
-    });
+      socket.to(String(data.espacioId)).emit('chat_message', data.message);
+      socket.to(String(data.espacioId)).emit('chat_msg_received', data.message);
+    };
+
+    socket.on('send_chat', handleSendChat);
+    socket.on('chat_msg_send', handleSendChat);
 
     socket.on('disconnect', async () => {
       const user = activeUsers.get(socket.id);

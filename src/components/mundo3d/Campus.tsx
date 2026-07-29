@@ -26,7 +26,23 @@ function generarPupitres(): [number, number, number][] {
 }
 const POSICIONES_PUPITRES = generarPupitres();
 
-export const Campus: React.FC = () => {
+interface CampusProps {
+  espacios?: any[];
+  onInteractuarAula?: (espacio: any) => void;
+}
+
+export const Campus: React.FC<CampusProps> = ({ espacios = [], onInteractuarAula }) => {
+  const aulas = espacios.filter((e) => e.tipo === 'aula');
+  const aula101Space =
+    aulas.find((e) => e.nombre?.includes('101') || e.nombre?.includes('Software')) ||
+    aulas[0] ||
+    null;
+
+  const aula102Space =
+    aulas.find((e) => e.nombre?.includes('102') || (aula101Space && String(e.id) !== String(aula101Space.id))) ||
+    aulas[1] ||
+    aula101Space;
+
   return (
     <group>
       {/* 🏝️ 1. ISLA 1: PLAZA SOCIAL Y BIENVENIDA (Límites z: -1 a 15, x: -11 a 11) */}
@@ -134,6 +150,10 @@ export const Campus: React.FC = () => {
           ancho={8}
           profundidad={8}
           nombre="Aula 101"
+          tieneClaseEnCurso={!!aula101Space?.sesion_activa}
+          temaClase={aula101Space?.sesion_activa?.tema || 'Ingeniería de Software'}
+          docenteClase={aula101Space?.sesion_activa?.docente}
+          onInteractuar={() => onInteractuarAula && aula101Space && onInteractuarAula(aula101Space)}
         >
           <Pizarra position={[0, 1.3, -3.8]} />
           <EscritorioProfesor position={[0, 0, -2.8]} />
@@ -149,6 +169,10 @@ export const Campus: React.FC = () => {
           ancho={8}
           profundidad={8}
           nombre="Aula 102"
+          tieneClaseEnCurso={!!aula102Space?.sesion_activa}
+          temaClase={aula102Space?.sesion_activa?.tema || 'Base de Datos'}
+          docenteClase={aula102Space?.sesion_activa?.docente}
+          onInteractuar={() => onInteractuarAula && aula102Space && onInteractuarAula(aula102Space)}
         >
           <Pizarra position={[0, 1.3, -3.8]} />
           <EscritorioProfesor position={[0, 0, -2.8]} />

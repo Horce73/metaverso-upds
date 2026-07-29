@@ -39,6 +39,8 @@ interface AvatarModelProps {
   position?: [number, number, number];
   rotation?: [number, number, number];
   isLocal?: boolean;
+  isAula?: boolean;
+  estaSentado?: boolean;
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
 }
 
@@ -48,6 +50,8 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   position = [0, 0, 11],
   rotation = [0, 0, 0],
   isLocal = false,
+  isAula = false,
+  estaSentado = false,
   onUpdatePosicion,
 }) => {
   const grupoRef = useRef<THREE.Group>(null);
@@ -78,78 +82,102 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     if (!grupoRef.current) return;
 
     if (isLocal) {
-      const { adelante, atras, izquierda, derecha } = controles.current;
+      if (!estaSentado) {
+        const { adelante, atras, izquierda, derecha } = controles.current;
 
-      const entradaAdelante = (adelante ? 1 : 0) - (atras ? 1 : 0);
-      const entradaLateral = (derecha ? 1 : 0) - (izquierda ? 1 : 0);
+        const entradaAdelante = (adelante ? 1 : 0) - (atras ? 1 : 0);
+        const entradaLateral = (derecha ? 1 : 0) - (izquierda ? 1 : 0);
 
-      const mover = new THREE.Vector3();
-      const estaCaminando = entradaAdelante !== 0 || entradaLateral !== 0;
+        const mover = new THREE.Vector3();
+        const estaCaminando = entradaAdelante !== 0 || entradaLateral !== 0;
 
-      if (estaCaminando) {
-        camera.getWorldDirection(forwardCamara.current);
-        forwardCamara.current.y = 0;
-        forwardCamara.current.normalize();
+        if (estaCaminando) {
+          camera.getWorldDirection(forwardCamara.current);
+          forwardCamara.current.y = 0;
+          forwardCamara.current.normalize();
 
-        rightCamara.current.set(-forwardCamara.current.z, 0, forwardCamara.current.x);
+          rightCamara.current.set(-forwardCamara.current.z, 0, forwardCamara.current.x);
 
-        mover
-          .addScaledVector(forwardCamara.current, entradaAdelante)
-          .addScaledVector(rightCamara.current, entradaLateral)
-          .normalize()
-          .multiplyScalar(VELOCIDAD * delta);
+          mover
+            .addScaledVector(forwardCamara.current, entradaAdelante)
+            .addScaledVector(rightCamara.current, entradaLateral)
+            .normalize()
+            .multiplyScalar(VELOCIDAD * delta);
 
-        const posActual = grupoRef.current.position;
-        const posDeseada = posActual.clone().add(mover);
+          const posActual = grupoRef.current.position;
+          const posDeseada = posActual.clone().add(mover);
 
-        if (esPosicionValida(posDeseada)) {
-          grupoRef.current.position.copy(posDeseada);
-        } else {
-          // Deslizamiento en colisiones (eje X e Z independientes)
-          const posPruebaX = posActual.clone().add(new THREE.Vector3(mover.x, 0, 0));
-          if (esPosicionValida(posPruebaX)) {
-            grupoRef.current.position.copy(posPruebaX);
+          if (esPosicionValida(posDeseada, isAula)) {
+            grupoRef.current.position.copy(posDeseada);
           } else {
-            const posPruebaZ = posActual.clone().add(new THREE.Vector3(0, 0, mover.z));
-            if (esPosicionValida(posPruebaZ)) {
-              grupoRef.current.position.copy(posPruebaZ);
+            // Deslizamiento en colisiones (eje X e Z independientes)
+            const posPruebaX = posActual.clone().add(new THREE.Vector3(mover.x, 0, 0));
+            if (esPosicionValida(posPruebaX, isAula)) {
+              grupoRef.current.position.copy(posPruebaX);
+            } else {
+              const posPruebaZ = posActual.clone().add(new THREE.Vector3(0, 0, mover.z));
+              if (esPosicionValida(posPruebaZ, isAula)) {
+                grupoRef.current.position.copy(posPruebaZ);
+              }
             }
           }
+
+          direccionActual.current.lerp(mover.clone().normalize(), 0.3);
+          const angulo = Math.atan2(direccionActual.current.x, direccionActual.current.z);
+          grupoRef.current.rotation.y = THREE.MathUtils.lerp(
+            grupoRef.current.rotation.y,
+            angulo,
+            Math.min(1, delta * ROTACION_LERP)
+          );
+
+          tiempoAnimRef.current += delta;
         }
 
-        direccionActual.current.lerp(mover.clone().normalize(), 0.3);
-        const angulo = Math.atan2(direccionActual.current.x, direccionActual.current.z);
-        grupoRef.current.rotation.y = THREE.MathUtils.lerp(
-          grupoRef.current.rotation.y,
-          angulo,
-          Math.min(1, delta * ROTACION_LERP)
-        );
+        const objetivoSwing = estaCaminando
+          ? Math.sin(tiempoAnimRef.current * FRECUENCIA_CAMINAR) * AMPLITUD_CAMINAR
+          : 0;
+        const suavizado = Math.min(1, delta * 12);
 
-        tiempoAnimRef.current += delta;
-      }
-
-      const objetivoSwing = estaCaminando
-        ? Math.sin(tiempoAnimRef.current * FRECUENCIA_CAMINAR) * AMPLITUD_CAMINAR
-        : 0;
-      const suavizado = Math.min(1, delta * 12);
-
-      if (brazoDerRef.current) {
-        brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, objetivoSwing, suavizado);
-      }
-      if (brazoIzqRef.current) {
-        brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -objetivoSwing, suavizado);
-      }
-      if (piernaDerRef.current) {
-        piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -objetivoSwing, suavizado);
-      }
-      if (piernaIzqRef.current) {
-        piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, objetivoSwing, suavizado);
+        if (brazoDerRef.current) {
+          brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, objetivoSwing, suavizado);
+        }
+        if (brazoIzqRef.current) {
+          brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -objetivoSwing, suavizado);
+        }
+        if (piernaDerRef.current) {
+          piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -objetivoSwing, suavizado);
+        }
+        if (piernaIzqRef.current) {
+          piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, objetivoSwing, suavizado);
+        }
+      } else {
+        // Postura Animada de Sentado
+        const suavizadoSentado = Math.min(1, delta * 15);
+        if (brazoDerRef.current) {
+          brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
+        }
+        if (brazoIzqRef.current) {
+          brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
+        }
+        if (piernaDerRef.current) {
+          piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -Math.PI / 2.2, suavizadoSentado);
+        }
+        if (piernaIzqRef.current) {
+          piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, -Math.PI / 2.2, suavizadoSentado);
+        }
       }
 
       onUpdatePosicion?.(grupoRef.current.position, grupoRef.current.rotation.y);
     } else {
       grupoRef.current.position.lerp(new THREE.Vector3(...position), 0.2);
       grupoRef.current.rotation.y = THREE.MathUtils.lerp(grupoRef.current.rotation.y, rotation[1] || 0, 0.2);
+
+      if (estaSentado) {
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = -Math.PI / 4;
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = -Math.PI / 4;
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = -Math.PI / 2.2;
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = -Math.PI / 2.2;
+      }
     }
   });
 
@@ -467,10 +495,45 @@ function Etiqueta({ nombre }: { nombre: string }) {
   );
 }
 
-function esPosicionValida(pos: THREE.Vector3): boolean {
+function esPosicionValida(pos: THREE.Vector3, isAula: boolean = false): boolean {
   const x = pos.x;
   const z = pos.z;
 
+  if (isAula) {
+    // 🏢 COLISIONES DENTRO DEL AULA VIRTUAL 3D (Límites x: ±19.2, z: ±19.2)
+    // 1. Límites de las 4 Paredes Reales del Aula
+    if (Math.abs(x) > 19.2 || Math.abs(z) > 19.2) {
+      return false;
+    }
+
+    // 2. Colisión con Escritorio del Docente y Silla (centro x: 0, z: -13)
+    if (Math.abs(x) < 2.2 && z >= -14.8 && z <= -11.2) {
+      return false;
+    }
+
+    // 3. Colisión con los 12 Pupitres de Estudiantes (Solo mesa de trabajo, permitiendo libre paso por pasillos)
+    const pupitresX = [-8.5, -3, 3, 8.5];
+    const pupitresZ = [-5, 0, 5];
+    for (const px of pupitresX) {
+      for (const pz of pupitresZ) {
+        if (Math.abs(x - px) < 0.65 && z >= pz - 0.45 && z <= pz + 0.35) {
+          return false;
+        }
+      }
+    }
+
+    // 4. Colisión con Sofás al fondo (x: -16, z: 12 y x: 16, z: 12)
+    if (Math.hypot(x - (-16), z - 12) < 2.2) return false;
+    if (Math.hypot(x - 16, z - 12) < 2.2) return false;
+
+    // 5. Colisión con Estanterías de libros (x: -18, z: -10 y x: 18, z: -10)
+    if (x <= -16.2 && z >= -12.5 && z <= -7.5) return false;
+    if (x >= 16.2 && z >= -12.5 && z <= -7.5) return false;
+
+    return true;
+  }
+
+  // 🌳 COLISIONES FUERA EN EL CAMPUS
   // 1. Verificación de Terreno Firme (Límites de Islas Flotantes y Puente)
   const enIslaSocial = Math.abs(x) <= 10.5 && z >= -0.8 && z <= 14.8;
   const enIslaAcademica = Math.abs(x) <= 18.5 && z >= -41.8 && z <= -12.2;

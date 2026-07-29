@@ -8,6 +8,8 @@ import { MetaversoCanvas } from './components/MetaversoCanvas.js';
 import { AudioClient } from './components/AudioClient.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { TeacherPanel } from './components/TeacherPanel.js';
+import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
+import { CrearCursoModal } from './components/CrearCursoModal.js';
 
 interface User {
   id: string;
@@ -32,6 +34,9 @@ interface Espacio {
   nombre: string;
   tipo: 'campus' | 'aula';
   asignatura_id: string | null;
+  asignatura?: string;
+  asignatura_codigo?: string;
+  sesion_activa?: any;
   escena_url: string;
   capacidad_max: number;
 }
@@ -69,9 +74,13 @@ function App() {
 
   // Clases y Asistencia (Docente)
   const [sesionClase, setSesionClase] = useState<any>(null);
-  const [temaClase, setTemaClase] = useState('');
   const [verReporte, setVerReporte] = useState(false);
   const [reporteAsistencia, setReporteAsistencia] = useState<any[]>([]);
+
+  // Interacción de Aulas y Solicitudes de Acceso
+  const [solicitudAulaModal, setSolicitudAulaModal] = useState<Espacio | null>(null);
+  const [solicitudesPendientesDocente, setSolicitudesPendientesDocente] = useState<any[]>([]);
+  const [mostrarCrearCursoModal, setMostrarCrearCursoModal] = useState(false);
 
   const navigateTo = (path: string) => {
     window.location.hash = `#${path}`;
@@ -118,6 +127,41 @@ function App() {
       .catch((err) => console.error('Error cargando espacios:', err));
   }, [token]);
 
+  // Inicializar Socket persistente para el usuario autenticado
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const activeSocket = io();
+    setSocket(activeSocket);
+
+    activeSocket.on('nueva_solicitud_acceso', (solicitud) => {
+      const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
+      if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
+        console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
+        setSolicitudesPendientesDocente((prev) => [...prev, solicitud]);
+      }
+    });
+
+    activeSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
+      if (data.aprobado) {
+        console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
+        setSolicitudAulaModal(null);
+        setEspacios((currentEspacios) => {
+          const targetEspacio = currentEspacios.find((e) => String(e.id) === String(data.espacioId));
+          if (targetEspacio) {
+            setTimeout(() => handleJoinSpace(targetEspacio), 100);
+          }
+          return currentEspacios;
+        });
+      }
+    });
+
+    return () => {
+      activeSocket.disconnect();
+      setSocket(null);
+    };
+  }, [token, user]);
+
   // Manejador para ingreso directo como invitado desde Landing Page
   const handleGuestLoginDirect = async () => {
     try {
@@ -147,8 +191,12 @@ function App() {
     }
   };
 
-  // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
+    if (espacioActivo?.id === espacio.id && socket && socket.connected) {
+      console.log('⚠️ Ya estás conectado a este espacio:', espacio.nombre);
+      return;
+    }
+
     if (user?.rol === 'invitado' && espacio.tipo === 'aula') {
       alert(
         '❌ Los invitados solo pueden acceder al campus.\n\nPara acceder a las aulas, debes registrarte e iniciar sesión con tu cuenta UPDS.'
@@ -156,9 +204,27 @@ function App() {
       return;
     }
 
+    // 0. Desconectar sockets y audio previos antes de unirse al nuevo espacio
+    if (socket) {
+      socket.disconnect();
+      setSocket(null);
+    }
+    if (audioClient) {
+      audioClient.destroy();
+      setAudioClient(null);
+    }
+    setRemoteUsers({});
+    const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
+    setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
+
     setEspacioActivo(espacio);
     sessionStorage.setItem('espacioActivo', JSON.stringify(espacio));
     setChatMessages([]);
+
+    const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
+    if (esDocente && espacio.tipo === 'aula' && !tieneSesionEnCurso) {
+      setMostrarCrearCursoModal(true);
+    }
 
     // 1. Inicializar Sockets
     const newSocket = io();
@@ -251,7 +317,56 @@ function App() {
     newSocket.on('pizarra_actualizada', (_data) => {});
 
     newSocket.on('clase_iniciada', (sesion) => {
+      console.log('🎓 Notificación de clase iniciada recibida:', sesion);
       setSesionClase(sesion);
+      if (sesion && sesion.espacio_id) {
+        const sesionObj = {
+          id: sesion.id,
+          tema: sesion.tema,
+          inicio: sesion.inicio_real,
+          estado: sesion.estado,
+          docente: sesion.docente_nombre ? `${sesion.docente_nombre} ${sesion.docente_apellido}` : null,
+        };
+        setEspacios((prev) =>
+          prev.map((e) =>
+            String(e.id) === String(sesion.espacio_id)
+              ? {
+                  ...e,
+                  sesion_activa: sesionObj,
+                }
+              : e
+          )
+        );
+      }
+    });
+
+    newSocket.on('clase_finalizada', (data: { espacioId: string }) => {
+      if (espacioActivo && String(espacioActivo.id) === String(data.espacioId)) {
+        setSesionClase(null);
+        setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
+      }
+      setEspacios((prev) =>
+        prev.map((e) => (String(e.id) === String(data.espacioId) ? { ...e, sesion_activa: null } : e))
+      );
+    });
+
+    newSocket.on('nueva_solicitud_acceso', (solicitud) => {
+      const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
+      if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
+        console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
+        setSolicitudesPendientesDocente((prev) => [...prev, solicitud]);
+      }
+    });
+
+    newSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
+      if (data.aprobado) {
+        console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
+        setSolicitudAulaModal(null);
+        const targetEspacio = espacios.find((e) => String(e.id) === String(data.espacioId));
+        if (targetEspacio) {
+          handleJoinSpace(targetEspacio);
+        }
+      }
     });
 
     navigateTo('/metaverso');
@@ -271,6 +386,19 @@ function App() {
     sessionStorage.removeItem('espacioActivo');
     setRemoteUsers({});
     setPeerId('');
+
+    // Refrescar lista de espacios para sincronizar estados de clases
+    if (token) {
+      fetch('/api/espacios', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data)) setEspacios(data);
+        })
+        .catch((err) => console.error('Error refrescando espacios:', err));
+    }
+
     navigateTo('/espacios');
   };
 
@@ -289,33 +417,6 @@ function App() {
     navigateTo('/');
   };
 
-  // Iniciar clase (Docente)
-  const handleStartClass = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!temaClase || !espacioActivo) return;
-
-    try {
-      const res = await fetch('/api/clases/iniciar', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ espacio_id: espacioActivo.id, tema: temaClase }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSesionClase(data.sesion);
-        socket?.emit('iniciar_clase', { espacioId: espacioActivo.id, sesion: data.sesion });
-        alert('🎉 Clase iniciada correctamente. Asistencia habilitada.');
-      } else {
-        alert(`❌ Error: ${data.error}`);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   // Consultar reporte de asistencia (Docente)
   const fetchAsistenciasReport = async () => {
     if (!sesionClase) return;
@@ -330,6 +431,40 @@ function App() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Finalizar la sesión de clase en curso (Docente)
+  const handleFinalizarClase = async () => {
+    if (!espacioActivo) return;
+    if (!confirm('¿Estás seguro de que deseas finalizar la clase actual? El aula volverá a estar disponible.')) return;
+
+    try {
+      const res = await fetch('/api/sesiones/finalizar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          espacio_id: espacioActivo.id,
+          sesion_id: sesionClase?.id,
+        }),
+      });
+
+      if (res.ok) {
+        setSesionClase(null);
+        setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
+        setEspacios((prev) =>
+          prev.map((e) => (String(e.id) === String(espacioActivo.id) ? { ...e, sesion_activa: null } : e))
+        );
+        if (socket) {
+          socket.emit('clase_finalizada', { espacioId: espacioActivo.id });
+        }
+        alert('✅ Clase finalizada con éxito. El aula ahora está libre.');
+      }
+    } catch (err) {
+      console.error('Error al finalizar clase:', err);
     }
   };
 
@@ -429,11 +564,14 @@ function App() {
       <div className="metaverso-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative' }}>
         {/* Canvas 3D de Three.js */}
         <MetaversoCanvas
+          key={espacioActivo.id}
           socket={socket!}
           audioClient={audioClient}
           isAula={espacioActivo.tipo === 'aula'}
           localAvatar={{ ...user, apariencia: avatar?.apariencia }}
           remoteUsers={remoteUsers}
+          espacios={espacios}
+          onInteractuarAula={(espacioSeleccionado) => setSolicitudAulaModal(espacioSeleccionado)}
           onUpdateAvatarPersonalization={(nuevaApariencia) => {
             setAvatar((prev) => {
               const updated = prev ? { ...prev, apariencia: nuevaApariencia } : null;
@@ -456,50 +594,78 @@ function App() {
             <span>Mover Izquierda / Derecha</span>
           </div>
           <div className="keys-row">
+            <span className="key-cap">E</span>
+            <span>Ingresar a Aula cercana</span>
+          </div>
+          <div className="keys-row">
             <span>Arrastra el mouse para rotar la cámara</span>
           </div>
         </div>
 
-        {/* Barra superior */}
+        {/* Barra superior HUD */}
         <div className="overlay-panel top-bar glass-panel">
           <div>
             <h2 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 700 }}>
               {espacioActivo.nombre}
             </h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              Conectados: {Object.keys(remoteUsers).length + 1} usuarios
-            </p>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+                Conectados: {Object.keys(remoteUsers).length + 1} usuarios
+              </p>
+              {espacioActivo.tipo === 'aula' && (
+                <span
+                  style={{
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    color: '#60a5fa',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    padding: '2px 8px',
+                    borderRadius: '8px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  🔑 Código: {espacioActivo.asignatura_codigo || `SIS-${espacioActivo.id}`}
+                </span>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             {user.rol === 'docente' && espacioActivo.tipo === 'aula' && (
               <>
                 {!sesionClase ? (
-                  <form onSubmit={handleStartClass} style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="text"
-                      className="chat-input"
-                      placeholder="Tema de la clase..."
-                      value={temaClase}
-                      onChange={(e) => setTemaClase(e.target.value)}
-                      required
-                    />
-                    <button
-                      type="submit"
-                      className="btn-primary"
-                      style={{ margin: 0, padding: '4px 12px', fontSize: '0.85rem' }}
-                    >
-                      Iniciar Clase
-                    </button>
-                  </form>
-                ) : (
                   <button
                     className="btn-primary"
-                    style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }}
-                    onClick={fetchAsistenciasReport}
+                    style={{ margin: 0, padding: '6px 14px', fontSize: '0.85rem', background: 'linear-gradient(135deg, #059669, #10b981)' }}
+                    onClick={() => setMostrarCrearCursoModal(true)}
                   >
-                    Reporte Asistencia
+                    🎓 Ocupar Aula / Iniciar Clase
                   </button>
+                ) : (
+                  <>
+                    <button
+                      className="btn-primary"
+                      style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }}
+                      onClick={fetchAsistenciasReport}
+                    >
+                      Reporte Asistencia
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      style={{
+                        margin: 0,
+                        padding: '6px 12px',
+                        fontSize: '0.85rem',
+                        background: 'rgba(239, 68, 68, 0.2)',
+                        color: '#fca5a5',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={handleFinalizarClase}
+                    >
+                      🛑 Finalizar Clase
+                    </button>
+                  </>
                 )}
               </>
             )}
@@ -509,6 +675,119 @@ function App() {
             </button>
           </div>
         </div>
+
+        {/* Modal de Creación de Curso para el Docente en Aula Vacía */}
+        {mostrarCrearCursoModal && espacioActivo && (
+          <CrearCursoModal
+            espacio={espacioActivo}
+            token={token}
+            onCursoCreado={({ sesion, asignatura_codigo, asignatura_nombre }) => {
+              setSesionClase(sesion);
+              const sesionObj = {
+                id: sesion.id,
+                tema: sesion.tema,
+                inicio: sesion.inicio_real,
+                estado: sesion.estado,
+                docente: user ? `${user.nombre} ${user.apellido}` : null,
+              };
+              setEspacioActivo((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      asignatura_codigo,
+                      asignatura: asignatura_nombre,
+                      sesion_activa: sesionObj,
+                    }
+                  : null
+              );
+              setEspacios((prev) =>
+                prev.map((e) =>
+                  String(e.id) === String(espacioActivo.id)
+                    ? {
+                        ...e,
+                        asignatura_codigo,
+                        asignatura: asignatura_nombre,
+                        sesion_activa: sesionObj,
+                      }
+                    : e
+                )
+              );
+              setMostrarCrearCursoModal(false);
+              if (socket) {
+                socket.emit('clase_iniciada', {
+                  ...sesion,
+                  docente_nombre: user?.nombre,
+                  docente_apellido: user?.apellido,
+                });
+              }
+            }}
+            onClose={() => setMostrarCrearCursoModal(false)}
+          />
+        )}
+
+        {/* Modal de Interacción con Aulas en el Campus */}
+        {solicitudAulaModal && (
+          <SolicitudAccesoModal
+            espacio={solicitudAulaModal}
+            usuario={user}
+            socket={socket}
+            onIngresarDirecto={(espacio) => {
+              setSolicitudAulaModal(null);
+              handleJoinSpace(espacio);
+            }}
+            onClose={() => setSolicitudAulaModal(null)}
+          />
+        )}
+
+        {/* Alerta / Pop-up de Aprobación en Tiempo Real para el Docente */}
+        {solicitudesPendientesDocente.length > 0 && (
+          <div className="avatar-customizer-3d-wrapper" style={{ zIndex: 3000 }}>
+            <div className="customizer-card glass-panel" style={{ maxWidth: '440px', padding: '24px', textAlign: 'center' }}>
+              <h3 className="gradient-text" style={{ fontSize: '1.3rem', margin: '0 0 8px 0' }}>
+                📩 Solicitud de Ingreso al Aula
+              </h3>
+              <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '16px' }}>
+                El estudiante <strong>{solicitudesPendientesDocente[0].usuario?.nombre || 'Estudiante'}</strong> solicita ingresar a tu clase.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  className="btn-primary"
+                  style={{ background: 'var(--success)', padding: '10px 20px', flex: 1 }}
+                  onClick={() => {
+                    const reqItem = solicitudesPendientesDocente[0];
+                    if (socket) {
+                      socket.emit('responder_solicitud_acceso', {
+                        estudianteSocketId: reqItem.estudianteSocketId,
+                        espacioId: reqItem.espacioId,
+                        aprobado: true,
+                      });
+                    }
+                    setSolicitudesPendientesDocente((prev) => prev.slice(1));
+                  }}
+                >
+                  ✅ Permitir Acceso
+                </button>
+                <button
+                  className="btn-secondary"
+                  style={{ background: 'rgba(239,68,68,0.2)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.4)', padding: '10px 20px', flex: 1 }}
+                  onClick={() => {
+                    const reqItem = solicitudesPendientesDocente[0];
+                    if (socket) {
+                      socket.emit('responder_solicitud_acceso', {
+                        estudianteSocketId: reqItem.estudianteSocketId,
+                        espacioId: reqItem.espacioId,
+                        aprobado: false,
+                      });
+                    }
+                    setSolicitudesPendientesDocente((prev) => prev.slice(1));
+                  }}
+                >
+                  ❌ Rechazar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Pizarra Digital en Vivo (RF-04) */}
         {pizarraAbierta && (
