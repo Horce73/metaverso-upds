@@ -209,6 +209,7 @@ CREATE TABLE sesiones_clase (
     id                SERIAL PRIMARY KEY,
     espacio_id        INT NOT NULL,
     docente_id        INT NOT NULL,
+    asignatura_id     INT NULL,
     tema              VARCHAR(200),
     inicio_programado TIMESTAMPTZ NOT NULL,
     fin_programado    TIMESTAMPTZ NOT NULL,
@@ -219,6 +220,7 @@ CREATE TABLE sesiones_clase (
     tolerancia_min    SMALLINT NOT NULL DEFAULT 10,
     FOREIGN KEY (espacio_id) REFERENCES espacios(id) ON DELETE CASCADE,
     FOREIGN KEY (docente_id) REFERENCES perfiles_docente(usuario_id) ON DELETE RESTRICT,
+    FOREIGN KEY (asignatura_id) REFERENCES asignaturas(id) ON DELETE SET NULL,
     CONSTRAINT chk_sesion_horario CHECK (fin_programado > inicio_programado)
 );
 CREATE INDEX idx_sesiones_espacio ON sesiones_clase(espacio_id, inicio_programado);
