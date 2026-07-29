@@ -1,7 +1,17 @@
 import jwt from 'jsonwebtoken';
+import dotenv from 'dotenv';
 import { pool } from '../db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'upds-metaverso-super-secret-key-2026';
+// Este módulo se importa desde index.ts antes de que index.ts llame a
+// dotenv.config() (los imports de ES modules se resuelven antes que el resto
+// del cuerpo del módulo importador), así que carga su propio .env aquí para
+// no depender de ese orden.
+dotenv.config();
+
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET no está definido en el entorno');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export function authenticateJWT(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;

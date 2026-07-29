@@ -13,9 +13,13 @@ import { registrarAsistencia } from './helpers.js';
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET no está definido en el entorno');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'upds-metaverso-super-secret-key-2026';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 app.use(cors());
 app.use(express.json());
@@ -55,9 +59,14 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
+  const ROLES_AUTORREGISTRABLES = ['estudiante', 'docente'];
+  const userRol = rol || 'estudiante';
+  if (!ROLES_AUTORREGISTRABLES.includes(userRol)) {
+    return res.status(400).json({ error: `Rol inválido para autorregistro. Valores permitidos: ${ROLES_AUTORREGISTRABLES.join(', ')}` });
+  }
+
   try {
     const passwordHash = await bcrypt.hash(password, 10);
-    const userRol = rol || 'estudiante';
 
     const client = await pool.connect();
     try {
@@ -1439,7 +1448,16 @@ app.post('/api/asistencia', authenticateJWT, async (req: any, res) => {
 // ----------------------------------------------------------------------------
 app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
   try {
+    const { userId } = req.user;
     const { espacio_id, estado } = req.query;
+
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const roles = rolesRes.rows.map((r: any) => r.nombre);
+    const esPrivilegiado = roles.includes('administrador') || roles.includes('docente');
+
     let sql = `
       SELECT sc.id, sc.tema, sc.inicio_programado, sc.fin_programado,
              sc.inicio_real, sc.fin_real, sc.estado, sc.tolerancia_min,
@@ -1453,6 +1471,15 @@ app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
     `;
     const params: any[] = [];
     let idx = 1;
+
+    // Los estudiantes solo ven sesiones de asignaturas en las que están inscritos
+    if (!esPrivilegiado) {
+      sql += ` AND EXISTS (
+        SELECT 1 FROM inscripciones i
+        WHERE i.asignatura_id = e.asignatura_id AND i.usuario_id = $${idx++}
+      )`;
+      params.push(userId);
+    }
 
     if (espacio_id) {
       sql += ` AND sc.espacio_id = $${idx++}`;
