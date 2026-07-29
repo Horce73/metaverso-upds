@@ -351,46 +351,21 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       return res.json(result.rows);
     }
 
-    const rolesRes = await pool.query(
-      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
-      [userId]
+    const espaciosRes = await pool.query(
+      `SELECT DISTINCT ON (e.id)
+              e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
+              a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+              sc.id AS sesion_id, sc.tema AS sesion_tema,
+              sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+              u.nombre AS docente_nombre, u.apellido AS docente_apellido
+       FROM espacios e
+       LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+       LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+       LEFT JOIN usuarios u ON u.id = pd.usuario_id
+       LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+       WHERE e.activo = TRUE
+       ORDER BY e.id ASC, sc.id DESC`
     );
-    const roles = rolesRes.rows.map((r: any) => r.nombre);
-
-    let espaciosRes;
-    if (roles.includes('administrador') || roles.includes('docente')) {
-      espaciosRes = await pool.query(
-        `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
-                sc.id AS sesion_id, sc.tema AS sesion_tema,
-                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
-                u.nombre AS docente_nombre, u.apellido AS docente_apellido
-         FROM espacios e
-         LEFT JOIN asignaturas a ON a.id = e.asignatura_id
-         LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
-         LEFT JOIN usuarios u ON u.id = pd.usuario_id
-         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
-         WHERE e.activo = TRUE AND (e.tipo = 'campus' OR pd.usuario_id = $1)`,
-        [userId]
-      );
-    } else {
-      espaciosRes = await pool.query(
-        `SELECT DISTINCT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
-                sc.id AS sesion_id, sc.tema AS sesion_tema,
-                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
-                u.nombre AS docente_nombre, u.apellido AS docente_apellido
-         FROM espacios e
-         LEFT JOIN asignaturas a ON a.id = e.asignatura_id
-         LEFT JOIN inscripciones i ON i.asignatura_id = a.id AND i.usuario_id = $1
-         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
-         LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
-         LEFT JOIN usuarios u ON u.id = pd.usuario_id
-         WHERE e.activo = TRUE
-           AND (e.tipo = 'campus' OR i.usuario_id IS NOT NULL)`,
-        [userId]
-      );
-    }
 
     const espacios = espaciosRes.rows.map((e: any) => ({
       id: e.id,
@@ -470,6 +445,112 @@ app.post('/api/sesiones', authenticateJWT, async (req: any, res) => {
   } catch (err) {
     console.error('Error al programar clase:', err);
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// Endpoint para docentes: Crear curso / materia e iniciar clase en un aula vacía
+app.post('/api/clases/crear-curso', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const { espacio_id, nombre_curso, codigo_curso, tema } = req.body;
+
+  if (!espacio_id || !nombre_curso || !codigo_curso || !tema) {
+    return res.status(400).json({ error: 'Faltan campos obligatorios (espacio_id, nombre_curso, codigo_curso, tema)' });
+  }
+
+  try {
+    // 1. Crear o buscar la asignatura por su codigo
+    let asignaturaId: number | null = null;
+    const asigExist = await pool.query('SELECT id FROM asignaturas WHERE UPPER(codigo) = UPPER($1)', [codigo_curso]);
+
+    if (asigExist.rows.length > 0) {
+      asignaturaId = asigExist.rows[0].id;
+      await pool.query(
+        'UPDATE asignaturas SET nombre = $1, docente_id = $2 WHERE id = $3',
+        [nombre_curso, userId, asignaturaId]
+      );
+    } else {
+      const newAsig = await pool.query(
+        `INSERT INTO asignaturas (carrera_id, codigo, nombre, docente_id, activa)
+         VALUES (1, $1, $2, $3, TRUE) RETURNING id`,
+        [codigo_curso.toUpperCase(), nombre_curso, userId]
+      );
+      asignaturaId = newAsig.rows[0].id;
+    }
+
+    // 2. Vincular la asignatura al espacio de aula
+    await pool.query('UPDATE espacios SET asignatura_id = $1 WHERE id = $2', [asignaturaId, espacio_id]);
+
+    // 3. Finalizar cualquier sesión en curso previa en este espacio
+    await pool.query(
+      `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW() WHERE espacio_id = $1 AND estado = 'en_curso'`,
+      [espacio_id]
+    );
+
+    // 4. Crear sesión de clase en curso
+    const sesionRes = await pool.query(
+      `INSERT INTO sesiones_clase (espacio_id, docente_id, tema, inicio_programado, fin_programado, inicio_real, estado)
+       VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '90 minutes', NOW(), 'en_curso')
+       RETURNING *`,
+      [espacio_id, userId, tema]
+    );
+
+    const userRes = await pool.query('SELECT nombre, apellido FROM usuarios WHERE id = $1', [userId]);
+    const docenteInfo = userRes.rows[0];
+
+    const sesionCompleta = {
+      ...sesionRes.rows[0],
+      docente_nombre: docenteInfo?.nombre,
+      docente_apellido: docenteInfo?.apellido,
+    };
+
+    await bitacora(userId, 'crear_curso', `${nombre_curso} (${codigo_curso}) - ${tema}`, req.ip);
+
+    res.status(201).json({
+      message: 'Curso creado e inicio de clase exitoso',
+      sesion: sesionCompleta,
+      asignatura_codigo: codigo_curso.toUpperCase(),
+      asignatura_nombre: nombre_curso,
+    });
+  } catch (err) {
+    console.error('Error al crear curso e iniciar clase:', err);
+    res.status(500).json({ error: 'Error al crear curso en la base de datos' });
+  }
+});
+
+// Endpoint para que el docente pueda finalizar una clase en curso
+app.post('/api/sesiones/finalizar', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const { sesion_id, espacio_id } = req.body;
+
+  try {
+    let result;
+    if (sesion_id) {
+      result = await pool.query(
+        `UPDATE sesiones_clase
+         SET estado = 'finalizada', fin_real = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [sesion_id]
+      );
+    } else if (espacio_id) {
+      result = await pool.query(
+        `UPDATE sesiones_clase
+         SET estado = 'finalizada', fin_real = NOW()
+         WHERE espacio_id = $1 AND estado = 'en_curso'
+         RETURNING *`,
+        [espacio_id]
+      );
+    } else {
+      return res.status(400).json({ error: 'Se requiere sesion_id o espacio_id' });
+    }
+
+    const sesion = result.rows[0];
+    await bitacora(userId, 'fin_clase', `Sesión ${sesion?.id || ''} finalizada`, req.ip);
+
+    res.json({ message: 'Clase finalizada exitosamente', sesion });
+  } catch (err) {
+    console.error('Error al finalizar clase:', err);
+    res.status(500).json({ error: 'Error del servidor al finalizar clase' });
   }
 });
 

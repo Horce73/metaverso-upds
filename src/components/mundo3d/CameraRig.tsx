@@ -106,12 +106,22 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
 
     let distancia = distanciaObjetivo;
     try {
+      raycaster.current.camera = camera;
       raycaster.current.set(origenRayo.current, direccionRayo.current);
       raycaster.current.far = distanciaObjetivo;
-      const intersecciones = raycaster.current.intersectObjects(scene.children, true);
-      const golpeAPared = intersecciones.find((i) => i.object.userData?.esPared);
-      if (golpeAPared && golpeAPared.distance < distanciaObjetivo) {
-        distancia = Math.max(1.5, golpeAPared.distance - MARGEN_PARED);
+
+      const paredes: THREE.Object3D[] = [];
+      scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh && obj.userData?.esPared) {
+          paredes.push(obj);
+        }
+      });
+
+      if (paredes.length > 0) {
+        const intersecciones = raycaster.current.intersectObjects(paredes, false);
+        if (intersecciones.length > 0 && intersecciones[0].distance < distanciaObjetivo) {
+          distancia = Math.max(1.5, intersecciones[0].distance - MARGEN_PARED);
+        }
       }
     } catch (err) {
       console.warn('Error en la colisión de cámara:', err);

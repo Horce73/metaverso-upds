@@ -356,16 +356,19 @@ INSERT INTO avatares (usuario_id, nombre_visible, apariencia) VALUES
 
 -- Asignatura
 INSERT INTO asignaturas (codigo, nombre, carrera_id, docente_id, gestion) VALUES
-('ISW-501', 'Ingenieria de Software', 1, 2, '2026-2');
+('ISW-501', 'Ingenieria de Software', 1, 2, '2026-2'),
+('BD-101',  'Base de Datos I',       1, 2, '2026-2');
 
 -- Inscripciones
 INSERT INTO inscripciones (usuario_id, asignatura_id) VALUES
-(3, 1), (4, 1), (5, 1);
+(3, 1), (4, 1), (5, 1),
+(3, 2), (4, 2), (5, 2);
 
 -- Espacios
 INSERT INTO espacios (nombre, tipo, asignatura_id, escena_url) VALUES
 ('Campus Central UPDS', 'campus', NULL, '/escenas/campus.glb'),
-('Aula Ingenieria de Software', 'aula', 1, '/escenas/aula_isw.glb');
+('Aula Ingenieria de Software', 'aula', 1, '/escenas/aula_isw.glb'),
+('Aula 102 - Base de Datos', 'aula', 2, '/escenas/aula_isw.glb');
 
 -- Sesion semilla (en curso para pruebas)
 INSERT INTO sesiones_clase (espacio_id, docente_id, tema, inicio_programado, fin_programado, inicio_real, estado) VALUES
