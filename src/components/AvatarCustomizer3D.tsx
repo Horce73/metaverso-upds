@@ -10,16 +10,23 @@ const COLORES_ROPA = [
 ];
 
 const TONOS_PIEL = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a21'];
-
 const COLORES_CABELLO = ['#1e1b18', '#2c1d11', '#5a3d28', '#b87333', '#eab308', '#94a3b8', '#3b82f6'];
 
-const ESTILOS_CABELLO: { id: NonNullable<PersonalizacionAvatar['estiloCabello']>; etiqueta: string }[] = [
+const ESTILOS_CABELLO: { id: NonNullable<PersonalizacionAvatar['cabello']>['estilo']; etiqueta: string }[] = [
   { id: 'corto', etiqueta: 'Corto' },
   { id: 'tupe', etiqueta: 'Tupé' },
   { id: 'largo', etiqueta: 'Largo' },
   { id: 'rizado', etiqueta: 'Rizado' },
   { id: 'bun', etiqueta: 'Moño' },
   { id: 'calvo', etiqueta: 'Calvo' },
+];
+
+const ESTILOS_VELLO_FACIAL: { id: NonNullable<PersonalizacionAvatar['velloFacial']>['estilo']; etiqueta: string }[] = [
+  { id: 'ninguno', etiqueta: 'Lampiño' },
+  { id: 'bigote', etiqueta: 'Bigote' },
+  { id: 'perilla', etiqueta: 'Perilla' },
+  { id: 'barba', etiqueta: 'Barba' },
+  { id: 'candado', etiqueta: 'Candado' },
 ];
 
 const EXPRESIONES_ROSTRO: { id: NonNullable<PersonalizacionAvatar['expresionRostro']>; etiqueta: string; emoji: string }[] = [
@@ -57,10 +64,51 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
     ...aparienciaInicial,
   });
 
-  const [pestaña, setPestaña] = useState<'cabello' | 'rostro' | 'ropa' | 'piel' | 'accesorios'>('cabello');
+  const [pestaña, setPestaña] = useState<'cabello' | 'vello' | 'rostro' | 'ropa' | 'piel' | 'accesorios'>('cabello');
+
+  const estiloCabelloActual = apariencia.cabello?.estilo || apariencia.estiloCabello || 'corto';
+  const colorCabelloActual = apariencia.cabello?.color || apariencia.colorCabello || '#2c1d11';
+  const estiloVelloActual = apariencia.velloFacial?.estilo || 'ninguno';
+  const colorVelloActual = apariencia.velloFacial?.color || colorCabelloActual;
+
+  const colorPrimarioActual = apariencia.ropa?.colorPrimario || apariencia.colorRopa || '#3498db';
+  const colorSecundarioActual = apariencia.ropa?.colorSecundario || '#1d4ed8';
 
   const actualizar = (cambios: Partial<PersonalizacionAvatar>) => {
     setApariencia((prev) => ({ ...prev, ...cambios }));
+  };
+
+  const actualizarCabello = (clave: 'estilo' | 'color', val: string) => {
+    setApariencia((prev) => ({
+      ...prev,
+      estiloCabello: clave === 'estilo' ? (val as any) : estiloCabelloActual,
+      colorCabello: clave === 'color' ? val : colorCabelloActual,
+      cabello: {
+        estilo: clave === 'estilo' ? (val as any) : estiloCabelloActual,
+        color: clave === 'color' ? val : colorCabelloActual,
+      },
+    }));
+  };
+
+  const actualizarVello = (clave: 'estilo' | 'color', val: string) => {
+    setApariencia((prev) => ({
+      ...prev,
+      velloFacial: {
+        estilo: clave === 'estilo' ? (val as any) : estiloVelloActual,
+        color: clave === 'color' ? val : colorVelloActual,
+      },
+    }));
+  };
+
+  const actualizarRopa = (clave: 'colorPrimario' | 'colorSecundario', val: string) => {
+    setApariencia((prev) => ({
+      ...prev,
+      colorRopa: clave === 'colorPrimario' ? val : prev.colorRopa,
+      ropa: {
+        colorPrimario: clave === 'colorPrimario' ? val : colorPrimarioActual,
+        colorSecundario: clave === 'colorSecundario' ? val : colorSecundarioActual,
+      },
+    }));
   };
 
   const actualizarAccesorio = (clave: 'sombrero' | 'gafas' | 'mochila', valor: boolean) => {
@@ -128,6 +176,13 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
               </button>
               <button
                 type="button"
+                className={`tab-btn ${pestaña === 'vello' ? 'active' : ''}`}
+                onClick={() => setPestaña('vello')}
+              >
+                🧔 Vello
+              </button>
+              <button
+                type="button"
                 className={`tab-btn ${pestaña === 'rostro' ? 'active' : ''}`}
                 onClick={() => setPestaña('rostro')}
               >
@@ -166,8 +221,8 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={item.id}
                         type="button"
-                        className={`option-btn ${apariencia.estiloCabello === item.id ? 'selected' : ''}`}
-                        onClick={() => actualizar({ estiloCabello: item.id })}
+                        className={`option-btn ${estiloCabelloActual === item.id ? 'selected' : ''}`}
+                        onClick={() => actualizarCabello('estilo', item.id)}
                       >
                         {item.etiqueta}
                       </button>
@@ -180,9 +235,41 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={color}
                         type="button"
-                        className={`color-swatch ${apariencia.colorCabello === color ? 'selected' : ''}`}
+                        className={`color-swatch ${colorCabelloActual === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
-                        onClick={() => actualizar({ colorCabello: color })}
+                        onClick={() => actualizarCabello('color', color)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Vello Facial */}
+              {pestaña === 'vello' && (
+                <div className="control-group-section">
+                  <label className="section-label">Vello Facial</label>
+                  <div className="options-grid">
+                    {ESTILOS_VELLO_FACIAL.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`option-btn ${estiloVelloActual === item.id ? 'selected' : ''}`}
+                        onClick={() => actualizarVello('estilo', item.id)}
+                      >
+                        {item.etiqueta}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="section-label" style={{ marginTop: '16px' }}>Color de Barba/Bigote</label>
+                  <div className="swatches-row">
+                    {COLORES_CABELLO.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`color-swatch ${colorVelloActual === color ? 'selected' : ''}`}
+                        style={{ backgroundColor: color }}
+                        onClick={() => actualizarVello('color', color)}
                       />
                     ))}
                   </div>
@@ -192,7 +279,7 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
               {/* Rostro */}
               {pestaña === 'rostro' && (
                 <div className="control-group-section">
-                  <label className="section-label">Expresión Facial</label>
+                  <label className="section-label">Expresión Facial (UV Atlas)</label>
                   <div className="options-grid">
                     {EXPRESIONES_ROSTRO.map((item) => (
                       <button
@@ -211,26 +298,30 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
               {/* Ropa */}
               {pestaña === 'ropa' && (
                 <div className="control-group-section">
-                  <label className="section-label">Color de Camisa</label>
+                  <label className="section-label">Color Primario (Shader)</label>
                   <div className="swatches-row">
                     {COLORES_ROPA.map((color) => (
                       <button
                         key={color}
                         type="button"
-                        className={`color-swatch ${apariencia.colorRopa === color ? 'selected' : ''}`}
+                        className={`color-swatch ${colorPrimarioActual === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
-                        onClick={() => actualizar({ colorRopa: color })}
+                        onClick={() => actualizarRopa('colorPrimario', color)}
                       />
                     ))}
                   </div>
-                  <div className="custom-color-field" style={{ marginTop: '14px' }}>
-                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Color personalizado:</label>
-                    <input
-                      type="color"
-                      value={apariencia.colorRopa || '#3498db'}
-                      onChange={(e) => actualizar({ colorRopa: e.target.value })}
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', height: '36px', width: '60px' }}
-                    />
+
+                  <label className="section-label" style={{ marginTop: '14px' }}>Color Secundario / Acentos</label>
+                  <div className="swatches-row">
+                    {COLORES_ROPA.map((color) => (
+                      <button
+                        key={`sec-${color}`}
+                        type="button"
+                        className={`color-swatch ${colorSecundarioActual === color ? 'selected' : ''}`}
+                        style={{ backgroundColor: color }}
+                        onClick={() => actualizarRopa('colorSecundario', color)}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
@@ -306,3 +397,5 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
     </div>
   );
 };
+
+export default AvatarCustomizer3D;
