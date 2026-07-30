@@ -13,6 +13,14 @@ import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { Pupitre, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { crearTexturaTexto } from './mundo3d/texto3d.js';
 
+export interface AsientoInteractive {
+  x: number;
+  y: number;
+  z: number;
+  angulo: number;
+  label: string;
+}
+
 interface MetaversoCanvasProps {
   socket: Socket;
   audioClient: AudioClient | null;
@@ -33,8 +41,19 @@ const LocalPlayerController: React.FC<{
   avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
   isAula: boolean;
   estaSentado: boolean;
+  posicionSentadoTarget: AsientoInteractive | null;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
-}> = ({ socket, audioClient, localAvatar, personalizacion, avatarEstadoRef, isAula, estaSentado, onMove }) => {
+}> = ({
+  socket,
+  audioClient,
+  localAvatar,
+  personalizacion,
+  avatarEstadoRef,
+  isAula,
+  estaSentado,
+  posicionSentadoTarget,
+  onMove,
+}) => {
   const handleUpdatePosicion = (posicion: THREE.Vector3, anguloAvatar: number) => {
     avatarEstadoRef.current.posicion.copy(posicion);
 
@@ -64,16 +83,16 @@ const LocalPlayerController: React.FC<{
       isLocal={true}
       isAula={isAula}
       estaSentado={estaSentado}
+      posicionSentado={posicionSentadoTarget}
       onUpdatePosicion={handleUpdatePosicion}
     />
   );
 };
 
-// Elementos del Aula Virtual (Arquitectura moderna luminosa, Ventanales, Mobiliario UPDS)
+// Elementos del Aula Virtual
 const EscenarioAula: React.FC = () => {
   return (
     <group>
-      {/* 💡 Iluminación Cálida y Luminosa del Aula */}
       <ambientLight intensity={0.95} color="#ffffff" />
       <directionalLight
         position={[15, 25, 12]}
@@ -84,13 +103,11 @@ const EscenarioAula: React.FC = () => {
       />
       <directionalLight position={[-15, 15, -10]} intensity={0.6} color="#e0f2fe" />
 
-      {/* 🛋️ Piso Parquet de Madera Cálida con Borde UPDS Azul */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow position={[0, 0, 0]}>
         <planeGeometry args={[40, 40]} />
         <meshStandardMaterial color="#d97706" roughness={0.35} metalness={0.05} />
       </mesh>
 
-      {/* Alfombra / Zócalo Central Elegante */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -2]} receiveShadow>
         <planeGeometry args={[30, 26]} />
         <meshStandardMaterial color="#f8fafc" roughness={0.5} />
@@ -100,19 +117,15 @@ const EscenarioAula: React.FC = () => {
         <meshStandardMaterial color="#e2e8f0" roughness={0.4} />
       </mesh>
 
-      {/* 📋 Pizarra Digital Interactiva 3D con Bisel de Neón */}
       <group position={[0, 3.2, -19.7]}>
-        {/* Marco de madera noble */}
         <mesh castShadow receiveShadow>
           <boxGeometry args={[16.4, 6.4, 0.3]} />
           <meshStandardMaterial color="#3b2417" roughness={0.5} />
         </mesh>
-        {/* Pantalla digital interactiva */}
         <mesh position={[0, 0, 0.16]}>
           <boxGeometry args={[15.8, 5.8, 0.05]} />
           <meshStandardMaterial color="#0f172a" roughness={0.2} emissive="#1e293b" />
         </mesh>
-        {/* Título de la Pizarra UPDS */}
         <sprite position={[0, 3.7, 0.3]} scale={[6.5, 1.2, 1]}>
           <spriteMaterial
             attach="material"
@@ -128,10 +141,8 @@ const EscenarioAula: React.FC = () => {
         </sprite>
       </group>
 
-      {/* 👨‍🏫 Escritorio Moderno del Docente con Laptop 3D */}
       <group position={[0, 0, -13]}>
         <EscritorioProfesor position={[0, 0, 0]} />
-        {/* Silla del Docente (Ajustada a escala humana) */}
         <mesh position={[0, 0.9, -1.8]} castShadow>
           <boxGeometry args={[1.2, 1.4, 0.15]} />
           <meshStandardMaterial color="#1e293b" />
@@ -140,7 +151,6 @@ const EscenarioAula: React.FC = () => {
           <boxGeometry args={[1.2, 0.12, 1.1]} />
           <meshStandardMaterial color="#1e293b" />
         </mesh>
-        {/* Laptop 3D sobre la mesa */}
         <mesh position={[0.6, 0.94, 0.1]} castShadow>
           <boxGeometry args={[0.7, 0.03, 0.5]} />
           <meshStandardMaterial color="#94a3b8" metalness={0.8} roughness={0.2} />
@@ -151,12 +161,10 @@ const EscenarioAula: React.FC = () => {
         </mesh>
       </group>
 
-      {/* 🪑 Filas de Pupitres de Estudiantes Escalados (4 Columnas x 3 Filas = 12 Pupitres Espaciosos) */}
       {[-8.5, -3, 3, 8.5].map((x) =>
         [-5, 0, 5].map((z) => (
           <group key={`pupitre-${x}-${z}`} position={[x, 0, z]}>
             <Pupitre position={[0, 0, 0]} />
-            {/* Pequeña notebook / cuaderno sobre la mesa del pupitre */}
             <mesh position={[0.1, 0.99, -0.05]} castShadow>
               <boxGeometry args={[0.4, 0.03, 0.45]} />
               <meshStandardMaterial color={(x + z) % 2 === 0 ? '#2563eb' : '#059669'} />
@@ -165,25 +173,20 @@ const EscenarioAula: React.FC = () => {
         ))
       )}
 
-      {/* 🌿 Rincones Sociales y Libreros al fondo */}
       <Sofa position={[-16, 0, 12]} rotation={[0, Math.PI / 4, 0]} color="#0ea5e9" />
       <Sofa position={[16, 0, 12]} rotation={[0, -Math.PI / 4, 0]} color="#10b981" />
       <Estanteria position={[-18, 0, -10]} rotation={[0, Math.PI / 2, 0]} />
       <Estanteria position={[18, 0, -10]} rotation={[0, -Math.PI / 2, 0]} />
 
-      {/* 🏢 Paredes Luminosas y Grandes Ventanales con Vistas al Campus */}
-      {/* Pared Frontal */}
       <mesh position={[0, 4, -20]} receiveShadow userData={{ esPared: true }}>
         <boxGeometry args={[40, 8, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
       </mesh>
-      {/* Zócalo de Madera Frontal */}
       <mesh position={[0, 0.4, -19.7]}>
         <boxGeometry args={[40, 0.8, 0.1]} />
         <meshStandardMaterial color="#78350f" roughness={0.5} />
       </mesh>
 
-      {/* Pared Izquierda con Ventanal Vidriado */}
       <mesh position={[-20, 1.5, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow userData={{ esPared: true }}>
         <boxGeometry args={[40, 3, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
@@ -192,13 +195,11 @@ const EscenarioAula: React.FC = () => {
         <boxGeometry args={[40, 2, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
       </mesh>
-      {/* Cristal Ventana Izquierda */}
       <mesh position={[-19.8, 4.5, 0]} rotation={[0, Math.PI / 2, 0]}>
         <planeGeometry args={[36, 3]} />
         <meshStandardMaterial color="#38bdf8" transparent opacity={0.35} roughness={0.1} metalness={0.8} />
       </mesh>
 
-      {/* Pared Derecha con Ventanal Vidriado */}
       <mesh position={[20, 1.5, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow userData={{ esPared: true }}>
         <boxGeometry args={[40, 3, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
@@ -207,19 +208,16 @@ const EscenarioAula: React.FC = () => {
         <boxGeometry args={[40, 2, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
       </mesh>
-      {/* Cristal Ventana Derecha */}
       <mesh position={[19.8, 4.5, 0]} rotation={[0, -Math.PI / 2, 0]}>
         <planeGeometry args={[36, 3]} />
         <meshStandardMaterial color="#38bdf8" transparent opacity={0.35} roughness={0.1} metalness={0.8} />
       </mesh>
 
-      {/* Pared Trasera */}
       <mesh position={[0, 4, 20]} rotation={[0, Math.PI, 0]} receiveShadow userData={{ esPared: true }}>
         <boxGeometry args={[40, 8, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
       </mesh>
 
-      {/* 💡 Luces Paneles LED de Techo (Warm Recessed Ceiling Lights) */}
       {[-10, 0, 10].map((x) =>
         [-12, -4, 4, 12].map((z) => (
           <group key={`luz-${x}-${z}`} position={[x, 7.8, z]}>
@@ -263,14 +261,10 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return PERSONALIZACION_POR_DEFECTO;
   });
 
-
-
   const handleCambiarPersonalizacion = (nueva: PersonalizacionAvatar) => {
     setPersonalizacion(nueva);
     onUpdateAvatarPersonalization?.(nueva);
   };
-
-
 
   useEffect(() => {
     if (audioClient) {
@@ -284,36 +278,57 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   }, [remoteUsers, audioClient]);
 
   const [estaSentado, setEstaSentado] = useState(false);
-  const [asientoCercano, setAsientoCercano] = useState<{ x: number; y: number; z: number; label: string } | null>(null);
+  const [asientoCercano, setAsientoCercano] = useState<AsientoInteractive | null>(null);
+  const [posicionSentadoTarget, setPosicionSentadoTarget] = useState<AsientoInteractive | null>(null);
 
-  // Lista de todos los asientos interactivos en el aula (12 pupitres, escritorio docente, sofás)
   const ASIENTOS_AULA = React.useMemo(() => {
-    const asientos: { x: number; y: number; z: number; label: string }[] = [];
+    const asientos: AsientoInteractive[] = [];
 
-    // 12 Pupitres de estudiantes (Posición exacta de la silla detrás del pupitre)
     const pupitresX = [-8.5, -3, 3, 8.5];
     const pupitresZ = [-5, 0, 5];
     for (const px of pupitresX) {
       for (const pz of pupitresZ) {
-        asientos.push({ x: px, y: 0.1, z: pz + 0.95, label: '🪑 Pupitre' });
+        asientos.push({
+          x: px,
+          y: 0,
+          z: pz + 0.62,
+          angulo: Math.PI,
+          label: '🪑 Pupitre',
+        });
       }
     }
 
-    // Escritorio del docente
-    asientos.push({ x: 0, y: 0.1, z: -14.2, label: '👨‍🏫 Escritorio Docente' });
+    asientos.push({
+      x: 0,
+      y: 0,
+      z: -14.2,
+      angulo: 0,
+      label: '👨‍🏫 Escritorio Docente',
+    });
 
-    // Sofás del fondo
-    asientos.push({ x: -16, y: 0.1, z: 12, label: '🛋️ Sofá' });
-    asientos.push({ x: 16, y: 0.1, z: 12, label: '🛋️ Sofá' });
+    asientos.push({
+      x: -15.4,
+      y: 0,
+      z: 11.4,
+      angulo: Math.PI / 4,
+      label: '🛋️ Sofá',
+    });
+    asientos.push({
+      x: 15.4,
+      y: 0,
+      z: 11.4,
+      angulo: -Math.PI / 4,
+      label: '🛋️ Sofá',
+    });
 
     return asientos;
   }, []);
 
-  // Verificar proximidad a asientos cuando se está en el aula
   useEffect(() => {
     if (!isAula) {
       setAsientoCercano(null);
       setEstaSentado(false);
+      setPosicionSentadoTarget(null);
       return;
     }
 
@@ -321,8 +336,8 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
       const pos = avatarEstadoRef.current.posicion;
       if (!pos || estaSentado) return;
 
-      let mejorAsiento: { x: number; y: number; z: number; label: string } | null = null;
-      let minDist = 2.2; // Rango de interacción en metros
+      let mejorAsiento: AsientoInteractive | null = null;
+      let minDist = 2.2;
 
       for (const asiento of ASIENTOS_AULA) {
         const d = Math.hypot(pos.x - asiento.x, pos.z - asiento.z);
@@ -338,7 +353,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return () => clearInterval(interval);
   }, [isAula, estaSentado, ASIENTOS_AULA]);
 
-  // Manejo de la tecla [E] y Teclas de Movimiento para Sentarse / Levantarse
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -346,24 +360,24 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         return;
       }
 
-      // Si está sentado y presiona cualquier tecla de movimiento (WASD / Flechas) o [E], se levanta
       if (estaSentado) {
         if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyE'].includes(e.code) || e.key === 'e' || e.key === 'E') {
           setEstaSentado(false);
+          setPosicionSentadoTarget(null);
           avatarEstadoRef.current.posicion.y = 0;
           return;
         }
       }
 
-      // Si presiona [E] dentro del aula y está cerca de un asiento, se sienta
       if ((e.code === 'KeyE' || e.key === 'e' || e.key === 'E') && isAula && asientoCercano && !estaSentado) {
         setEstaSentado(true);
+        setPosicionSentadoTarget(asientoCercano);
         avatarEstadoRef.current.posicion.set(asientoCercano.x, asientoCercano.y, asientoCercano.z);
-        avatarEstadoRef.current.angulo = 0;
+        avatarEstadoRef.current.angulo = asientoCercano.angulo;
+        avatarEstadoRef.current.solicitarSnapCamara = true;
         return;
       }
 
-      // Interacción normal con aula desde el campus
       if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E') {
         if (isAula || !onInteractuarAula || !espacios || espacios.length === 0) return;
 
@@ -413,7 +427,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         <color attach="background" args={['#87ceeb']} />
         <Stars radius={100} depth={50} count={1200} factor={4} saturation={0} fade speed={1} />
 
-        {/* Luces principales */}
         <ambientLight intensity={isAula ? 0.9 : 0.7} color="#ffffff" />
         <directionalLight
           position={[10, 20, 10]}
@@ -422,7 +435,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           shadow-mapSize={[1024, 1024]}
         />
 
-        {/* Escenario 3D */}
         {isAula ? (
           <EscenarioAula />
         ) : (
@@ -431,7 +443,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           </group>
         )}
 
-        {/* Badge 3D de interacción para Sentarse cerca de un asiento */}
         {isAula && asientoCercano && !estaSentado && (
           <sprite position={[asientoCercano.x, asientoCercano.y + 1.8, asientoCercano.z]} scale={[3.6, 0.8, 1]}>
             <spriteMaterial
@@ -448,7 +459,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           </sprite>
         )}
 
-        {/* Controlador del Jugador Local */}
         <LocalPlayerController
           socket={socket}
           audioClient={audioClient}
@@ -457,13 +467,12 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           avatarEstadoRef={avatarEstadoRef}
           isAula={isAula}
           estaSentado={estaSentado}
+          posicionSentadoTarget={posicionSentadoTarget}
           onMove={() => { }}
         />
 
-        {/* Cámara en 3ra Persona con seguimiento suave y colisiones */}
         <CameraRig avatarEstadoRef={avatarEstadoRef} />
 
-        {/* Renderizado de Avatares Remotos */}
         {Object.keys(remoteUsers)
           .filter((sId) => {
             const u = remoteUsers[sId];
@@ -492,7 +501,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           })}
       </Canvas>
 
-      {/* UI Flotante de Personalización del Avatar */}
       <CustomizadorAvatar
         personalizacion={personalizacion}
         onCambiar={handleCambiarPersonalizacion}
@@ -500,7 +508,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         onToggle={() => setPanelCustomizerAbierto((v) => !v)}
       />
 
-      {/* Banner flotante de información cuando el avatar está sentado */}
       {isAula && estaSentado && (
         <div
           style={{

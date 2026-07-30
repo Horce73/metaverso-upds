@@ -624,12 +624,12 @@ function App() {
 
         {/* Barra superior HUD */}
         <div className="overlay-panel top-bar glass-panel">
-          <div>
-            <h2 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 700 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <h2 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
               {espacioActivo.nombre}
             </h2>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Conectados: {Object.keys(remoteUsers).length + 1} usuarios
               </p>
               {espacioActivo.tipo === 'aula' && (
@@ -642,6 +642,7 @@ function App() {
                     borderRadius: '8px',
                     fontSize: '0.75rem',
                     fontWeight: 600,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   🔑 Código: {espacioActivo.asignatura_codigo || `SIS-${espacioActivo.id}`}

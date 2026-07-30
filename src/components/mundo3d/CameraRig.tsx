@@ -8,6 +8,7 @@ const MARGEN_PARED = 0.35;
 export interface AvatarEstadoRef {
   posicion: THREE.Vector3;
   angulo: number;
+  solicitarSnapCamara?: boolean;
 }
 
 interface CameraRigProps {
@@ -21,9 +22,10 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
   const raycaster = useRef(new THREE.Raycaster());
   const origenRayo = useRef(new THREE.Vector3());
   const direccionRayo = useRef(new THREE.Vector3());
-  
+
+  const yawRef = useRef(0); // Ángulo horizontal de órbita de cámara (Mouse)
   const pitchRef = useRef(0.22); // Ángulo vertical inicial (~12.6 grados)
-  const distanciaRef = useRef(7.5); // Distancia por defecto más alejada (solicitado: ver mejor el entorno)
+  const distanciaRef = useRef(7.5); // Distancia por defecto
 
   // Efecto para controlar la rotación mediante arrastre (Pointer Events en window)
   useEffect(() => {
@@ -32,10 +34,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
     let prevY = 0;
 
     const onPointerDown = (e: PointerEvent) => {
-      // Registrar arrastre solo con click izquierdo o toque
       if (e.button !== 0 && e.pointerType === 'mouse') return;
-
-      // Solo arrastrar si el click inicial fue en el Canvas 3D
       const target = e.target as HTMLElement;
       if (!target || target.tagName !== 'CANVAS') return;
 
@@ -52,8 +51,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
       prevY = e.clientY;
 
       const sensibilidad = 0.005;
-      avatarEstadoRef.current.angulo -= dx * sensibilidad;
-      // Limitar el ángulo vertical (pitch) para evitar giros imposibles
+      yawRef.current -= dx * sensibilidad;
       pitchRef.current = Math.max(-0.15, Math.min(1.1, pitchRef.current + dy * sensibilidad));
     };
 
@@ -70,14 +68,12 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, [avatarEstadoRef]);
+  }, []);
 
-  // Efecto para controlar el Zoom con la rueda del ratón (Wheel Event en window)
+  // Efecto para controlar el Zoom con la rueda del ratón
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      // Sensibilidad del zoom
       const zoomSensibilidad = 0.005;
-      // Limitar la distancia entre 3.0 (cerca) y 12.0 (lejos)
       distanciaRef.current = Math.max(3.0, Math.min(12.0, distanciaRef.current + e.deltaY * zoomSensibilidad));
     };
 
@@ -91,16 +87,22 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
     const estado = avatarEstadoRef.current;
     if (!estado || !estado.posicion) return;
 
-    const { posicion, angulo } = estado;
+    // Alinear cámara cuando se solicite (ej: teletransporte a silla)
+    if (estado.solicitarSnapCamara) {
+      yawRef.current = estado.angulo;
+      estado.solicitarSnapCamara = false;
+    }
+
+    const { posicion } = estado;
+    const yaw = yawRef.current;
     const pitch = pitchRef.current;
     const distanciaObjetivo = distanciaRef.current;
 
-    // Dirección esférica en 3D
-    const dirX = Math.sin(angulo) * Math.cos(pitch);
+    // Dirección esférica en 3D para la cámara
+    const dirX = Math.sin(yaw) * Math.cos(pitch);
     const dirY = Math.sin(pitch);
-    const dirZ = Math.cos(angulo) * Math.cos(pitch);
+    const dirZ = Math.cos(yaw) * Math.cos(pitch);
 
-    // El rayo va desde el centro del avatar (cabeza/pecho) hacia la cámara
     direccionRayo.current.set(-dirX, dirY, -dirZ).normalize();
     origenRayo.current.set(posicion.x, posicion.y + 1.4, posicion.z);
 
@@ -124,7 +126,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
         }
       }
     } catch (err) {
-      console.warn('Error en la colisión de cámara:', err);
+      console.warn('Error en colisión de cámara:', err);
     }
 
     posicionDeseada.current.set(
