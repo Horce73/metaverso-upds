@@ -68,6 +68,7 @@ function App() {
   const [temaClase, setTemaClase] = useState('');
   const [verReporte, setVerReporte] = useState(false);
   const [reporteAsistencia, setReporteAsistencia] = useState<any[]>([]);
+  const [resumenAsistencia, setResumenAsistencia] = useState<{ total_inscritos: number; presentes: number; tardes: number; ausentes: number } | null>(null);
 
   // Inicializar autenticación desde LocalStorage
   useEffect(() => {
@@ -305,11 +306,30 @@ function App() {
       });
       const data = await res.json();
       if (res.ok) {
-        setReporteAsistencia(data);
+        setReporteAsistencia(data.asistencias);
+        setResumenAsistencia(data.resumen);
         setVerReporte(true);
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Finalizar la clase en curso (cierra la sesión y las asistencias abiertas)
+  const handleFinalizarClase = async () => {
+    if (!sesionClase) return;
+    try {
+      const res = await fetch(`/api/sesiones/${sesionClase.id}/finalizar`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSesionClase(null);
+      setVerReporte(false);
+      alert('Clase finalizada.');
+    } catch (err: any) {
+      alert(`Error al finalizar clase: ${err.message}`);
     }
   };
 
@@ -399,9 +419,14 @@ function App() {
                     </button>
                   </form>
                 ) : (
-                  <button className="btn-primary" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }} onClick={fetchAsistenciasReport}>
-                    Reporte Asistencia
-                  </button>
+                  <>
+                    <button className="btn-primary" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }} onClick={fetchAsistenciasReport}>
+                      Reporte Asistencia
+                    </button>
+                    <button className="btn-secondary" style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem' }} onClick={handleFinalizarClase}>
+                      Finalizar Clase
+                    </button>
+                  </>
                 )}
               </>
             )}
@@ -429,6 +454,14 @@ function App() {
             <h3 className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 600, marginBottom: '16px' }}>
               Reporte de Asistencia Automática
             </h3>
+            {resumenAsistencia && (
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Inscritos: <strong style={{ color: 'white' }}>{resumenAsistencia.total_inscritos}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Presentes: <strong style={{ color: 'var(--success)' }}>{resumenAsistencia.presentes}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tarde: <strong style={{ color: '#f59e0b' }}>{resumenAsistencia.tardes}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Ausentes: <strong style={{ color: '#ef4444' }}>{resumenAsistencia.ausentes}</strong></span>
+              </div>
+            )}
             <div className="reports-container">
               <table className="reports-table">
                 <thead>

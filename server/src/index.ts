@@ -382,7 +382,8 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
            SELECT sc.id, sc.tema, sc.inicio_real, sc.estado
            FROM sesiones_clase sc
            WHERE sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
-           ORDER BY (sc.estado = 'en_curso') DESC, sc.inicio_programado ASC
+           ORDER BY (sc.estado = 'en_curso') DESC,
+                    COALESCE(sc.inicio_real, sc.inicio_programado) DESC
            LIMIT 1
          ) sc ON TRUE
          WHERE e.activo = TRUE AND (e.tipo = 'campus' OR $2 = TRUE OR pd.usuario_id = $1)`,
@@ -402,7 +403,8 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
            SELECT sc.id, sc.tema, sc.inicio_real, sc.estado
            FROM sesiones_clase sc
            WHERE sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
-           ORDER BY (sc.estado = 'en_curso') DESC, sc.inicio_programado ASC
+           ORDER BY (sc.estado = 'en_curso') DESC,
+                    COALESCE(sc.inicio_real, sc.inicio_programado) DESC
            LIMIT 1
          ) sc ON TRUE
          LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
@@ -491,6 +493,49 @@ app.post('/api/sesiones', authenticateJWT, async (req: any, res) => {
   } catch (err) {
     console.error('Error al programar clase:', err);
     res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 8. Finalizar Clase (RF-08) - Docente dueño o Administrador
+// ----------------------------------------------------------------------------
+app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) => {
+  const { userId } = req.user;
+  const { id } = req.params;
+
+  try {
+    const sesionRes = await pool.query('SELECT * FROM sesiones_clase WHERE id = $1', [id]);
+    if (sesionRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sesion no encontrada' });
+    }
+    const sesion = sesionRes.rows[0];
+
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const esAdmin = rolesRes.rows.some((r: any) => r.nombre === 'administrador');
+    if (!esAdmin && sesion.docente_id !== userId) {
+      return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesion' });
+    }
+    if (sesion.estado !== 'en_curso') {
+      return res.status(400).json({ error: 'La clase no está en curso' });
+    }
+
+    const result = await pool.query(
+      `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    await pool.query(
+      `UPDATE asistencias SET hora_salida = NOW() WHERE sesion_id = $1 AND hora_salida IS NULL`,
+      [id]
+    );
+
+    await bitacora(userId, 'fin_clase', sesion.tema || '', req.ip);
+    res.json({ message: 'Clase finalizada', sesion: result.rows[0] });
+  } catch (err) {
+    console.error('Error al finalizar clase:', err);
+    res.status(500).json({ error: 'Error de servidor' });
   }
 });
 
@@ -1533,11 +1578,16 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
     if (sesionRes.rows.length === 0) {
       return res.status(404).json({ error: 'Sesion no encontrada' });
     }
-    if (sesionRes.rows[0].docente_id !== userId) {
+    const sesion = sesionRes.rows[0];
+
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const esAdmin = rolesRes.rows.some((r: any) => r.nombre === 'administrador');
+    if (!esAdmin && sesion.docente_id !== userId) {
       return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesion' });
     }
-
-    const sesion = sesionRes.rows[0];
 
     const asistenciasRes = await pool.query(
       `SELECT a.id, a.hora_ingreso, a.hora_salida, a.estado,
