@@ -4,19 +4,27 @@ import type { PersonalizacionAvatar } from './AvatarModel.js';
 const COLORES_ROPA = [
   '#3498db', '#e67e22', '#e74c3c', '#2ecc71',
   '#9b59b6', '#f1c40f', '#1abc9c', '#34495e',
+  '#0033A0', '#10b981', '#ec4899', '#6366f1',
 ];
 
 const TONOS_PIEL = ['#ffdbac', '#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#5c3a21'];
-
 const COLORES_CABELLO = ['#1e1b18', '#2c1d11', '#5a3d28', '#b87333', '#eab308', '#94a3b8', '#3b82f6'];
 
-const ESTILOS_CABELLO: { id: NonNullable<PersonalizacionAvatar['estiloCabello']>; etiqueta: string }[] = [
+const ESTILOS_CABELLO: { id: NonNullable<PersonalizacionAvatar['cabello']>['estilo']; etiqueta: string }[] = [
   { id: 'corto', etiqueta: 'Corto' },
   { id: 'tupe', etiqueta: 'Tupé' },
   { id: 'largo', etiqueta: 'Largo' },
   { id: 'rizado', etiqueta: 'Rizado' },
   { id: 'bun', etiqueta: 'Moño' },
   { id: 'calvo', etiqueta: 'Calvo' },
+];
+
+const ESTILOS_VELLO_FACIAL: { id: NonNullable<PersonalizacionAvatar['velloFacial']>['estilo']; etiqueta: string }[] = [
+  { id: 'ninguno', etiqueta: 'Lampiño' },
+  { id: 'bigote', etiqueta: 'Bigote' },
+  { id: 'perilla', etiqueta: 'Perilla' },
+  { id: 'barba', etiqueta: 'Barba' },
+  { id: 'candado', etiqueta: 'Candado' },
 ];
 
 const EXPRESIONES_ROSTRO: { id: NonNullable<PersonalizacionAvatar['expresionRostro']>; etiqueta: string; emoji: string }[] = [
@@ -39,10 +47,52 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
   abierto,
   onToggle,
 }) => {
-  const [pestaña, setPestaña] = useState<'cabello' | 'rostro' | 'ropa' | 'piel' | 'accesorios'>('cabello');
+  const [pestaña, setPestaña] = useState<'cabello' | 'vello' | 'rostro' | 'ropa' | 'piel' | 'accesorios'>('cabello');
 
-  const actualizar = (cambios: Partial<PersonalizacionAvatar>) =>
+  const estiloCabelloActual = personalizacion.cabello?.estilo || personalizacion.estiloCabello || 'corto';
+  const colorCabelloActual = personalizacion.cabello?.color || personalizacion.colorCabello || '#2c1d11';
+  const estiloVelloActual = personalizacion.velloFacial?.estilo || 'ninguno';
+  const colorVelloActual = personalizacion.velloFacial?.color || colorCabelloActual;
+
+  const colorPrimarioActual = personalizacion.ropa?.colorPrimario || personalizacion.colorRopa || '#3498db';
+  const colorSecundarioActual = personalizacion.ropa?.colorSecundario || '#1d4ed8';
+
+  const actualizar = (cambios: Partial<PersonalizacionAvatar>) => {
     onCambiar({ ...personalizacion, ...cambios });
+  };
+
+  const actualizarRopa = (clave: 'colorPrimario' | 'colorSecundario', val: string) => {
+    onCambiar({
+      ...personalizacion,
+      colorRopa: clave === 'colorPrimario' ? val : personalizacion.colorRopa,
+      ropa: {
+        colorPrimario: clave === 'colorPrimario' ? val : colorPrimarioActual,
+        colorSecundario: clave === 'colorSecundario' ? val : colorSecundarioActual,
+      },
+    });
+  };
+
+  const actualizarCabello = (clave: 'estilo' | 'color', val: string) => {
+    onCambiar({
+      ...personalizacion,
+      estiloCabello: clave === 'estilo' ? (val as any) : estiloCabelloActual,
+      colorCabello: clave === 'color' ? val : colorCabelloActual,
+      cabello: {
+        estilo: clave === 'estilo' ? (val as any) : estiloCabelloActual,
+        color: clave === 'color' ? val : colorCabelloActual,
+      },
+    });
+  };
+
+  const actualizarVello = (clave: 'estilo' | 'color', val: string) => {
+    onCambiar({
+      ...personalizacion,
+      velloFacial: {
+        estilo: clave === 'estilo' ? (val as any) : estiloVelloActual,
+        color: clave === 'color' ? val : colorVelloActual,
+      },
+    });
+  };
 
   const actualizarAccesorio = (clave: 'sombrero' | 'gafas' | 'mochila', valor: boolean) =>
     onCambiar({
@@ -59,7 +109,7 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
       {abierto && (
         <div style={estilos.panel}>
           <div style={estilos.tabs}>
-            {(['cabello', 'rostro', 'ropa', 'piel', 'accesorios'] as const).map((t) => (
+            {(['cabello', 'vello', 'rostro', 'ropa', 'piel', 'accesorios'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setPestaña(t)}
@@ -68,7 +118,7 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                   ...(pestaña === t ? estilos.tabActiva : {}),
                 }}
               >
-                {t[0].toUpperCase() + t.slice(1)}
+                {t === 'vello' ? 'Vello' : t[0].toUpperCase() + t.slice(1)}
               </button>
             ))}
           </div>
@@ -76,15 +126,15 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
           {/* Pestaña Cabello */}
           {pestaña === 'cabello' && (
             <div style={estilos.seccion}>
-              <span style={estilos.subtitulo}>Estilo de Cabello:</span>
+              <span style={estilos.subtitulo}>Estilo de Peinado:</span>
               <div style={estilos.gridBotones}>
                 {ESTILOS_CABELLO.map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => actualizar({ estiloCabello: item.id })}
+                    onClick={() => actualizarCabello('estilo', item.id)}
                     style={{
                       ...estilos.btnOpcion,
-                      ...(personalizacion.estiloCabello === item.id ? estilos.btnOpcionActivo : {}),
+                      ...(estiloCabelloActual === item.id ? estilos.btnOpcionActivo : {}),
                     }}
                   >
                     {item.etiqueta}
@@ -97,11 +147,47 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 {COLORES_CABELLO.map((c) => (
                   <button
                     key={c}
-                    onClick={() => actualizar({ colorCabello: c })}
+                    onClick={() => actualizarCabello('color', c)}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: personalizacion.colorCabello === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                      outline: colorCabelloActual === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pestaña Vello Facial */}
+          {pestaña === 'vello' && (
+            <div style={estilos.seccion}>
+              <span style={estilos.subtitulo}>Estilo de Vello Facial:</span>
+              <div style={estilos.gridBotones}>
+                {ESTILOS_VELLO_FACIAL.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => actualizarVello('estilo', item.id)}
+                    style={{
+                      ...estilos.btnOpcion,
+                      ...(estiloVelloActual === item.id ? estilos.btnOpcionActivo : {}),
+                    }}
+                  >
+                    {item.etiqueta}
+                  </button>
+                ))}
+              </div>
+
+              <span style={{ ...estilos.subtitulo, marginTop: '8px' }}>Tinte de Barba/Bigote:</span>
+              <div style={estilos.swatches}>
+                {COLORES_CABELLO.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => actualizarVello('color', c)}
+                    style={{
+                      ...estilos.swatch,
+                      background: c,
+                      outline: colorVelloActual === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}
@@ -112,7 +198,7 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
           {/* Pestaña Rostro */}
           {pestaña === 'rostro' && (
             <div style={estilos.seccion}>
-              <span style={estilos.subtitulo}>Expresión Facial:</span>
+              <span style={estilos.subtitulo}>Expresión Facial (Atlas UV):</span>
               <div style={estilos.gridBotones}>
                 {EXPRESIONES_ROSTRO.map((item) => (
                   <button
@@ -130,37 +216,45 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
             </div>
           )}
 
-          {/* Pestaña Ropa */}
+          {/* Pestaña Ropa (Shader Dual Tinte Primario & Secundario) */}
           {pestaña === 'ropa' && (
             <div style={estilos.seccion}>
+              <span style={estilos.subtitulo}>Color Primario de Ropa:</span>
               <div style={estilos.swatches}>
                 {COLORES_ROPA.map((c) => (
                   <button
                     key={c}
-                    onClick={() => actualizar({ colorRopa: c })}
+                    onClick={() => actualizarRopa('colorPrimario', c)}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: personalizacion.colorRopa === c ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
+                      outline: colorPrimarioActual === c ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}
               </div>
-              <label style={estilos.etiquetaInput}>
-                Color personalizado:
-                <input
-                  type="color"
-                  value={personalizacion.colorRopa || '#3498db'}
-                  onChange={(e) => actualizar({ colorRopa: e.target.value })}
-                  style={estilos.inputColor}
-                />
-              </label>
+
+              <span style={{ ...estilos.subtitulo, marginTop: '8px' }}>Color Secundario / Acentuado:</span>
+              <div style={estilos.swatches}>
+                {COLORES_ROPA.map((c) => (
+                  <button
+                    key={`sec-${c}`}
+                    onClick={() => actualizarRopa('colorSecundario', c)}
+                    style={{
+                      ...estilos.swatch,
+                      background: c,
+                      outline: colorSecundarioActual === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                    }}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
           {/* Pestaña Piel */}
           {pestaña === 'piel' && (
             <div style={estilos.seccion}>
+              <span style={estilos.subtitulo}>Tono de Piel:</span>
               <div style={estilos.swatches}>
                 {TONOS_PIEL.map((c) => (
                   <button
@@ -234,12 +328,12 @@ const estilos: Record<string, React.CSSProperties> = {
     color: '#fff',
     padding: '16px',
     borderRadius: '16px',
-    width: '280px',
+    width: '300px',
     boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
   },
   tabs: { display: 'flex', gap: '4px', marginBottom: '14px', flexWrap: 'wrap' },
   tab: {
-    flex: '1 1 30%',
+    flex: '1 1 28%',
     background: 'rgba(255,255,255,0.06)',
     color: '#94a3b8',
     border: 'none',
@@ -271,14 +365,12 @@ const estilos: Record<string, React.CSSProperties> = {
   },
   swatches: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
   swatch: {
-    width: '30px',
-    height: '30px',
+    width: '28px',
+    height: '28px',
     borderRadius: '50%',
     border: 'none',
     cursor: 'pointer',
   },
-  etiquetaInput: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', color: '#cbd5e1' },
-  inputColor: { width: '100%', height: '32px', border: 'none', borderRadius: '6px', cursor: 'pointer' },
   checkboxFila: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#e2e8f0', cursor: 'pointer' },
 };
 

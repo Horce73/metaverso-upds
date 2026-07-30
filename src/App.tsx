@@ -96,6 +96,20 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Tema (Claro / Oscuro)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    document.body.className = theme === 'light' ? 'light-mode' : 'dark-mode';
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   // Inicializar y restaurar autenticación y espacio activo tras F5
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
@@ -498,6 +512,8 @@ function App() {
       <LandingPage
         onNavigateLogin={() => navigateTo('/login')}
         onGuestLoginDirect={handleGuestLoginDirect}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -506,6 +522,8 @@ function App() {
   if (route === '/login') {
     return (
       <Login
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onLoginSuccess={(userData, tokenData, avatarData) => {
           setToken(tokenData);
           setUser(userData);
@@ -520,6 +538,8 @@ function App() {
   if (!token || !user) {
     return (
       <Login
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onLoginSuccess={(userData, tokenData, avatarData) => {
           setToken(tokenData);
           setUser(userData);
@@ -604,12 +624,12 @@ function App() {
 
         {/* Barra superior HUD */}
         <div className="overlay-panel top-bar glass-panel">
-          <div>
-            <h2 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 700 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <h2 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
               {espacioActivo.nombre}
             </h2>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Conectados: {Object.keys(remoteUsers).length + 1} usuarios
               </p>
               {espacioActivo.tipo === 'aula' && (
@@ -622,6 +642,7 @@ function App() {
                     borderRadius: '8px',
                     fontSize: '0.75rem',
                     fontWeight: 600,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   🔑 Código: {espacioActivo.asignatura_codigo || `SIS-${espacioActivo.id}`}
@@ -949,7 +970,14 @@ function App() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Cambiar a Modo Oscuro' : 'Cambiar a Modo Claro'}
+          >
+            {theme === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
+          </button>
           {isAdmin && (
             <button className="btn-primary" onClick={() => navigateTo('/admin')}>
               🛡️ Panel Admin

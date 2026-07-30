@@ -3,28 +3,47 @@ import React from 'react';
 interface LandingPageProps {
   onNavigateLogin: () => void;
   onGuestLoginDirect: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onNavigateLogin,
   onGuestLoginDirect,
+  theme = 'dark',
+  onToggleTheme,
 }) => {
+  const isLight = theme === 'light';
+
+  const logoHeader = isLight ? '/upds/Logotipo (2).png' : '/upds/Logotipo (1).png';
+  const isologoHero = isLight ? '/upds/Isologo (3).png' : '/upds/Isologo (2).png';
+  const sloganImg = isLight ? '/upds/Slogan (1).png' : '/upds/Slogan (2).png';
+
   return (
     <div className="landing-page">
       {/* Header Profesional */}
       <header className="landing-header">
         <div className="header-container">
           <div className="logo-section">
-            <div className="logo-upds">🎓</div>
-            <div>
-              <h1 className="logo-text">UPDS Metaverso</h1>
-              <p className="logo-subtitle">Educación Virtual 3D</p>
-            </div>
+            <img
+              src={logoHeader}
+              alt="Universidad Privada Domingo Savio"
+              style={{ height: '42px', objectFit: 'contain' }}
+            />
           </div>
-          <nav className="nav-links">
+          <nav className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <a href="#about">Sobre UPDS</a>
             <a href="#features">Características</a>
             <a href="#contact">Contacto</a>
+            {onToggleTheme && (
+              <button
+                className="theme-toggle-btn"
+                onClick={onToggleTheme}
+                title={isLight ? 'Cambiar a Modo Oscuro' : 'Cambiar a Modo Claro'}
+              >
+                {isLight ? '🌙 Modo Oscuro' : '☀️ Modo Claro'}
+              </button>
+            )}
             <button className="btn-nav" onClick={onNavigateLogin}>
               Ingresar
             </button>
@@ -50,14 +69,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
         <div className="hero-visual">
-          <div className="hero-cube">3D</div>
+          <div className="hero-cube">
+            <img
+              src={isologoHero}
+              alt="Isologo UPDS"
+              className="hero-cube-logo"
+            />
+          </div>
         </div>
       </section>
 
       {/* Sobre UPDS */}
       <section className="about" id="about">
         <div className="container">
-          <h2>Sobre la Universidad</h2>
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <h2>Sobre la Universidad</h2>
+            <img
+              src={sloganImg}
+              alt="Slogan UPDS"
+              style={{ height: '36px', objectFit: 'contain', marginTop: '12px', opacity: 0.9 }}
+            />
+          </div>
           <div className="about-grid">
             <div className="about-card">
               <div className="about-icon">🏫</div>
@@ -143,9 +175,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
       {/* Footer */}
       <footer className="landing-footer">
-        <div className="footer-content">
+        <div className="footer-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <img
+            src={logoHeader}
+            alt="UPDS Logo Footer"
+            style={{ height: '36px', objectFit: 'contain' }}
+          />
           <p>&copy; 2026 Universidad Privada Domingo Savio. Todos los derechos reservados.</p>
-          <p>🎓 Metaverso Educativo v1.0 - Ingeniería de Software</p>
+          <p>🎓 Metaverso Educativo v2.0 - Facultad de Ingeniería</p>
         </div>
       </footer>
     </div>

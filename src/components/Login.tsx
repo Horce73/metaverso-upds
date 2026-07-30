@@ -4,9 +4,13 @@ import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo
 
 interface LoginProps {
   onLoginSuccess: (userData: any, token: string, avatarData: any) => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', onToggleTheme }) => {
+  const isLight = theme === 'light';
+  const isologoImg = isLight ? '/upds/Isologo (3).png' : '/upds/Isologo (2).png';
   const [isRegister, setIsRegister] = useState(false);
   const [registerStep, setRegisterStep] = useState<1 | 2>(1);
 
@@ -212,15 +216,26 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       <div className="login-background">
         <div className="login-overlay"></div>
 
-        <div className="login-card glass-panel">
+        <div className="login-card glass-panel" style={{ position: 'relative' }}>
+          {onToggleTheme && (
+            <button
+              className="theme-toggle-btn"
+              onClick={onToggleTheme}
+              style={{ position: 'absolute', top: '20px', right: '20px' }}
+              title={isLight ? 'Cambiar a Modo Oscuro' : 'Cambiar a Modo Claro'}
+            >
+              {isLight ? '🌙' : '☀️'}
+            </button>
+          )}
+
           {/* Logo UPDS */}
           <div className="upds-brand">
-            <div className="upds-logo">
-              <svg width="60" height="60" viewBox="0 0 100 100" fill="none">
-                <circle cx="50" cy="50" r="48" stroke="#0033A0" strokeWidth="4"/>
-                <circle cx="50" cy="50" r="40" fill="#0033A0"/>
-                <text x="50" y="58" textAnchor="middle" fill="#FFFFFF" fontSize="28" fontWeight="bold">UPDS</text>
-              </svg>
+            <div className="upds-logo" style={{ marginBottom: '8px' }}>
+              <img
+                src={isologoImg}
+                alt="Isologo UPDS"
+                style={{ width: '80px', height: '80px', objectFit: 'contain', filter: 'drop-shadow(0 4px 15px rgba(0, 69, 150, 0.3))' }}
+              />
             </div>
             <h1 className="upds-title">
               <span className="upds-main">UNIVERSIDAD PRIVADA</span>
