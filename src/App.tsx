@@ -96,6 +96,20 @@ function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Tema (Claro / Oscuro)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    document.body.className = theme === 'light' ? 'light-mode' : 'dark-mode';
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   // Inicializar y restaurar autenticación y espacio activo tras F5
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
@@ -498,6 +512,8 @@ function App() {
       <LandingPage
         onNavigateLogin={() => navigateTo('/login')}
         onGuestLoginDirect={handleGuestLoginDirect}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -506,6 +522,8 @@ function App() {
   if (route === '/login') {
     return (
       <Login
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onLoginSuccess={(userData, tokenData, avatarData) => {
           setToken(tokenData);
           setUser(userData);
@@ -520,6 +538,8 @@ function App() {
   if (!token || !user) {
     return (
       <Login
+        theme={theme}
+        onToggleTheme={toggleTheme}
         onLoginSuccess={(userData, tokenData, avatarData) => {
           setToken(tokenData);
           setUser(userData);
@@ -949,7 +969,14 @@ function App() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={theme === 'light' ? 'Cambiar a Modo Oscuro' : 'Cambiar a Modo Claro'}
+          >
+            {theme === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
+          </button>
           {isAdmin && (
             <button className="btn-primary" onClick={() => navigateTo('/admin')}>
               🛡️ Panel Admin
