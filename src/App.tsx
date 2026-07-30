@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
@@ -84,8 +84,8 @@ function App() {
     }
   }, []);
 
-  // Cargar espacios disponibles cuando el usuario inicia sesión
-  useEffect(() => {
+  // Cargar espacios disponibles (usuarios/roles con permiso ven todo; invitados solo campus)
+  const fetchEspacios = useCallback(() => {
     if (!token) return;
 
     fetch('/api/espacios', {
@@ -100,6 +100,11 @@ function App() {
       .catch((err) => console.error('Error cargando espacios:', err));
   }, [token]);
 
+  // Cargar espacios disponibles cuando el usuario inicia sesión
+  useEffect(() => {
+    fetchEspacios();
+  }, [fetchEspacios]);
+
   // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
     // Proteger acceso a aulas para invitados
@@ -107,6 +112,11 @@ function App() {
       alert('❌ Los invitados solo pueden acceder al campus.\n\nPara acceder a las aulas, debes registrarte e iniciar sesión con tu cuenta UPDS.');
       return;
     }
+
+    // Refrescar la lista de espacios al entrar: si el admin creó o eliminó
+    // aulas desde el panel de administración en esta misma sesión, el
+    // campus 3D debe reflejarlo (ver AulaCampus en mundo3d/Campus.tsx).
+    fetchEspacios();
 
     setEspacioActivo(espacio);
     setChatMessages([]);
@@ -341,6 +351,7 @@ function App() {
           isAula={espacioActivo.tipo === 'aula'}
           localAvatar={avatar}
           remoteUsers={remoteUsers}
+          aulas={espacios.filter((e) => e.tipo === 'aula').map((e) => ({ id: e.id, nombre: e.nombre }))}
           onUpdateAvatarPersonalization={(nueva) => {
             setAvatar((prev) => {
               const updated = prev

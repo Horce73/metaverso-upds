@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
-import { Campus } from './mundo3d/Campus.js';
+import { Campus, type AulaCampus } from './mundo3d/Campus.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
@@ -17,6 +17,7 @@ interface MetaversoCanvasProps {
   isAula: boolean;
   localAvatar: any;
   remoteUsers: { [socketId: string]: any };
+  aulas?: AulaCampus[];
   onUpdateAvatarPersonalization?: (nueva: PersonalizacionAvatar) => void;
 }
 
@@ -126,6 +127,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   isAula,
   localAvatar,
   remoteUsers,
+  aulas = [],
   onUpdateAvatarPersonalization,
 }) => {
   const avatarEstadoRef = useRef<AvatarEstadoRef>({
@@ -181,7 +183,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           <EscenarioAula />
         ) : (
           <group>
-            <Campus />
+            <Campus aulas={aulas} />
           </group>
         )}
 

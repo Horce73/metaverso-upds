@@ -365,7 +365,9 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
     const roles = rolesRes.rows.map((r: any) => r.nombre);
 
     let espaciosRes;
-    if (roles.includes('administrador') || roles.includes('docente')) {
+    const esAdmin = roles.includes('administrador');
+    if (esAdmin || roles.includes('docente')) {
+      // El admin ve todas las aulas del sistema; el docente solo las suyas.
       espaciosRes = await pool.query(
         `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
                 a.nombre AS asignatura, a.codigo AS asignatura_codigo,
@@ -376,9 +378,15 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
          LEFT JOIN usuarios u ON u.id = pd.usuario_id
-         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
-         WHERE e.activo = TRUE AND (e.tipo = 'campus' OR pd.usuario_id = $1)`,
-        [userId]
+         LEFT JOIN LATERAL (
+           SELECT sc.id, sc.tema, sc.inicio_real, sc.estado
+           FROM sesiones_clase sc
+           WHERE sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+           ORDER BY (sc.estado = 'en_curso') DESC, sc.inicio_programado ASC
+           LIMIT 1
+         ) sc ON TRUE
+         WHERE e.activo = TRUE AND (e.tipo = 'campus' OR $2 = TRUE OR pd.usuario_id = $1)`,
+        [userId, esAdmin]
       );
     } else {
       espaciosRes = await pool.query(
@@ -390,7 +398,13 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN inscripciones i ON i.asignatura_id = a.id AND i.usuario_id = $1
-         LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+         LEFT JOIN LATERAL (
+           SELECT sc.id, sc.tema, sc.inicio_real, sc.estado
+           FROM sesiones_clase sc
+           WHERE sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+           ORDER BY (sc.estado = 'en_curso') DESC, sc.inicio_programado ASC
+           LIMIT 1
+         ) sc ON TRUE
          LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
          LEFT JOIN usuarios u ON u.id = pd.usuario_id
          WHERE e.activo = TRUE

@@ -26,7 +26,33 @@ function generarPupitres(): [number, number, number][] {
 }
 const POSICIONES_PUPITRES = generarPupitres();
 
-export const Campus: React.FC = () => {
+export interface AulaCampus {
+  id: number | string;
+  nombre: string;
+}
+
+// Distribuye las aulas en una grilla (4 por fila) sobre la Isla 2, empezando
+// en la misma fila frontal que antes ocupaban las 2 aulas fijas (z=6) y
+// avanzando hacia el fondo de la isla por cada fila adicional.
+const AULAS_POR_FILA = 4;
+const ESPACIADO_COLUMNA = 9;
+const ESPACIADO_FILA = 11;
+const Z_PRIMERA_FILA = 6;
+
+function posicionAula(indice: number): [number, number, number] {
+  const columna = indice % AULAS_POR_FILA;
+  const fila = Math.floor(indice / AULAS_POR_FILA);
+  const x = (columna - (AULAS_POR_FILA - 1) / 2) * ESPACIADO_COLUMNA;
+  const z = Z_PRIMERA_FILA - fila * ESPACIADO_FILA;
+  return [x, 0, z];
+}
+
+export const Campus: React.FC<{ aulas?: AulaCampus[] }> = ({ aulas = [] }) => {
+  const filasDeAulas = Math.ceil(aulas.length / AULAS_POR_FILA);
+  // Los edificios de servicio se ubican siempre después de la última fila de
+  // aulas para que nunca se superpongan, sin importar cuántas aulas existan.
+  const zEdificiosServicio = Z_PRIMERA_FILA - filasDeAulas * ESPACIADO_FILA - 8;
+
   return (
     <group>
       {/* 🏝️ 1. ISLA 1: PLAZA SOCIAL Y BIENVENIDA (Límites z: -1 a 15, x: -11 a 11) */}
@@ -127,40 +153,31 @@ export const Campus: React.FC = () => {
         <ArbolEstilizado position={[-16, 0.04, -12]} />
         <ArbolEstilizado position={[16, 0.04, -12]} />
 
-        {/* Edificio: Aula 101 */}
-        <Edificio
-          posicion={[-12, 0, 6]}
-          mirarHacia={[0, 0, 6]}
-          ancho={8}
-          profundidad={8}
-          nombre="Aula 101"
-        >
-          <Pizarra position={[0, 1.3, -3.8]} />
-          <EscritorioProfesor position={[0, 0, -2.8]} />
-          {POSICIONES_PUPITRES.map((pos, i) => (
-            <Pupitre key={i} position={pos} />
-          ))}
-        </Edificio>
-
-        {/* Edificio: Aula 102 */}
-        <Edificio
-          posicion={[12, 0, 6]}
-          mirarHacia={[0, 0, 6]}
-          ancho={8}
-          profundidad={8}
-          nombre="Aula 102"
-        >
-          <Pizarra position={[0, 1.3, -3.8]} />
-          <EscritorioProfesor position={[0, 0, -2.8]} />
-          {POSICIONES_PUPITRES.map((pos, i) => (
-            <Pupitre key={i} position={pos} />
-          ))}
-        </Edificio>
+        {/* Edificios de Aula: uno por cada espacio tipo 'aula' que exista en este momento */}
+        {aulas.map((aula, i) => {
+          const posicion = posicionAula(i);
+          return (
+            <Edificio
+              key={aula.id}
+              posicion={posicion}
+              mirarHacia={[0, 0, posicion[2]]}
+              ancho={8}
+              profundidad={8}
+              nombre={aula.nombre}
+            >
+              <Pizarra position={[0, 1.3, -3.8]} />
+              <EscritorioProfesor position={[0, 0, -2.8]} />
+              {POSICIONES_PUPITRES.map((pos, j) => (
+                <Pupitre key={j} position={pos} />
+              ))}
+            </Edificio>
+          );
+        })}
 
         {/* Edificio: Sala de Descanso */}
         <Edificio
-          posicion={[-12, 0, -10]}
-          mirarHacia={[0, 0, -10]}
+          posicion={[-12, 0, zEdificiosServicio]}
+          mirarHacia={[0, 0, zEdificiosServicio]}
           ancho={8}
           profundidad={8}
           colorPared="#f1f5f9"
@@ -175,8 +192,8 @@ export const Campus: React.FC = () => {
 
         {/* Edificio: Sala de Decanos */}
         <Edificio
-          posicion={[12, 0, -10]}
-          mirarHacia={[0, 0, -10]}
+          posicion={[12, 0, zEdificiosServicio]}
+          mirarHacia={[0, 0, zEdificiosServicio]}
           ancho={8}
           profundidad={8}
           colorPared="#e2e8f0"
