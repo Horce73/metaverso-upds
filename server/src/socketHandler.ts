@@ -8,11 +8,36 @@ interface UserState {
   espacioId: number;
   position: [number, number, number];
   rotation: [number, number, number];
+  estaSentado: boolean;
   apariencia: any;
   peerId?: string;
+  roles: string[];
 }
 
 const activeUsers = new Map<string, UserState>();
+
+async function obtenerRoles(userId: number): Promise<string[]> {
+  if (!userId) return [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    return rows.map((r: any) => r.nombre);
+  } catch {
+    return [];
+  }
+}
+
+// La pizarra es colaborativa: docentes, estudiantes y administradores pueden escribir.
+function puedeDibujar(roles: string[]): boolean {
+  return roles.includes('docente') || roles.includes('estudiante') || roles.includes('administrador');
+}
+
+// Borrar el pizarrón y persistir el snapshot oficial son acciones de docente/admin.
+function puedeAdministrarPizarra(roles: string[]): boolean {
+  return roles.includes('docente') || roles.includes('administrador');
+}
 
 export function setupSockets(io: Server) {
   io.on('connection', (socket: Socket) => {
@@ -43,14 +68,18 @@ export function setupSockets(io: Server) {
         }
       });
 
+      const roles = await obtenerRoles(numUserId);
+
       const userState: UserState = {
         userId: numUserId,
         nombreVisible,
         espacioId: Number(espacioId) || 1,
         position: [0, 0.5, 0],
         rotation: [0, 0, 0],
+        estaSentado: false,
         apariencia,
-        peerId
+        peerId,
+        roles
       };
 
       activeUsers.set(socket.id, userState);
@@ -84,14 +113,12 @@ export function setupSockets(io: Server) {
     }) => {
       const user = activeUsers.get(socket.id);
       if (user) {
-        user.position = data.position;
-        user.rotation = data.rotation;
-        (user as any).estaSentado = !!data.estaSentado;
+        user.estaSentado = !!data.estaSentado;
         socket.to(String(user.espacioId)).emit('user_moved', {
           socketId: socket.id,
           position: user.position,
           rotation: user.rotation,
-          estaSentado: (user as any).estaSentado
+          estaSentado: user.estaSentado
         });
       }
     });
@@ -100,10 +127,14 @@ export function setupSockets(io: Server) {
       espacioId: string;
       stroke: any;
     }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || !puedeDibujar(user.roles)) return;
       socket.to(data.espacioId).emit('stroke_received', data.stroke);
     });
 
     socket.on('clear_board', (data: { espacioId: string }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || !puedeAdministrarPizarra(user.roles)) return;
       socket.to(data.espacioId).emit('board_cleared');
     });
 
@@ -111,6 +142,12 @@ export function setupSockets(io: Server) {
       sesionId: string;
       trazos: any[];
     }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || !puedeAdministrarPizarra(user.roles)) {
+        socket.emit('pizarra_saved_status', { success: false, error: 'PERMISO_DENEGADO' });
+        return;
+      }
+
       const { sesionId, trazos } = data;
       try {
         await pool.query(
