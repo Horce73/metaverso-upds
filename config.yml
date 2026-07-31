@@ -1,0 +1,10 @@
+# Archivo de configuración opcional para Cloudflare Tunnels (Named Tunnels)
+# Si deseas usar un túnel persistente con tu propio dominio en lugar de trycloudflare.com,
+# configura las siguientes líneas con tus credenciales de Cloudflare:
+#
+# tunnel: tu-tunnel-id-guid
+# credentials-file: /etc/cloudflared/tu-tunnel-id.json
+# ingress:
+#   - hostname: metaverso.tudominio.com
+#     service: http://frontend:80
+#   - service: http_status:404

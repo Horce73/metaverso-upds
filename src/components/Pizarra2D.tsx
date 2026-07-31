@@ -5,7 +5,10 @@ interface Pizarra2DProps {
   socket: Socket;
   espacioId: string;
   sesionId: string;
-  isDocente: boolean;
+  /** Puede trazar en la pizarra (docente, estudiante o administrador). */
+  puedeDibujar: boolean;
+  /** Puede borrar el pizarrón y persistir el snapshot oficial (docente o administrador). */
+  puedeAdministrar: boolean;
   onClose: () => void;
 }
 
@@ -22,7 +25,8 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
   socket,
   espacioId,
   sesionId,
-  isDocente,
+  puedeDibujar,
+  puedeAdministrar,
   onClose
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -109,14 +113,16 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
     setStrokesHistory([]);
   };
 
-  // Enviar evento de limpiar pizarra a todos
+  // Enviar evento de limpiar pizarra a todos (solo docente/admin)
   const handleClearBoard = () => {
+    if (!puedeAdministrar) return;
     clearLocalCanvas();
     socket.emit('clear_board', { espacioId });
   };
 
   // Iniciar trazo (mouse o táctil)
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!puedeDibujar) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -177,9 +183,9 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
     setIsDrawing(false);
   };
 
-  // Guardar Pizarra en DB (RF-04)
+  // Guardar Pizarra en DB (RF-04) — solo docente/admin
   const handleSaveBoard = () => {
-    if (!sesionId) return;
+    if (!puedeAdministrar || !sesionId) return;
     setSaveStatus('saving');
     socket.emit('save_pizarra', {
       sesionId,
@@ -191,41 +197,41 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
     <div className="pizarra-modal glass-panel">
       <div className="pizarra-header">
         <h3 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 600 }}>
-          Pizarra Compartida - {isDocente ? 'Modo Escritura (Docente)' : 'Visualización en Vivo'}
+          Pizarra Compartida - {puedeAdministrar ? 'Modo Escritura (Docente)' : puedeDibujar ? 'Modo Escritura (Estudiante)' : 'Visualización en Vivo'}
         </h3>
-        
+
         <div className="pizarra-toolbar">
-          {/* Herramientas de Dibujo (habilitadas solo para Docentes o estudiantes si se quiere cooperativo) */}
-          {isDocente && (
+          {/* Herramientas de Dibujo: cualquiera con permiso de escritura elige su color/grosor */}
+          {puedeDibujar && (
             <>
-              <button 
-                className="color-dot active" 
+              <button
+                className="color-dot active"
                 style={{ backgroundColor: '#ffffff' }}
                 onClick={() => setColor('#ffffff')}
               />
-              <button 
-                className="color-dot" 
+              <button
+                className="color-dot"
                 style={{ backgroundColor: '#ff4c8b' }}
                 onClick={() => setColor('#ff4c8b')}
               />
-              <button 
-                className="color-dot" 
+              <button
+                className="color-dot"
                 style={{ backgroundColor: '#3b82f6' }}
                 onClick={() => setColor('#3b82f6')}
               />
-              <button 
-                className="color-dot" 
+              <button
+                className="color-dot"
                 style={{ backgroundColor: '#10b981' }}
                 onClick={() => setColor('#10b981')}
               />
-              <button 
-                className="color-dot" 
+              <button
+                className="color-dot"
                 style={{ backgroundColor: '#f59e0b' }}
                 onClick={() => setColor('#f59e0b')}
               />
 
-              <select 
-                value={lineWidth} 
+              <select
+                value={lineWidth}
                 onChange={(e) => setLineWidth(parseInt(e.target.value))}
                 style={{ background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--panel-border)', borderRadius: '4px', padding: '0 4px', fontSize: '0.8rem' }}
               >
@@ -233,13 +239,18 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
                 <option value={4}>Medio</option>
                 <option value={8}>Grueso</option>
               </select>
+            </>
+          )}
 
+          {/* Acciones administrativas: borrar todo y persistir el snapshot oficial (docente/admin) */}
+          {puedeAdministrar && (
+            <>
               <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={handleClearBoard}>
                 Borrar Todo
               </button>
 
-              <button 
-                className="btn-primary" 
+              <button
+                className="btn-primary"
                 style={{ padding: '4px 12px', fontSize: '0.8rem', margin: 0 }}
                 onClick={handleSaveBoard}
                 disabled={saveStatus === 'saving'}
@@ -259,10 +270,10 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
         <canvas
           ref={canvasRef}
           className="pizarra-canvas"
-          onMouseDown={isDocente ? startDrawing : undefined}
-          onMouseMove={isDocente ? draw : undefined}
-          onMouseUp={isDocente ? stopDrawing : undefined}
-          onMouseLeave={isDocente ? stopDrawing : undefined}
+          onMouseDown={puedeDibujar ? startDrawing : undefined}
+          onMouseMove={puedeDibujar ? draw : undefined}
+          onMouseUp={puedeDibujar ? stopDrawing : undefined}
+          onMouseLeave={puedeDibujar ? stopDrawing : undefined}
         />
       </div>
     </div>

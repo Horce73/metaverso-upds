@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
@@ -59,8 +59,15 @@ function App() {
   const [espacios, setEspacios] = useState<Espacio[]>([]);
   const [espacioActivo, setEspacioActivo] = useState<Espacio | null>(null);
 
-  // Conexiones Sockets y WebRTC
-  const [socket, setSocket] = useState<Socket | null>(null);
+  // Conexiones Sockets y WebRTC (socketRef síncrono para evitar cierres de estado desactualizados)
+  const socketRef = useRef<Socket | null>(null);
+  const [socket, setSocketState] = useState<Socket | null>(null);
+
+  const setSocket = useCallback((s: Socket | null) => {
+    socketRef.current = s;
+    setSocketState(s);
+  }, []);
+
   const [audioClient, setAudioClient] = useState<AudioClient | null>(null);
   const [peerId, setPeerId] = useState<string>('');
   const [remoteUsers, setRemoteUsers] = useState<{ [socketId: string]: any }>({});
@@ -76,6 +83,7 @@ function App() {
   const [sesionClase, setSesionClase] = useState<any>(null);
   const [verReporte, setVerReporte] = useState(false);
   const [reporteAsistencia, setReporteAsistencia] = useState<any[]>([]);
+  const [resumenAsistencia, setResumenAsistencia] = useState<{ total_inscritos: number; presentes: number; tardes: number; ausentes: number } | null>(null);
 
   // Interacción de Aulas y Solicitudes de Acceso
   const [solicitudAulaModal, setSolicitudAulaModal] = useState<Espacio | null>(null);
@@ -125,8 +133,8 @@ function App() {
     }
   }, []);
 
-  // Cargar espacios disponibles cuando el usuario inicia sesión
-  useEffect(() => {
+  // Cargar espacios disponibles (usuarios/roles con permiso ven todo; invitados solo campus)
+  const fetchEspacios = useCallback(() => {
     if (!token) return;
 
     fetch('/api/espacios', {
@@ -141,22 +149,31 @@ function App() {
       .catch((err) => console.error('Error cargando espacios:', err));
   }, [token]);
 
+  // Cargar espacios disponibles cuando el usuario inicia sesión
+  useEffect(() => {
+    fetchEspacios();
+  }, [fetchEspacios]);
+
   // Inicializar Socket persistente para el usuario autenticado
   useEffect(() => {
     if (!token || !user) return;
 
-    const activeSocket = io();
-    setSocket(activeSocket);
+    if (!socketRef.current || !socketRef.current.connected) {
+      const activeSocket = io();
+      setSocket(activeSocket);
+    }
 
-    activeSocket.on('nueva_solicitud_acceso', (solicitud) => {
+    const activeSocket = socketRef.current!;
+
+    const handleNuevaSolicitud = (solicitud: any) => {
       const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
       if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
         console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
         setSolicitudesPendientesDocente((prev) => [...prev, solicitud]);
       }
-    });
+    };
 
-    activeSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
+    const handleRespuestaSolicitud = (data: { espacioId: string; aprobado: boolean }) => {
       if (data.aprobado) {
         console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
         setSolicitudAulaModal(null);
@@ -168,11 +185,25 @@ function App() {
           return currentEspacios;
         });
       }
-    });
+    };
+
+    const handleSessionTerminated = (data: { reason: string }) => {
+      alert(`⚠️ ${data.reason || 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'}`);
+      handleLogout();
+    };
+
+    activeSocket.off('nueva_solicitud_acceso', handleNuevaSolicitud);
+    activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
+    activeSocket.off('session_terminated', handleSessionTerminated);
+
+    activeSocket.on('nueva_solicitud_acceso', handleNuevaSolicitud);
+    activeSocket.on('respuesta_solicitud_acceso', handleRespuestaSolicitud);
+    activeSocket.on('session_terminated', handleSessionTerminated);
 
     return () => {
-      activeSocket.disconnect();
-      setSocket(null);
+      activeSocket.off('nueva_solicitud_acceso', handleNuevaSolicitud);
+      activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
+      activeSocket.off('session_terminated', handleSessionTerminated);
     };
   }, [token, user]);
 
@@ -205,8 +236,9 @@ function App() {
     }
   };
 
+  // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
-    if (espacioActivo?.id === espacio.id && socket && socket.connected) {
+    if (espacioActivo?.id === espacio.id && socketRef.current && socketRef.current.connected) {
       console.log('⚠️ Ya estás conectado a este espacio:', espacio.nombre);
       return;
     }
@@ -218,11 +250,8 @@ function App() {
       return;
     }
 
-    // 0. Desconectar sockets y audio previos antes de unirse al nuevo espacio
-    if (socket) {
-      socket.disconnect();
-      setSocket(null);
-    }
+    fetchEspacios();
+
     if (audioClient) {
       audioClient.destroy();
       setAudioClient(null);
@@ -240,9 +269,20 @@ function App() {
       setMostrarCrearCursoModal(true);
     }
 
-    // 1. Inicializar Sockets
-    const newSocket = io();
-    setSocket(newSocket);
+    // 1. Reutilizar o inicializar el socket persistente de la pestaña
+    if (!socketRef.current || !socketRef.current.connected) {
+      const newSocket = io();
+      setSocket(newSocket);
+    }
+
+    const activeSocket = socketRef.current!;
+
+    activeSocket.off('space_users');
+    activeSocket.off('current_users');
+    activeSocket.off('user_joined');
+    activeSocket.off('user_left');
+    activeSocket.off('user_moved');
+    activeSocket.off('chat_message');
 
     const myUserId = String(user?.id || 'guest_' + Date.now());
 
@@ -250,7 +290,7 @@ function App() {
     const emitJoin = (pId?: string) => {
       if (joinedSpace) return;
       joinedSpace = true;
-      newSocket.emit('join_space', {
+      activeSocket.emit('join_space', {
         espacioId: espacio.id,
         user: {
           id: user?.id,
@@ -288,17 +328,17 @@ function App() {
       });
     };
 
-    newSocket.on('space_users', handleInitialUsers);
-    newSocket.on('current_users', handleInitialUsers);
+    activeSocket.on('space_users', handleInitialUsers);
+    activeSocket.on('current_users', handleInitialUsers);
 
-    newSocket.on('user_joined', (data) => {
+    activeSocket.on('user_joined', (data: any) => {
       setRemoteUsers((prev) => ({ ...prev, [data.socketId]: data.user }));
       if (data.user.peerId && newAudioClient) {
         newAudioClient.callUser(data.user.peerId);
       }
     });
 
-    newSocket.on('user_left', (data) => {
+    activeSocket.on('user_left', (data: any) => {
       setRemoteUsers((prev) => {
         const copy = { ...prev };
         const leftUser = copy[data.socketId];
@@ -310,27 +350,28 @@ function App() {
       });
     });
 
-    newSocket.on('user_moved', (data) => {
+    activeSocket.on('user_moved', (data: any) => {
       setRemoteUsers((prev) => {
-        if (!prev[data.socketId]) return prev;
+        const existing = prev[data.socketId] || {};
         return {
           ...prev,
           [data.socketId]: {
-            ...prev[data.socketId],
+            ...existing,
             position: data.position,
             rotation: data.rotation,
+            estaSentado: data.estaSentado,
           },
         };
       });
     });
 
-    newSocket.on('chat_message', (data) => {
+    activeSocket.on('chat_message', (data: any) => {
       setChatMessages((prev) => [...prev, data]);
     });
 
-    newSocket.on('pizarra_actualizada', (_data) => {});
+    activeSocket.on('pizarra_actualizada', (_data: any) => {});
 
-    newSocket.on('clase_iniciada', (sesion) => {
+    activeSocket.on('clase_iniciada', (sesion: any) => {
       console.log('🎓 Notificación de clase iniciada recibida:', sesion);
       setSesionClase(sesion);
       if (sesion && sesion.espacio_id) {
@@ -354,7 +395,7 @@ function App() {
       }
     });
 
-    newSocket.on('clase_finalizada', (data: { espacioId: string }) => {
+    activeSocket.on('clase_finalizada', (data: { espacioId: string }) => {
       if (espacioActivo && String(espacioActivo.id) === String(data.espacioId)) {
         setSesionClase(null);
         setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
@@ -364,7 +405,7 @@ function App() {
       );
     });
 
-    newSocket.on('nueva_solicitud_acceso', (solicitud) => {
+    activeSocket.on('nueva_solicitud_acceso', (solicitud: any) => {
       const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
       if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
         console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
@@ -372,7 +413,7 @@ function App() {
       }
     });
 
-    newSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
+    activeSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
       if (data.aprobado) {
         console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
         setSolicitudAulaModal(null);
@@ -388,8 +429,9 @@ function App() {
 
   // Salir del escenario 3D
   const handleLeaveSpace = () => {
-    if (socket) {
-      socket.disconnect();
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
       setSocket(null);
     }
     if (audioClient) {
@@ -426,7 +468,11 @@ function App() {
     setToken('');
     setAvatar(null);
     setEspacioActivo(null);
-    if (socket) socket.disconnect();
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      setSocket(null);
+    }
     if (audioClient) audioClient.destroy();
     navigateTo('/');
   };
@@ -435,12 +481,13 @@ function App() {
   const fetchAsistenciasReport = async () => {
     if (!sesionClase) return;
     try {
-      const res = await fetch(`/api/asistencias/reporte?sesion_id=${sesionClase.id}`, {
+      const res = await fetch(`/api/asistencias/reporte/${sesionClase.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
         setReporteAsistencia(data.asistencias);
+        setResumenAsistencia(data.resumen);
         setVerReporte(true);
       }
     } catch (err) {
@@ -448,37 +495,31 @@ function App() {
     }
   };
 
-  // Finalizar la sesión de clase en curso (Docente)
+  // Finalizar la sesión de clase en curso (Docente dueño o Administrador)
   const handleFinalizarClase = async () => {
-    if (!espacioActivo) return;
+    if (!espacioActivo || !sesionClase) return;
     if (!confirm('¿Estás seguro de que deseas finalizar la clase actual? El aula volverá a estar disponible.')) return;
 
     try {
-      const res = await fetch('/api/sesiones/finalizar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          espacio_id: espacioActivo.id,
-          sesion_id: sesionClase?.id,
-        }),
+      const res = await fetch(`/api/sesiones/${sesionClase.id}/finalizar`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
-      if (res.ok) {
-        setSesionClase(null);
-        setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
-        setEspacios((prev) =>
-          prev.map((e) => (String(e.id) === String(espacioActivo.id) ? { ...e, sesion_activa: null } : e))
-        );
-        if (socket) {
-          socket.emit('clase_finalizada', { espacioId: espacioActivo.id });
-        }
-        alert('✅ Clase finalizada con éxito. El aula ahora está libre.');
+      setSesionClase(null);
+      setVerReporte(false);
+      setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
+      setEspacios((prev) =>
+        prev.map((e) => (String(e.id) === String(espacioActivo.id) ? { ...e, sesion_activa: null } : e))
+      );
+      if (socket) {
+        socket.emit('clase_finalizada', { espacioId: espacioActivo.id });
       }
-    } catch (err) {
-      console.error('Error al finalizar clase:', err);
+      alert('✅ Clase finalizada con éxito. El aula ahora está libre.');
+    } catch (err: any) {
+      alert(`Error al finalizar clase: ${err.message}`);
     }
   };
 
@@ -816,7 +857,8 @@ function App() {
             socket={socket!}
             espacioId={espacioActivo.id}
             sesionId={sesionClase?.id}
-            isDocente={user.rol === 'docente'}
+            puedeDibujar={!user.isGuest && user.rol !== 'invitado'}
+            puedeAdministrar={isDocente || isAdmin}
             onClose={() => setPizarraAbierta(false)}
           />
         )}
@@ -827,6 +869,14 @@ function App() {
             <h3 className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 600, marginBottom: '16px' }}>
               Reporte de Asistencia Automática
             </h3>
+            {resumenAsistencia && (
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Inscritos: <strong style={{ color: 'white' }}>{resumenAsistencia.total_inscritos}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Presentes: <strong style={{ color: 'var(--success)' }}>{resumenAsistencia.presentes}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tarde: <strong style={{ color: '#f59e0b' }}>{resumenAsistencia.tardes}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Ausentes: <strong style={{ color: '#ef4444' }}>{resumenAsistencia.ausentes}</strong></span>
+              </div>
+            )}
             <div className="reports-container">
               <table className="reports-table">
                 <thead>

@@ -324,6 +324,21 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     return atlas;
   }, []);
 
+  // Posición/rotación inicial: se aplica una única vez al montar. A partir de
+  // ahí useFrame es la única fuente de verdad (lerp local por teclado, lerp/snap
+  // remoto por red). Si se pasaran position/rotation como props reactivos del
+  // <group>, react-three-fiber los compara por valor y, apenas cambian (cada
+  // paquete de red para un avatar remoto), los reaplica directo sobre el
+  // objeto — pisando el lerp del useFrame antes de que corra y dejando
+  // "dist" en ~0 siempre, lo que impedía que se detectara el caminar remoto.
+  useEffect(() => {
+    if (grupoRef.current) {
+      grupoRef.current.position.set(...position);
+      grupoRef.current.rotation.set(...rotation);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Teletransportación inmediata a la silla al sentarse
   useEffect(() => {
     if (estaSentado && posicionSentado && grupoRef.current) {
@@ -448,14 +463,51 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
 
       onUpdatePosicion?.(grupoRef.current.position, grupoRef.current.rotation.y);
     } else {
-      grupoRef.current.position.lerp(new THREE.Vector3(...position), 0.2);
-      grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, rotation[1] || 0, 0.2);
+      const posObjetivo = new THREE.Vector3(...position);
+      const posActual = grupoRef.current.position;
+      const dist = posActual.distanceTo(posObjetivo);
 
-      if (estaSentado) {
-        if (brazoDerRef.current) brazoDerRef.current.rotation.x = -Math.PI / 4;
-        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = -Math.PI / 4;
-        if (piernaDerRef.current) piernaDerRef.current.rotation.x = -Math.PI / 2.1;
-        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = -Math.PI / 2.1;
+      // Si la distancia es grande (teletransporte / cambio de espacio), posicionar de inmediato
+      if (dist > 12.0) {
+        posActual.copy(posObjetivo);
+        grupoRef.current.rotation.y = rotation[1] || 0;
+      } else {
+        const lerpFactor = Math.min(1, delta * 10);
+        posActual.lerp(posObjetivo, lerpFactor);
+
+        // Orientar el avatar hacia donde camina si la distancia es apreciable
+        let anguloTarget = rotation[1] || 0;
+        if (dist > 0.1) {
+          const dx = posObjetivo.x - posActual.x;
+          const dz = posObjetivo.z - posActual.z;
+          anguloTarget = Math.atan2(dx, dz);
+        }
+        grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, anguloTarget, lerpFactor);
+      }
+
+      estaCaminando = dist > 0.04 && !estaSentado;
+
+      if (estaCaminando) {
+        tiempoAnimRef.current += delta;
+        const objetivoSwing = Math.sin(tiempoAnimRef.current * FRECUENCIA_CAMINAR) * AMPLITUD_CAMINAR;
+        const suavizado = Math.min(1, delta * 12);
+
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, objetivoSwing, suavizado);
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -objetivoSwing, suavizado);
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -objetivoSwing, suavizado);
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, objetivoSwing, suavizado);
+      } else if (estaSentado) {
+        const suavizadoSentado = Math.min(1, delta * 15);
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -Math.PI / 2.1, suavizadoSentado);
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, -Math.PI / 2.1, suavizadoSentado);
+      } else {
+        const suavizado = Math.min(1, delta * 10);
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, 0, suavizado);
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, 0, suavizado);
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, 0, suavizado);
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, 0, suavizado);
       }
     }
 
@@ -485,7 +537,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   });
 
   return (
-    <group ref={grupoRef} position={position} rotation={rotation}>
+    <group ref={grupoRef}>
       <group ref={cuerpoRef} scale={escala}>
         {/* Piernas y Calzado */}
         <group ref={piernaDerRef} position={[-0.14, 1.05, 0]}>

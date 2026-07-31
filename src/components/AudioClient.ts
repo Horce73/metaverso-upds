@@ -24,6 +24,17 @@ export class AudioClient {
     this.init();
   }
 
+  public async ensureAudioContextActive() {
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      try {
+        await this.audioCtx.resume();
+        console.log('🔊 Web Audio Context reanudado');
+      } catch (err) {
+        console.warn('⚠️ No se pudo reanudar AudioContext:', err);
+      }
+    }
+  }
+
   private async init() {
     try {
       // 1. Obtener micrófono local
@@ -41,7 +52,7 @@ export class AudioClient {
       this.peer = new Peer(this.userId, {
         host: window.location.hostname,
         port: window.location.port ? Number(window.location.port) : (window.location.protocol === 'https:' ? 443 : 80),
-        path: '/peer/peerjs',
+        path: '/peer',
         secure: window.location.protocol === 'https:',
         config: {
           iceServers: [
@@ -53,6 +64,7 @@ export class AudioClient {
 
       this.peer.on('open', (id) => {
         console.log(`📡 Conectado al servidor PeerJS con ID: ${id}`);
+        this.ensureAudioContextActive();
         this.onPeerIdReady(id);
       });
 

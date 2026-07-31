@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
-import { Campus } from './mundo3d/Campus.js';
+import { Campus, posicionAula, type AulaCampus } from './mundo3d/Campus.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
@@ -54,32 +54,49 @@ const LocalPlayerController: React.FC<{
   posicionSentadoTarget,
   onMove,
 }) => {
+  const ultimoEnvioRef = useRef(0);
+  const ultimaPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
+  const ultimoEstadoSentadoRef = useRef(estaSentado);
+
   const handleUpdatePosicion = (posicion: THREE.Vector3, anguloAvatar: number) => {
     avatarEstadoRef.current.posicion.copy(posicion);
 
-    const posArray: [number, number, number] = [posicion.x, posicion.y, posicion.z];
-    const rotArray: [number, number, number] = [0, anguloAvatar, 0];
+    const ahora = performance.now();
+    const distancia = ultimaPosRef.current.distanceTo(posicion);
+    const cambioSentado = ultimoEstadoSentadoRef.current !== estaSentado;
 
-    onMove(posArray, rotArray);
+    // Emitir a máximo 25 FPS (cada 40ms) o de inmediato al sentarse/levantarse o empezar/detenerse
+    if (ahora - ultimoEnvioRef.current > 40 || cambioSentado || (distancia > 0.02 && ahora - ultimoEnvioRef.current > 30)) {
+      ultimoEnvioRef.current = ahora;
+      ultimaPosRef.current.copy(posicion);
+      ultimoEstadoSentadoRef.current = estaSentado;
 
-    socket.emit('move', {
-      position: posArray,
-      rotation: rotArray,
-      estaSentado,
-    });
+      const posArray: [number, number, number] = [posicion.x, posicion.y, posicion.z];
+      const rotArray: [number, number, number] = [0, anguloAvatar, 0];
 
-    if (audioClient) {
-      audioClient.updateListenerPosition(posArray, rotArray);
+      onMove(posArray, rotArray);
+
+      socket.emit('move', {
+        position: posArray,
+        rotation: rotArray,
+        estaSentado,
+      });
+
+      if (audioClient) {
+        audioClient.updateListenerPosition(posArray, rotArray);
+      }
     }
   };
 
   const initialPos: [number, number, number] = isAula ? [0, 0, 3] : [0, 0, 11];
+  const initialRot: [number, number, number] = [0, Math.PI, 0]; // Rotación inicial de 180°
 
   return (
     <AvatarModel
       nombre={localAvatar?.nombre_visible || 'Tú'}
       personalizacion={personalizacion}
       position={initialPos}
+      rotation={initialRot}
       isLocal={true}
       isAula={isAula}
       estaSentado={estaSentado}
@@ -243,20 +260,45 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   onInteractuarAula,
   onUpdateAvatarPersonalization,
 }) => {
+  const aulas = React.useMemo<AulaCampus[]>(
+    () =>
+      (espacios || [])
+        .filter((e) => e.tipo === 'aula')
+        .map((e) => ({ id: e.id, nombre: e.nombre, sesion_activa: e.sesion_activa })),
+    [espacios]
+  );
+
+  // Campus/E-key solo conocen la forma recortada (AulaCampus); al interactuar
+  // resolvemos de vuelta el espacio completo para que el padre (SolicitudAccesoModal, etc.)
+  // reciba el objeto Espacio real con tipo/asignatura/capacidad.
+  const handleInteractuarAula = React.useCallback(
+    (aula: AulaCampus) => {
+      const espacioCompleto = (espacios || []).find((e) => String(e.id) === String(aula.id));
+      onInteractuarAula?.(espacioCompleto || aula);
+    },
+    [espacios, onInteractuarAula]
+  );
+
   const avatarEstadoRef = useRef<AvatarEstadoRef>({
     posicion: new THREE.Vector3(0, 0, isAula ? 3 : 11),
-    angulo: 0,
+    angulo: Math.PI, // Spawn inicial con 180° de rotación
+    solicitarSnapCamara: true,
   });
 
   useEffect(() => {
     avatarEstadoRef.current.posicion.set(0, 0, isAula ? 3 : 11);
-    avatarEstadoRef.current.angulo = 0;
+    avatarEstadoRef.current.angulo = Math.PI;
+    avatarEstadoRef.current.solicitarSnapCamara = true;
   }, [isAula]);
 
   const [panelCustomizerAbierto, setPanelCustomizerAbierto] = useState(false);
   const [personalizacion, setPersonalizacion] = useState<PersonalizacionAvatar>(() => {
-    if (localAvatar?.apariencia && Object.keys(localAvatar.apariencia).length > 0) {
-      return { ...PERSONALIZACION_POR_DEFECTO, ...localAvatar.apariencia };
+    let ap = localAvatar?.apariencia;
+    if (typeof ap === 'string') {
+      try { ap = JSON.parse(ap); } catch {}
+    }
+    if (ap && typeof ap === 'object' && Object.keys(ap).length > 0) {
+      return { ...PERSONALIZACION_POR_DEFECTO, ...ap };
     }
     return PERSONALIZACION_POR_DEFECTO;
   });
@@ -379,33 +421,28 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
       }
 
       if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E') {
-        if (isAula || !onInteractuarAula || !espacios || espacios.length === 0) return;
+        if (isAula || !onInteractuarAula || aulas.length === 0) return;
 
         const pos = avatarEstadoRef.current.posicion;
         if (!pos) return;
 
-        const aulas = (espacios || []).filter((e) => e.tipo === 'aula');
-        if (aulas.length === 0) return;
-
-        const aula101 = aulas.find((e) => e.nombre?.includes('101') || e.nombre?.includes('Software')) || aulas[0];
-        const aula102 = aulas.find((e) => e.nombre?.includes('102') || (aula101 && String(e.id) !== String(aula101.id))) || aulas[1] || aula101;
-
-        const distAula101 = Math.hypot(pos.x - (-12), pos.z - (-21));
-        const distAula102 = Math.hypot(pos.x - 12, pos.z - (-21));
+        // Las aulas se ubican en la Isla 2, desplazada [0,0,-27] respecto al
+        // origen del mundo (ver <group position={[0, 0, -27]}> en Campus.tsx).
+        const ISLA_2_OFFSET_Z = -27;
+        let aulaCercana: AulaCampus | null = null;
+        let distMin = Infinity;
+        aulas.forEach((aula, i) => {
+          const [x, , z] = posicionAula(i);
+          const d = Math.hypot(pos.x - x, pos.z - (z + ISLA_2_OFFSET_Z));
+          if (d < distMin) {
+            distMin = d;
+            aulaCercana = aula;
+          }
+        });
 
         const MAX_DISTANCIA = 9.0;
-
-        let aulaCercana: any = null;
-        if (distAula101 < MAX_DISTANCIA && distAula101 <= distAula102) {
-          aulaCercana = aula101;
-        } else if (distAula102 < MAX_DISTANCIA) {
-          aulaCercana = aula102;
-        } else if (distAula101 < 14.0 || distAula102 < 14.0) {
-          aulaCercana = distAula101 <= distAula102 ? aula101 : aula102;
-        }
-
-        if (aulaCercana) {
-          onInteractuarAula(aulaCercana);
+        if (aulaCercana && distMin < MAX_DISTANCIA) {
+          handleInteractuarAula(aulaCercana);
         }
       }
     };
@@ -414,7 +451,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isAula, estaSentado, asientoCercano, espacios, onInteractuarAula]);
+  }, [isAula, estaSentado, asientoCercano, aulas, onInteractuarAula, handleInteractuarAula]);
 
   return (
     <div className="canvas-container" style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -439,7 +476,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           <EscenarioAula />
         ) : (
           <group>
-            <Campus espacios={espacios} onInteractuarAula={onInteractuarAula} />
+            <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />
           </group>
         )}
 
@@ -483,8 +520,12 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           })
           .map((socketId) => {
             const u = remoteUsers[socketId];
-            const aparienciaRemota: PersonalizacionAvatar = u.apariencia && Object.keys(u.apariencia).length > 0
-              ? { ...PERSONALIZACION_POR_DEFECTO, ...u.apariencia }
+            let apRemota = u?.apariencia;
+            if (typeof apRemota === 'string') {
+              try { apRemota = JSON.parse(apRemota); } catch {}
+            }
+            const aparienciaRemota: PersonalizacionAvatar = apRemota && typeof apRemota === 'object' && Object.keys(apRemota).length > 0
+              ? { ...PERSONALIZACION_POR_DEFECTO, ...apRemota }
               : PERSONALIZACION_POR_DEFECTO;
 
             return (

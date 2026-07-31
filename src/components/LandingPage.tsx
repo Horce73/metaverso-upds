@@ -157,17 +157,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             <div className="contact-card">
               <div className="contact-icon">📍</div>
               <h3>Dirección</h3>
-              <p>Calle Sucre Nro. 154<br/>La Paz, Bolivia</p>
+              <p>Calle Cacique Titu Nro. 175<br />Sucre, Bolivia</p>
             </div>
             <div className="contact-card">
               <div className="contact-icon">📞</div>
               <h3>Teléfono</h3>
-              <p>+591 2 2440015<br/>+591 2 2440016</p>
+              <p>+591 74163220<br />(591-4) 6462625</p>
             </div>
             <div className="contact-card">
               <div className="contact-icon">✉️</div>
               <h3>Email</h3>
-              <p>info@upds.edu.bo<br/>educacion@upds.edu.bo</p>
+              <p>infoupds.sucre@upds.edo.bo<br /></p>
             </div>
           </div>
         </div>

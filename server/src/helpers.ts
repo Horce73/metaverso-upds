@@ -3,16 +3,32 @@ import { pool } from './db.js';
 export async function registrarAsistencia(userId: number, espacioId: number) {
   try {
     const res = await pool.query(
-      `SELECT id, COALESCE(inicio_real, inicio_programado) AS inicio, tolerancia_min
-       FROM sesiones_clase
-       WHERE espacio_id = $1 AND estado IN ('en_curso', 'programada')
-       ORDER BY inicio_programado ASC LIMIT 1`,
+      `SELECT sc.id, COALESCE(sc.inicio_real, sc.inicio_programado) AS inicio,
+              sc.tolerancia_min, e.asignatura_id
+       FROM sesiones_clase sc
+       JOIN espacios e ON e.id = sc.espacio_id
+       WHERE sc.espacio_id = $1 AND sc.estado IN ('en_curso', 'programada')
+       ORDER BY (sc.estado = 'en_curso') DESC,
+                COALESCE(sc.inicio_real, sc.inicio_programado) DESC
+       LIMIT 1`,
       [espacioId]
     );
 
     if (res.rows.length === 0) return null;
 
     const clase = res.rows[0];
+
+    // Solo estudiantes inscritos en la asignatura del aula pueden registrar asistencia.
+    // Evita registros espurios de docentes/administradores que entran al aula
+    // (que violarían la FK a perfiles_estudiante) y de estudiantes ajenos a la materia.
+    const inscritoRes = await pool.query(
+      'SELECT 1 FROM inscripciones WHERE asignatura_id = $1 AND usuario_id = $2',
+      [clase.asignatura_id, userId]
+    );
+    if (inscritoRes.rows.length === 0) {
+      return { registrado: false, motivo: 'No estás inscrito en esta asignatura' };
+    }
+
     const ahora = new Date();
     const inicio = new Date(clase.inicio);
     const limiteTarde = new Date(inicio.getTime() + (clase.tolerancia_min || 10) * 60000);
@@ -46,7 +62,9 @@ export async function registrarSalida(userId: number, espacioId: number) {
     const res = await pool.query(
       `SELECT id FROM sesiones_clase
        WHERE espacio_id = $1 AND estado IN ('en_curso', 'programada')
-       ORDER BY inicio_programado ASC LIMIT 1`,
+       ORDER BY (estado = 'en_curso') DESC,
+                COALESCE(inicio_real, inicio_programado) DESC
+       LIMIT 1`,
       [espacioId]
     );
 
@@ -54,7 +72,7 @@ export async function registrarSalida(userId: number, espacioId: number) {
 
     await pool.query(
       `UPDATE asistencias SET hora_salida = NOW()
-       WHERE sesion_id = $1 AND usuario_id = $2`,
+       WHERE sesion_id = $1 AND usuario_id = $2 AND hora_salida IS NULL`,
       [res.rows[0].id, userId]
     );
   } catch (err) {
