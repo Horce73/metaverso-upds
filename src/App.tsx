@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
@@ -76,6 +76,7 @@ function App() {
   const [sesionClase, setSesionClase] = useState<any>(null);
   const [verReporte, setVerReporte] = useState(false);
   const [reporteAsistencia, setReporteAsistencia] = useState<any[]>([]);
+  const [resumenAsistencia, setResumenAsistencia] = useState<{ total_inscritos: number; presentes: number; tardes: number; ausentes: number } | null>(null);
 
   // Interacción de Aulas y Solicitudes de Acceso
   const [solicitudAulaModal, setSolicitudAulaModal] = useState<Espacio | null>(null);
@@ -125,8 +126,8 @@ function App() {
     }
   }, []);
 
-  // Cargar espacios disponibles cuando el usuario inicia sesión
-  useEffect(() => {
+  // Cargar espacios disponibles (usuarios/roles con permiso ven todo; invitados solo campus)
+  const fetchEspacios = useCallback(() => {
     if (!token) return;
 
     fetch('/api/espacios', {
@@ -140,6 +141,11 @@ function App() {
       })
       .catch((err) => console.error('Error cargando espacios:', err));
   }, [token]);
+
+  // Cargar espacios disponibles cuando el usuario inicia sesión
+  useEffect(() => {
+    fetchEspacios();
+  }, [fetchEspacios]);
 
   // Inicializar Socket persistente para el usuario autenticado
   useEffect(() => {
@@ -205,6 +211,7 @@ function App() {
     }
   };
 
+  // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
     if (espacioActivo?.id === espacio.id && socket && socket.connected) {
       console.log('⚠️ Ya estás conectado a este espacio:', espacio.nombre);
@@ -217,6 +224,11 @@ function App() {
       );
       return;
     }
+
+    // Refrescar la lista de espacios al entrar: si el admin creó o eliminó
+    // aulas desde el panel de administración en esta misma sesión, el
+    // campus 3D debe reflejarlo (ver AulaCampus en mundo3d/Campus.tsx).
+    fetchEspacios();
 
     // 0. Desconectar sockets y audio previos antes de unirse al nuevo espacio
     if (socket) {
@@ -319,6 +331,7 @@ function App() {
             ...prev[data.socketId],
             position: data.position,
             rotation: data.rotation,
+            estaSentado: data.estaSentado,
           },
         };
       });
@@ -435,12 +448,13 @@ function App() {
   const fetchAsistenciasReport = async () => {
     if (!sesionClase) return;
     try {
-      const res = await fetch(`/api/asistencias/reporte?sesion_id=${sesionClase.id}`, {
+      const res = await fetch(`/api/asistencias/reporte/${sesionClase.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
         setReporteAsistencia(data.asistencias);
+        setResumenAsistencia(data.resumen);
         setVerReporte(true);
       }
     } catch (err) {
@@ -448,37 +462,31 @@ function App() {
     }
   };
 
-  // Finalizar la sesión de clase en curso (Docente)
+  // Finalizar la sesión de clase en curso (Docente dueño o Administrador)
   const handleFinalizarClase = async () => {
-    if (!espacioActivo) return;
+    if (!espacioActivo || !sesionClase) return;
     if (!confirm('¿Estás seguro de que deseas finalizar la clase actual? El aula volverá a estar disponible.')) return;
 
     try {
-      const res = await fetch('/api/sesiones/finalizar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          espacio_id: espacioActivo.id,
-          sesion_id: sesionClase?.id,
-        }),
+      const res = await fetch(`/api/sesiones/${sesionClase.id}/finalizar`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
-      if (res.ok) {
-        setSesionClase(null);
-        setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
-        setEspacios((prev) =>
-          prev.map((e) => (String(e.id) === String(espacioActivo.id) ? { ...e, sesion_activa: null } : e))
-        );
-        if (socket) {
-          socket.emit('clase_finalizada', { espacioId: espacioActivo.id });
-        }
-        alert('✅ Clase finalizada con éxito. El aula ahora está libre.');
+      setSesionClase(null);
+      setVerReporte(false);
+      setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
+      setEspacios((prev) =>
+        prev.map((e) => (String(e.id) === String(espacioActivo.id) ? { ...e, sesion_activa: null } : e))
+      );
+      if (socket) {
+        socket.emit('clase_finalizada', { espacioId: espacioActivo.id });
       }
-    } catch (err) {
-      console.error('Error al finalizar clase:', err);
+      alert('✅ Clase finalizada con éxito. El aula ahora está libre.');
+    } catch (err: any) {
+      alert(`Error al finalizar clase: ${err.message}`);
     }
   };
 
@@ -816,7 +824,8 @@ function App() {
             socket={socket!}
             espacioId={espacioActivo.id}
             sesionId={sesionClase?.id}
-            isDocente={user.rol === 'docente'}
+            puedeDibujar={!user.isGuest && user.rol !== 'invitado'}
+            puedeAdministrar={isDocente || isAdmin}
             onClose={() => setPizarraAbierta(false)}
           />
         )}
@@ -827,6 +836,14 @@ function App() {
             <h3 className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 600, marginBottom: '16px' }}>
               Reporte de Asistencia Automática
             </h3>
+            {resumenAsistencia && (
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Inscritos: <strong style={{ color: 'white' }}>{resumenAsistencia.total_inscritos}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Presentes: <strong style={{ color: 'var(--success)' }}>{resumenAsistencia.presentes}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tarde: <strong style={{ color: '#f59e0b' }}>{resumenAsistencia.tardes}</strong></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Ausentes: <strong style={{ color: '#ef4444' }}>{resumenAsistencia.ausentes}</strong></span>
+              </div>
+            )}
             <div className="reports-container">
               <table className="reports-table">
                 <thead>

@@ -13,9 +13,13 @@ import { registrarAsistencia } from './helpers.js';
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET no está definido en el entorno');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'upds-metaverso-super-secret-key-2026';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 app.use(cors());
 app.use(express.json());
@@ -55,9 +59,14 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
+  const ROLES_AUTORREGISTRABLES = ['estudiante', 'docente'];
+  const userRol = rol || 'estudiante';
+  if (!ROLES_AUTORREGISTRABLES.includes(userRol)) {
+    return res.status(400).json({ error: `Rol inválido para autorregistro. Valores permitidos: ${ROLES_AUTORREGISTRABLES.join(', ')}` });
+  }
+
   try {
     const passwordHash = await bcrypt.hash(password, 10);
-    const userRol = rol || 'estudiante';
 
     const client = await pool.connect();
     try {
@@ -351,21 +360,62 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       return res.json(result.rows);
     }
 
-    const espaciosRes = await pool.query(
-      `SELECT DISTINCT ON (e.id)
-              e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
-              a.nombre AS asignatura, a.codigo AS asignatura_codigo,
-              sc.id AS sesion_id, sc.tema AS sesion_tema,
-              sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
-              u.nombre AS docente_nombre, u.apellido AS docente_apellido
-       FROM espacios e
-       LEFT JOIN asignaturas a ON a.id = e.asignatura_id
-       LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
-       LEFT JOIN usuarios u ON u.id = pd.usuario_id
-       LEFT JOIN sesiones_clase sc ON sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
-       WHERE e.activo = TRUE
-       ORDER BY e.id ASC, sc.id DESC`
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
     );
+    const roles = rolesRes.rows.map((r: any) => r.nombre);
+
+    let espaciosRes;
+    const esAdmin = roles.includes('administrador');
+    if (esAdmin || roles.includes('docente')) {
+      // El admin ve todas las aulas del sistema; el docente solo las suyas.
+      espaciosRes = await pool.query(
+        `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
+                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido
+         FROM espacios e
+         LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+         LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+         LEFT JOIN usuarios u ON u.id = pd.usuario_id
+         LEFT JOIN LATERAL (
+           SELECT sc.id, sc.tema, sc.inicio_real, sc.estado
+           FROM sesiones_clase sc
+           WHERE sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+           ORDER BY (sc.estado = 'en_curso') DESC,
+                    COALESCE(sc.inicio_real, sc.inicio_programado) DESC
+           LIMIT 1
+         ) sc ON TRUE
+         WHERE e.activo = TRUE AND (e.tipo = 'campus' OR $2 = TRUE OR pd.usuario_id = $1)`,
+        [userId, esAdmin]
+      );
+    } else {
+      espaciosRes = await pool.query(
+        `SELECT DISTINCT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
+                a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido
+         FROM espacios e
+         LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+         LEFT JOIN inscripciones i ON i.asignatura_id = a.id AND i.usuario_id = $1
+         LEFT JOIN LATERAL (
+           SELECT sc.id, sc.tema, sc.inicio_real, sc.estado
+           FROM sesiones_clase sc
+           WHERE sc.espacio_id = e.id AND sc.estado IN ('en_curso', 'programada')
+           ORDER BY (sc.estado = 'en_curso') DESC,
+                    COALESCE(sc.inicio_real, sc.inicio_programado) DESC
+           LIMIT 1
+         ) sc ON TRUE
+         LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
+         LEFT JOIN usuarios u ON u.id = pd.usuario_id
+         WHERE e.activo = TRUE
+           AND (e.tipo = 'campus' OR i.usuario_id IS NOT NULL)`,
+        [userId]
+      );
+    }
 
     const espacios = espaciosRes.rows.map((e: any) => ({
       id: e.id,
@@ -480,11 +530,18 @@ app.post('/api/clases/crear-curso', authenticateJWT, async (req: any, res) => {
     // 2. Vincular la asignatura al espacio de aula
     await pool.query('UPDATE espacios SET asignatura_id = $1 WHERE id = $2', [asignaturaId, espacio_id]);
 
-    // 3. Finalizar cualquier sesión en curso previa en este espacio
-    await pool.query(
-      `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW() WHERE espacio_id = $1 AND estado = 'en_curso'`,
+    // 3. Finalizar cualquier sesión en curso previa en este espacio (y cerrar sus asistencias abiertas)
+    const sesionesPreviasRes = await pool.query(
+      `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW()
+       WHERE espacio_id = $1 AND estado = 'en_curso' RETURNING id`,
       [espacio_id]
     );
+    for (const { id: sesionPreviaId } of sesionesPreviasRes.rows) {
+      await pool.query(
+        `UPDATE asistencias SET hora_salida = NOW() WHERE sesion_id = $1 AND hora_salida IS NULL`,
+        [sesionPreviaId]
+      );
+    }
 
     // 4. Crear sesión de clase en curso
     const sesionRes = await pool.query(
@@ -517,40 +574,46 @@ app.post('/api/clases/crear-curso', authenticateJWT, async (req: any, res) => {
   }
 });
 
-// Endpoint para que el docente pueda finalizar una clase en curso
-app.post('/api/sesiones/finalizar', authenticateJWT, async (req: any, res) => {
+// ----------------------------------------------------------------------------
+// 8. Finalizar Clase (RF-08) - Docente dueño o Administrador
+// ----------------------------------------------------------------------------
+app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) => {
   const { userId } = req.user;
-  const { sesion_id, espacio_id } = req.body;
+  const { id } = req.params;
 
   try {
-    let result;
-    if (sesion_id) {
-      result = await pool.query(
-        `UPDATE sesiones_clase
-         SET estado = 'finalizada', fin_real = NOW()
-         WHERE id = $1
-         RETURNING *`,
-        [sesion_id]
-      );
-    } else if (espacio_id) {
-      result = await pool.query(
-        `UPDATE sesiones_clase
-         SET estado = 'finalizada', fin_real = NOW()
-         WHERE espacio_id = $1 AND estado = 'en_curso'
-         RETURNING *`,
-        [espacio_id]
-      );
-    } else {
-      return res.status(400).json({ error: 'Se requiere sesion_id o espacio_id' });
+    const sesionRes = await pool.query('SELECT * FROM sesiones_clase WHERE id = $1', [id]);
+    if (sesionRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sesion no encontrada' });
+    }
+    const sesion = sesionRes.rows[0];
+
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const esAdmin = rolesRes.rows.some((r: any) => r.nombre === 'administrador');
+    if (!esAdmin && sesion.docente_id !== userId) {
+      return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesion' });
+    }
+    if (sesion.estado !== 'en_curso') {
+      return res.status(400).json({ error: 'La clase no está en curso' });
     }
 
-    const sesion = result.rows[0];
-    await bitacora(userId, 'fin_clase', `Sesión ${sesion?.id || ''} finalizada`, req.ip);
+    const result = await pool.query(
+      `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    await pool.query(
+      `UPDATE asistencias SET hora_salida = NOW() WHERE sesion_id = $1 AND hora_salida IS NULL`,
+      [id]
+    );
 
-    res.json({ message: 'Clase finalizada exitosamente', sesion });
+    await bitacora(userId, 'fin_clase', sesion.tema || '', req.ip);
+    res.json({ message: 'Clase finalizada', sesion: result.rows[0] });
   } catch (err) {
     console.error('Error al finalizar clase:', err);
-    res.status(500).json({ error: 'Error del servidor al finalizar clase' });
+    res.status(500).json({ error: 'Error de servidor' });
   }
 });
 
@@ -1522,7 +1585,16 @@ app.post('/api/asistencia', authenticateJWT, async (req: any, res) => {
 // ----------------------------------------------------------------------------
 app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
   try {
+    const { userId } = req.user;
     const { espacio_id, estado } = req.query;
+
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const roles = rolesRes.rows.map((r: any) => r.nombre);
+    const esPrivilegiado = roles.includes('administrador') || roles.includes('docente');
+
     let sql = `
       SELECT sc.id, sc.tema, sc.inicio_programado, sc.fin_programado,
              sc.inicio_real, sc.fin_real, sc.estado, sc.tolerancia_min,
@@ -1536,6 +1608,15 @@ app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
     `;
     const params: any[] = [];
     let idx = 1;
+
+    // Los estudiantes solo ven sesiones de asignaturas en las que están inscritos
+    if (!esPrivilegiado) {
+      sql += ` AND EXISTS (
+        SELECT 1 FROM inscripciones i
+        WHERE i.asignatura_id = e.asignatura_id AND i.usuario_id = $${idx++}
+      )`;
+      params.push(userId);
+    }
 
     if (espacio_id) {
       sql += ` AND sc.espacio_id = $${idx++}`;
@@ -1575,11 +1656,16 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
     if (sesionRes.rows.length === 0) {
       return res.status(404).json({ error: 'Sesion no encontrada' });
     }
-    if (sesionRes.rows[0].docente_id !== userId) {
+    const sesion = sesionRes.rows[0];
+
+    const rolesRes = await pool.query(
+      `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
+      [userId]
+    );
+    const esAdmin = rolesRes.rows.some((r: any) => r.nombre === 'administrador');
+    if (!esAdmin && sesion.docente_id !== userId) {
       return res.status(403).json({ error: 'Acceso denegado: no eres el docente de esta sesion' });
     }
-
-    const sesion = sesionRes.rows[0];
 
     const asistenciasRes = await pool.query(
       `SELECT a.id, a.hora_ingreso, a.hora_salida, a.estado,
