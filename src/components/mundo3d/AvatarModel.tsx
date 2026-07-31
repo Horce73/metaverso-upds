@@ -324,6 +324,21 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     return atlas;
   }, []);
 
+  // Posición/rotación inicial: se aplica una única vez al montar. A partir de
+  // ahí useFrame es la única fuente de verdad (lerp local por teclado, lerp/snap
+  // remoto por red). Si se pasaran position/rotation como props reactivos del
+  // <group>, react-three-fiber los compara por valor y, apenas cambian (cada
+  // paquete de red para un avatar remoto), los reaplica directo sobre el
+  // objeto — pisando el lerp del useFrame antes de que corra y dejando
+  // "dist" en ~0 siempre, lo que impedía que se detectara el caminar remoto.
+  useEffect(() => {
+    if (grupoRef.current) {
+      grupoRef.current.position.set(...position);
+      grupoRef.current.rotation.set(...rotation);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Teletransportación inmediata a la silla al sentarse
   useEffect(() => {
     if (estaSentado && posicionSentado && grupoRef.current) {
@@ -522,7 +537,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   });
 
   return (
-    <group ref={grupoRef} position={position} rotation={rotation}>
+    <group ref={grupoRef}>
       <group ref={cuerpoRef} scale={escala}>
         {/* Piernas y Calzado */}
         <group ref={piernaDerRef} position={[-0.14, 1.05, 0]}>

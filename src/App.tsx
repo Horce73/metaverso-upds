@@ -352,11 +352,11 @@ function App() {
 
     activeSocket.on('user_moved', (data: any) => {
       setRemoteUsers((prev) => {
-        if (!prev[data.socketId]) return prev;
+        const existing = prev[data.socketId] || {};
         return {
           ...prev,
           [data.socketId]: {
-            ...prev[data.socketId],
+            ...existing,
             position: data.position,
             rotation: data.rotation,
             estaSentado: data.estaSentado,

@@ -113,6 +113,8 @@ export function setupSockets(io: Server) {
     }) => {
       const user = activeUsers.get(socket.id);
       if (user) {
+        if (data.position) user.position = data.position;
+        if (data.rotation) user.rotation = data.rotation;
         user.estaSentado = !!data.estaSentado;
         socket.to(String(user.espacioId)).emit('user_moved', {
           socketId: socket.id,
