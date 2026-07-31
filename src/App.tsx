@@ -170,6 +170,11 @@ function App() {
       }
     });
 
+    activeSocket.on('session_terminated', (data: { reason: string }) => {
+      alert(`⚠️ ${data.reason || 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'}`);
+      handleLogout();
+    });
+
     return () => {
       activeSocket.disconnect();
       setSocket(null);
@@ -310,6 +315,11 @@ function App() {
       });
     });
 
+    newSocket.on('session_terminated', (data: { reason: string }) => {
+      alert(`⚠️ ${data.reason || 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'}`);
+      handleLogout();
+    });
+
     newSocket.on('user_moved', (data) => {
       setRemoteUsers((prev) => {
         if (!prev[data.socketId]) return prev;
@@ -319,6 +329,7 @@ function App() {
             ...prev[data.socketId],
             position: data.position,
             rotation: data.rotation,
+            estaSentado: data.estaSentado,
           },
         };
       });

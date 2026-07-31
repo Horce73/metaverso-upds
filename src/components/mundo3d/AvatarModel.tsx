@@ -448,14 +448,34 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
 
       onUpdatePosicion?.(grupoRef.current.position, grupoRef.current.rotation.y);
     } else {
-      grupoRef.current.position.lerp(new THREE.Vector3(...position), 0.2);
-      grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, rotation[1] || 0, 0.2);
+      const posObjetivo = new THREE.Vector3(...position);
+      const dist = grupoRef.current.position.distanceTo(posObjetivo);
+      estaCaminando = dist > 0.03 && !estaSentado;
 
-      if (estaSentado) {
-        if (brazoDerRef.current) brazoDerRef.current.rotation.x = -Math.PI / 4;
-        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = -Math.PI / 4;
-        if (piernaDerRef.current) piernaDerRef.current.rotation.x = -Math.PI / 2.1;
-        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = -Math.PI / 2.1;
+      grupoRef.current.position.lerp(posObjetivo, 0.25);
+      grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, rotation[1] || 0, 0.25);
+
+      if (estaCaminando) {
+        tiempoAnimRef.current += delta;
+        const objetivoSwing = Math.sin(tiempoAnimRef.current * FRECUENCIA_CAMINAR) * AMPLITUD_CAMINAR;
+        const suavizado = Math.min(1, delta * 12);
+
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, objetivoSwing, suavizado);
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -objetivoSwing, suavizado);
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -objetivoSwing, suavizado);
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, objetivoSwing, suavizado);
+      } else if (estaSentado) {
+        const suavizadoSentado = Math.min(1, delta * 15);
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -Math.PI / 2.1, suavizadoSentado);
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, -Math.PI / 2.1, suavizadoSentado);
+      } else {
+        const suavizado = Math.min(1, delta * 10);
+        if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, 0, suavizado);
+        if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, 0, suavizado);
+        if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, 0, suavizado);
+        if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, 0, suavizado);
       }
     }
 

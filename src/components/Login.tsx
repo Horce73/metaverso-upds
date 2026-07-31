@@ -31,6 +31,14 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
 
   const API_URL = '/api';
 
+  const parseJsonResponse = async (res: Response) => {
+    const contentType = res.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return await res.json();
+    }
+    throw new Error(`El servidor respondió con un error inesperado (${res.status}). Inténtalo más tarde.`);
+  };
+
   useEffect(() => {
     if (bloqueado && tiempoRestante > 0) {
       const timer = setTimeout(() => {
@@ -58,7 +66,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
         headers: { 'Content-Type': 'application/json' }
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Error al ingresar como invitado');
       }
@@ -120,7 +128,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
         })
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Error al registrar usuario');
       }
@@ -131,7 +139,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      const loginData = await loginRes.json();
+      const loginData = await parseJsonResponse(loginRes);
 
       if (loginRes.ok) {
         localStorage.setItem('token', loginData.token);
@@ -166,7 +174,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
         body: JSON.stringify({ email, password })
       });
 
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
 
       if (res.status === 423) {
         setBloqueado(true);
@@ -238,7 +246,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
               />
             </div>
             <h1 className="upds-title">
-              <span className="upds-main">UNIVERSIDAD PRIVADA</span>
+              <span className="upds-main">UNIVERSIDAD  PRIVADA</span>
               <span className="upds-sub">DOMINGO SAVIO</span>
             </h1>
             <div className="upds-badge">

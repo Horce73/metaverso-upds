@@ -18,5 +18,39 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: metaverso_upds_backend
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/metaverso_upds
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: metaverso_upds_frontend
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: metaverso_upds_tunnel
+    restart: always
+    command: tunnel --no-autoupdate --url http://frontend:80
+    depends_on:
+      - frontend
+
 volumes:
   postgres_data:

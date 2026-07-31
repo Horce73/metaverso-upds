@@ -27,11 +27,18 @@ export function setupSockets(io: Server) {
 
       const numUserId = Number(userId) || 0;
 
-      // Limpiar registros o conexiones previas del mismo usuario
+      // Limpiar registros o conexiones previas del mismo usuario (Enforzar 1 Sola Sesión Activa)
       activeUsers.forEach((user, sid) => {
-        if (sid === socket.id || (numUserId > 0 && user.userId === numUserId)) {
-          socket.leave(String(user.espacioId));
-          socket.to(String(user.espacioId)).emit('user_left', { socketId: sid, userId: user.userId });
+        if (sid !== socket.id && (numUserId > 0 && user.userId === numUserId)) {
+          console.log(`⚠️ Cerrando sesión previa de usuario ${numUserId} en socket ${sid}`);
+          io.to(sid).emit('session_terminated', {
+            reason: 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'
+          });
+          const oldSocket = io.sockets.sockets.get(sid);
+          if (oldSocket) {
+            oldSocket.leave(String(user.espacioId));
+            oldSocket.disconnect(true);
+          }
           activeUsers.delete(sid);
         }
       });
@@ -73,15 +80,18 @@ export function setupSockets(io: Server) {
     socket.on('move', (data: {
       position: [number, number, number];
       rotation: [number, number, number];
+      estaSentado?: boolean;
     }) => {
       const user = activeUsers.get(socket.id);
       if (user) {
         user.position = data.position;
         user.rotation = data.rotation;
+        (user as any).estaSentado = !!data.estaSentado;
         socket.to(String(user.espacioId)).emit('user_moved', {
           socketId: socket.id,
           position: user.position,
-          rotation: user.rotation
+          rotation: user.rotation,
+          estaSentado: (user as any).estaSentado
         });
       }
     });
@@ -157,8 +167,8 @@ export function setupSockets(io: Server) {
       espacioId: string;
       message: { sender: string; text: string };
     }) => {
-      socket.to(String(data.espacioId)).emit('chat_message', data.message);
-      socket.to(String(data.espacioId)).emit('chat_msg_received', data.message);
+      io.to(String(data.espacioId)).emit('chat_message', data.message);
+      io.to(String(data.espacioId)).emit('chat_msg_received', data.message);
     };
 
     socket.on('send_chat', handleSendChat);

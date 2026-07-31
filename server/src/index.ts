@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { ExpressPeerServer } from 'peer';
 import cors from 'cors';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { pool } from './db.js';
@@ -17,6 +17,19 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'upds-metaverso-super-secret-key-2026';
 
+function parseApariencia(val: any): any {
+  if (!val) return {};
+  let current = val;
+  while (typeof current === 'string') {
+    try {
+      current = JSON.parse(current);
+    } catch {
+      break;
+    }
+  }
+  return typeof current === 'object' && current !== null ? current : {};
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -28,7 +41,7 @@ const io = new Server(server, {
 setupSockets(io);
 
 const peerServer = ExpressPeerServer(server, {
-  path: '/peerjs',
+  path: '/',
   allow_discovery: true
 });
 app.use('/peer', peerServer);
@@ -234,7 +247,7 @@ app.post('/api/auth/login', async (req, res) => {
         id: avatar.id,
         nombre_visible: avatar.nombre_visible,
         modelo_url: avatar.modelo_url,
-        apariencia: avatar.apariencia
+        apariencia: parseApariencia(avatar.apariencia)
       } : null
     });
   } catch (err) {
@@ -315,7 +328,7 @@ app.get('/api/auth/yo', authenticateJWT, async (req: any, res) => {
         id: avatar.id,
         nombre_visible: avatar.nombre_visible,
         modelo_url: avatar.modelo_url,
-        apariencia: avatar.apariencia
+        apariencia: parseApariencia(avatar.apariencia)
       } : null
     });
   } catch (err) {
@@ -399,15 +412,18 @@ app.post('/api/avatar/custom', authenticateJWT, async (req: any, res) => {
   const { nombre_visible, modelo_url, apariencia } = req.body;
 
   try {
+    const aparienciaObj = parseApariencia(apariencia);
     const result = await pool.query(
       `INSERT INTO avatares (usuario_id, nombre_visible, modelo_url, apariencia)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (usuario_id)
        DO UPDATE SET nombre_visible = $2, modelo_url = $3, apariencia = $4, actualizado_en = NOW()
        RETURNING *`,
-      [userId, nombre_visible, modelo_url || null, JSON.stringify(apariencia || {})]
+      [userId, nombre_visible, modelo_url || null, JSON.stringify(aparienciaObj)]
     );
-    res.json({ message: 'Avatar actualizado', avatar: result.rows[0] });
+    const row = result.rows[0];
+    if (row) row.apariencia = parseApariencia(row.apariencia);
+    res.json({ message: 'Avatar actualizado', avatar: row });
   } catch (err) {
     console.error('Error al personalizar avatar:', err);
     res.status(500).json({ error: 'Error de servidor' });

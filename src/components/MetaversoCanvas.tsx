@@ -259,8 +259,12 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
 
   const [panelCustomizerAbierto, setPanelCustomizerAbierto] = useState(false);
   const [personalizacion, setPersonalizacion] = useState<PersonalizacionAvatar>(() => {
-    if (localAvatar?.apariencia && Object.keys(localAvatar.apariencia).length > 0) {
-      return { ...PERSONALIZACION_POR_DEFECTO, ...localAvatar.apariencia };
+    let ap = localAvatar?.apariencia;
+    if (typeof ap === 'string') {
+      try { ap = JSON.parse(ap); } catch {}
+    }
+    if (ap && typeof ap === 'object' && Object.keys(ap).length > 0) {
+      return { ...PERSONALIZACION_POR_DEFECTO, ...ap };
     }
     return PERSONALIZACION_POR_DEFECTO;
   });
@@ -487,8 +491,12 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           })
           .map((socketId) => {
             const u = remoteUsers[socketId];
-            const aparienciaRemota: PersonalizacionAvatar = u.apariencia && Object.keys(u.apariencia).length > 0
-              ? { ...PERSONALIZACION_POR_DEFECTO, ...u.apariencia }
+            let apRemota = u?.apariencia;
+            if (typeof apRemota === 'string') {
+              try { apRemota = JSON.parse(apRemota); } catch {}
+            }
+            const aparienciaRemota: PersonalizacionAvatar = apRemota && typeof apRemota === 'object' && Object.keys(apRemota).length > 0
+              ? { ...PERSONALIZACION_POR_DEFECTO, ...apRemota }
               : PERSONALIZACION_POR_DEFECTO;
 
             return (
