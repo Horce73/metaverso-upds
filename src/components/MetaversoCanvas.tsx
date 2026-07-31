@@ -54,22 +54,37 @@ const LocalPlayerController: React.FC<{
   posicionSentadoTarget,
   onMove,
 }) => {
+  const ultimoEnvioRef = useRef(0);
+  const ultimaPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
+  const ultimoEstadoSentadoRef = useRef(estaSentado);
+
   const handleUpdatePosicion = (posicion: THREE.Vector3, anguloAvatar: number) => {
     avatarEstadoRef.current.posicion.copy(posicion);
 
-    const posArray: [number, number, number] = [posicion.x, posicion.y, posicion.z];
-    const rotArray: [number, number, number] = [0, anguloAvatar, 0];
+    const ahora = performance.now();
+    const distancia = ultimaPosRef.current.distanceTo(posicion);
+    const cambioSentado = ultimoEstadoSentadoRef.current !== estaSentado;
 
-    onMove(posArray, rotArray);
+    // Emitir a máximo 25 FPS (cada 40ms) o de inmediato al sentarse/levantarse o empezar/detenerse
+    if (ahora - ultimoEnvioRef.current > 40 || cambioSentado || (distancia > 0.02 && ahora - ultimoEnvioRef.current > 30)) {
+      ultimoEnvioRef.current = ahora;
+      ultimaPosRef.current.copy(posicion);
+      ultimoEstadoSentadoRef.current = estaSentado;
 
-    socket.emit('move', {
-      position: posArray,
-      rotation: rotArray,
-      estaSentado,
-    });
+      const posArray: [number, number, number] = [posicion.x, posicion.y, posicion.z];
+      const rotArray: [number, number, number] = [0, anguloAvatar, 0];
 
-    if (audioClient) {
-      audioClient.updateListenerPosition(posArray, rotArray);
+      onMove(posArray, rotArray);
+
+      socket.emit('move', {
+        position: posArray,
+        rotation: rotArray,
+        estaSentado,
+      });
+
+      if (audioClient) {
+        audioClient.updateListenerPosition(posArray, rotArray);
+      }
     }
   };
 

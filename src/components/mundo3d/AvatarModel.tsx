@@ -449,11 +449,28 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
       onUpdatePosicion?.(grupoRef.current.position, grupoRef.current.rotation.y);
     } else {
       const posObjetivo = new THREE.Vector3(...position);
-      const dist = grupoRef.current.position.distanceTo(posObjetivo);
-      estaCaminando = dist > 0.03 && !estaSentado;
+      const posActual = grupoRef.current.position;
+      const dist = posActual.distanceTo(posObjetivo);
 
-      grupoRef.current.position.lerp(posObjetivo, 0.25);
-      grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, rotation[1] || 0, 0.25);
+      // Si la distancia es grande (teletransporte / cambio de espacio), posicionar de inmediato
+      if (dist > 12.0) {
+        posActual.copy(posObjetivo);
+        grupoRef.current.rotation.y = rotation[1] || 0;
+      } else {
+        const lerpFactor = Math.min(1, delta * 10);
+        posActual.lerp(posObjetivo, lerpFactor);
+
+        // Orientar el avatar hacia donde camina si la distancia es apreciable
+        let anguloTarget = rotation[1] || 0;
+        if (dist > 0.1) {
+          const dx = posObjetivo.x - posActual.x;
+          const dz = posObjetivo.z - posActual.z;
+          anguloTarget = Math.atan2(dx, dz);
+        }
+        grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, anguloTarget, lerpFactor);
+      }
+
+      estaCaminando = dist > 0.04 && !estaSentado;
 
       if (estaCaminando) {
         tiempoAnimRef.current += delta;
