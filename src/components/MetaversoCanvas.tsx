@@ -74,12 +74,14 @@ const LocalPlayerController: React.FC<{
   };
 
   const initialPos: [number, number, number] = isAula ? [0, 0, 3] : [0, 0, 11];
+  const initialRot: [number, number, number] = [0, Math.PI, 0]; // Rotación inicial de 180°
 
   return (
     <AvatarModel
       nombre={localAvatar?.nombre_visible || 'Tú'}
       personalizacion={personalizacion}
       position={initialPos}
+      rotation={initialRot}
       isLocal={true}
       isAula={isAula}
       estaSentado={estaSentado}
@@ -245,12 +247,14 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
 }) => {
   const avatarEstadoRef = useRef<AvatarEstadoRef>({
     posicion: new THREE.Vector3(0, 0, isAula ? 3 : 11),
-    angulo: 0,
+    angulo: Math.PI, // Spawn inicial con 180° de rotación
+    solicitarSnapCamara: true,
   });
 
   useEffect(() => {
     avatarEstadoRef.current.posicion.set(0, 0, isAula ? 3 : 11);
-    avatarEstadoRef.current.angulo = 0;
+    avatarEstadoRef.current.angulo = Math.PI;
+    avatarEstadoRef.current.solicitarSnapCamara = true;
   }, [isAula]);
 
   const [panelCustomizerAbierto, setPanelCustomizerAbierto] = useState(false);
