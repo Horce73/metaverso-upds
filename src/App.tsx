@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
@@ -59,8 +59,15 @@ function App() {
   const [espacios, setEspacios] = useState<Espacio[]>([]);
   const [espacioActivo, setEspacioActivo] = useState<Espacio | null>(null);
 
-  // Conexiones Sockets y WebRTC
-  const [socket, setSocket] = useState<Socket | null>(null);
+  // Conexiones Sockets y WebRTC (socketRef síncrono para evitar cierres de estado desactualizados)
+  const socketRef = useRef<Socket | null>(null);
+  const [socket, setSocketState] = useState<Socket | null>(null);
+
+  const setSocket = useCallback((s: Socket | null) => {
+    socketRef.current = s;
+    setSocketState(s);
+  }, []);
+
   const [audioClient, setAudioClient] = useState<AudioClient | null>(null);
   const [peerId, setPeerId] = useState<string>('');
   const [remoteUsers, setRemoteUsers] = useState<{ [socketId: string]: any }>({});
@@ -151,18 +158,22 @@ function App() {
   useEffect(() => {
     if (!token || !user) return;
 
-    const activeSocket = io();
-    setSocket(activeSocket);
+    if (!socketRef.current || !socketRef.current.connected) {
+      const activeSocket = io();
+      setSocket(activeSocket);
+    }
 
-    activeSocket.on('nueva_solicitud_acceso', (solicitud) => {
+    const activeSocket = socketRef.current!;
+
+    const handleNuevaSolicitud = (solicitud: any) => {
       const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
       if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
         console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
         setSolicitudesPendientesDocente((prev) => [...prev, solicitud]);
       }
-    });
+    };
 
-    activeSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
+    const handleRespuestaSolicitud = (data: { espacioId: string; aprobado: boolean }) => {
       if (data.aprobado) {
         console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
         setSolicitudAulaModal(null);
@@ -174,16 +185,25 @@ function App() {
           return currentEspacios;
         });
       }
-    });
+    };
 
-    activeSocket.on('session_terminated', (data: { reason: string }) => {
+    const handleSessionTerminated = (data: { reason: string }) => {
       alert(`⚠️ ${data.reason || 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'}`);
       handleLogout();
-    });
+    };
+
+    activeSocket.off('nueva_solicitud_acceso', handleNuevaSolicitud);
+    activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
+    activeSocket.off('session_terminated', handleSessionTerminated);
+
+    activeSocket.on('nueva_solicitud_acceso', handleNuevaSolicitud);
+    activeSocket.on('respuesta_solicitud_acceso', handleRespuestaSolicitud);
+    activeSocket.on('session_terminated', handleSessionTerminated);
 
     return () => {
-      activeSocket.disconnect();
-      setSocket(null);
+      activeSocket.off('nueva_solicitud_acceso', handleNuevaSolicitud);
+      activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
+      activeSocket.off('session_terminated', handleSessionTerminated);
     };
   }, [token, user]);
 
@@ -218,7 +238,7 @@ function App() {
 
   // Manejar el flujo de unirse a una escena 3D
   const handleJoinSpace = (espacio: Espacio) => {
-    if (espacioActivo?.id === espacio.id && socket && socket.connected) {
+    if (espacioActivo?.id === espacio.id && socketRef.current && socketRef.current.connected) {
       console.log('⚠️ Ya estás conectado a este espacio:', espacio.nombre);
       return;
     }
@@ -230,16 +250,8 @@ function App() {
       return;
     }
 
-    // Refrescar la lista de espacios al entrar: si el admin creó o eliminó
-    // aulas desde el panel de administración en esta misma sesión, el
-    // campus 3D debe reflejarlo (ver AulaCampus en mundo3d/Campus.tsx).
     fetchEspacios();
 
-    // 0. Desconectar sockets y audio previos antes de unirse al nuevo espacio
-    if (socket) {
-      socket.disconnect();
-      setSocket(null);
-    }
     if (audioClient) {
       audioClient.destroy();
       setAudioClient(null);
@@ -257,9 +269,20 @@ function App() {
       setMostrarCrearCursoModal(true);
     }
 
-    // 1. Inicializar Sockets
-    const newSocket = io();
-    setSocket(newSocket);
+    // 1. Reutilizar o inicializar el socket persistente de la pestaña
+    if (!socketRef.current || !socketRef.current.connected) {
+      const newSocket = io();
+      setSocket(newSocket);
+    }
+
+    const activeSocket = socketRef.current!;
+
+    activeSocket.off('space_users');
+    activeSocket.off('current_users');
+    activeSocket.off('user_joined');
+    activeSocket.off('user_left');
+    activeSocket.off('user_moved');
+    activeSocket.off('chat_message');
 
     const myUserId = String(user?.id || 'guest_' + Date.now());
 
@@ -267,7 +290,7 @@ function App() {
     const emitJoin = (pId?: string) => {
       if (joinedSpace) return;
       joinedSpace = true;
-      newSocket.emit('join_space', {
+      activeSocket.emit('join_space', {
         espacioId: espacio.id,
         user: {
           id: user?.id,
@@ -305,17 +328,17 @@ function App() {
       });
     };
 
-    newSocket.on('space_users', handleInitialUsers);
-    newSocket.on('current_users', handleInitialUsers);
+    activeSocket.on('space_users', handleInitialUsers);
+    activeSocket.on('current_users', handleInitialUsers);
 
-    newSocket.on('user_joined', (data) => {
+    activeSocket.on('user_joined', (data: any) => {
       setRemoteUsers((prev) => ({ ...prev, [data.socketId]: data.user }));
       if (data.user.peerId && newAudioClient) {
         newAudioClient.callUser(data.user.peerId);
       }
     });
 
-    newSocket.on('user_left', (data) => {
+    activeSocket.on('user_left', (data: any) => {
       setRemoteUsers((prev) => {
         const copy = { ...prev };
         const leftUser = copy[data.socketId];
@@ -327,12 +350,7 @@ function App() {
       });
     });
 
-    newSocket.on('session_terminated', (data: { reason: string }) => {
-      alert(`⚠️ ${data.reason || 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'}`);
-      handleLogout();
-    });
-
-    newSocket.on('user_moved', (data) => {
+    activeSocket.on('user_moved', (data: any) => {
       setRemoteUsers((prev) => {
         if (!prev[data.socketId]) return prev;
         return {
@@ -347,13 +365,13 @@ function App() {
       });
     });
 
-    newSocket.on('chat_message', (data) => {
+    activeSocket.on('chat_message', (data: any) => {
       setChatMessages((prev) => [...prev, data]);
     });
 
-    newSocket.on('pizarra_actualizada', (_data) => {});
+    activeSocket.on('pizarra_actualizada', (_data: any) => {});
 
-    newSocket.on('clase_iniciada', (sesion) => {
+    activeSocket.on('clase_iniciada', (sesion: any) => {
       console.log('🎓 Notificación de clase iniciada recibida:', sesion);
       setSesionClase(sesion);
       if (sesion && sesion.espacio_id) {
@@ -377,7 +395,7 @@ function App() {
       }
     });
 
-    newSocket.on('clase_finalizada', (data: { espacioId: string }) => {
+    activeSocket.on('clase_finalizada', (data: { espacioId: string }) => {
       if (espacioActivo && String(espacioActivo.id) === String(data.espacioId)) {
         setSesionClase(null);
         setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
@@ -387,7 +405,7 @@ function App() {
       );
     });
 
-    newSocket.on('nueva_solicitud_acceso', (solicitud) => {
+    activeSocket.on('nueva_solicitud_acceso', (solicitud: any) => {
       const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
       if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
         console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
@@ -395,7 +413,7 @@ function App() {
       }
     });
 
-    newSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
+    activeSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
       if (data.aprobado) {
         console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
         setSolicitudAulaModal(null);
@@ -411,8 +429,9 @@ function App() {
 
   // Salir del escenario 3D
   const handleLeaveSpace = () => {
-    if (socket) {
-      socket.disconnect();
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
       setSocket(null);
     }
     if (audioClient) {
@@ -449,7 +468,11 @@ function App() {
     setToken('');
     setAvatar(null);
     setEspacioActivo(null);
-    if (socket) socket.disconnect();
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      setSocket(null);
+    }
     if (audioClient) audioClient.destroy();
     navigateTo('/');
   };

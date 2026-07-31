@@ -28,6 +28,7 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
+      - JWT_SECRET=upds-metaverso-super-secret-key-2026
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/metaverso_upds
     depends_on:
       db:
