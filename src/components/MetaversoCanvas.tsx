@@ -21,6 +21,11 @@ export interface AsientoInteractive {
   label: string;
 }
 
+interface SpawnPosicion {
+  position: [number, number, number];
+  rotation: [number, number, number];
+}
+
 interface MetaversoCanvasProps {
   socket: Socket;
   audioClient: AudioClient | null;
@@ -28,8 +33,10 @@ interface MetaversoCanvasProps {
   localAvatar: any;
   remoteUsers: { [socketId: string]: any };
   espacios?: any[];
+  spawnPosicion?: SpawnPosicion | null;
   onInteractuarAula?: (espacio: any) => void;
   onUpdateAvatarPersonalization?: (nueva: PersonalizacionAvatar) => void;
+  onPositionChange?: (pos: [number, number, number], rot: [number, number, number]) => void;
 }
 
 // Subcomponente de Controles de Movimiento y Cámara del Jugador Local
@@ -40,6 +47,7 @@ const LocalPlayerController: React.FC<{
   personalizacion: PersonalizacionAvatar;
   avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
   isAula: boolean;
+  spawnPosicion?: SpawnPosicion | null;
   estaSentado: boolean;
   posicionSentadoTarget: AsientoInteractive | null;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
@@ -50,6 +58,7 @@ const LocalPlayerController: React.FC<{
   personalizacion,
   avatarEstadoRef,
   isAula,
+  spawnPosicion,
   estaSentado,
   posicionSentadoTarget,
   onMove,
@@ -88,8 +97,8 @@ const LocalPlayerController: React.FC<{
     }
   };
 
-  const initialPos: [number, number, number] = isAula ? [0, 0, 3] : [0, 0, 11];
-  const initialRot: [number, number, number] = [0, Math.PI, 0]; // Rotación inicial de 180°
+  const initialPos: [number, number, number] = spawnPosicion?.position ?? (isAula ? [0, 0, 3] : [0, 0, 11]);
+  const initialRot: [number, number, number] = spawnPosicion?.rotation ?? [0, Math.PI, 0]; // Rotación inicial de 180° por defecto
 
   return (
     <AvatarModel
@@ -257,8 +266,10 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   localAvatar,
   remoteUsers,
   espacios,
+  spawnPosicion,
   onInteractuarAula,
   onUpdateAvatarPersonalization,
+  onPositionChange,
 }) => {
   const aulas = React.useMemo<AulaCampus[]>(
     () =>
@@ -280,16 +291,21 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   );
 
   const avatarEstadoRef = useRef<AvatarEstadoRef>({
-    posicion: new THREE.Vector3(0, 0, isAula ? 3 : 11),
-    angulo: Math.PI, // Spawn inicial con 180° de rotación
+    posicion: spawnPosicion ? new THREE.Vector3(...spawnPosicion.position) : new THREE.Vector3(0, 0, isAula ? 3 : 11),
+    angulo: spawnPosicion ? spawnPosicion.rotation[1] : Math.PI, // Spawn inicial con 180° de rotación por defecto
     solicitarSnapCamara: true,
   });
 
   useEffect(() => {
-    avatarEstadoRef.current.posicion.set(0, 0, isAula ? 3 : 11);
-    avatarEstadoRef.current.angulo = Math.PI;
+    if (spawnPosicion) {
+      avatarEstadoRef.current.posicion.set(...spawnPosicion.position);
+      avatarEstadoRef.current.angulo = spawnPosicion.rotation[1];
+    } else {
+      avatarEstadoRef.current.posicion.set(0, 0, isAula ? 3 : 11);
+      avatarEstadoRef.current.angulo = Math.PI;
+    }
     avatarEstadoRef.current.solicitarSnapCamara = true;
-  }, [isAula]);
+  }, [isAula, spawnPosicion]);
 
   const [panelCustomizerAbierto, setPanelCustomizerAbierto] = useState(false);
   const [personalizacion, setPersonalizacion] = useState<PersonalizacionAvatar>(() => {
@@ -503,9 +519,10 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           personalizacion={personalizacion}
           avatarEstadoRef={avatarEstadoRef}
           isAula={isAula}
+          spawnPosicion={spawnPosicion}
           estaSentado={estaSentado}
           posicionSentadoTarget={posicionSentadoTarget}
-          onMove={() => { }}
+          onMove={(pos, rot) => onPositionChange?.(pos, rot)}
         />
 
         <CameraRig avatarEstadoRef={avatarEstadoRef} />
