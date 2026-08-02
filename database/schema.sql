@@ -152,6 +152,7 @@ CREATE TABLE avatares (
     nombre_visible VARCHAR(40) NOT NULL,
     modelo_url     TEXT NULL,
     apariencia     JSONB NOT NULL DEFAULT '{}',
+    ultima_posicion JSONB NULL,
     actualizado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
 );

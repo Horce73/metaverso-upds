@@ -1237,6 +1237,64 @@ main>h2:first-child {
   flex-wrap: wrap;
 }
 
+/* ===== MENU HAMBURGUESA (En 3D) ===== */
+.hamburger-menu {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 180;
+}
+
+.hamburger-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--panel-border);
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hamburger-dropdown {
+  position: absolute;
+  top: 54px;
+  right: 0;
+  width: 220px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hamburger-item {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  text-align: left;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.hamburger-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hamburger-item-danger {
+  color: var(--error);
+}
+
 /* ===== BOTTOM CONTROLS (En 3D) ===== */
 .hud-bottom-controls,
 .bottom-controls {

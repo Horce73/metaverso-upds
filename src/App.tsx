@@ -22,11 +22,17 @@ interface User {
   isGuest?: boolean;
 }
 
+interface PosicionGuardada {
+  position: [number, number, number];
+  rotation: [number, number, number];
+}
+
 interface Avatar {
   id: string;
   nombre_visible: string;
   modelo_url: string | null;
   apariencia: any;
+  ultima_posicion?: PosicionGuardada | null;
 }
 
 interface Espacio {
@@ -58,6 +64,11 @@ function App() {
   // Espacios
   const [espacios, setEspacios] = useState<Espacio[]>([]);
   const [espacioActivo, setEspacioActivo] = useState<Espacio | null>(null);
+  const [spawnPosicion, setSpawnPosicion] = useState<PosicionGuardada | null>(null);
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  // Última posición conocida DENTRO del campus en esta sesión (se fotografía al salir de
+  // él), para que "Salir al Campus" no dependa de un viaje de ida y vuelta al servidor.
+  const ultimaPosicionCampusRef = useRef<PosicionGuardada | null>(null);
 
   // Conexiones Sockets y WebRTC (socketRef síncrono para evitar cierres de estado desactualizados)
   const socketRef = useRef<Socket | null>(null);
@@ -237,7 +248,7 @@ function App() {
   };
 
   // Manejar el flujo de unirse a una escena 3D
-  const handleJoinSpace = (espacio: Espacio) => {
+  const handleJoinSpace = (espacio: Espacio, posicionInicial?: PosicionGuardada) => {
     if (espacioActivo?.id === espacio.id && socketRef.current && socketRef.current.connected) {
       console.log('⚠️ Ya estás conectado a este espacio:', espacio.nombre);
       return;
@@ -263,6 +274,7 @@ function App() {
     setEspacioActivo(espacio);
     sessionStorage.setItem('espacioActivo', JSON.stringify(espacio));
     setChatMessages([]);
+    setSpawnPosicion(posicionInicial ?? null);
 
     const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
     if (esDocente && espacio.tipo === 'aula' && !tieneSesionEnCurso) {
@@ -283,6 +295,9 @@ function App() {
     activeSocket.off('user_left');
     activeSocket.off('user_moved');
     activeSocket.off('chat_message');
+    activeSocket.off('pizarra_actualizada');
+    activeSocket.off('clase_iniciada');
+    activeSocket.off('clase_finalizada');
 
     const myUserId = String(user?.id || 'guest_' + Date.now());
 
@@ -292,6 +307,7 @@ function App() {
       joinedSpace = true;
       activeSocket.emit('join_space', {
         espacioId: espacio.id,
+        espacioTipo: espacio.tipo,
         user: {
           id: user?.id,
           nombreVisible: avatar?.nombre_visible || user?.nombre || 'Estudiante UPDS',
@@ -405,57 +421,28 @@ function App() {
       );
     });
 
-    activeSocket.on('nueva_solicitud_acceso', (solicitud: any) => {
-      const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
-      if (esDocente && String(solicitud.usuario?.id) !== String(user?.id)) {
-        console.log('📩 Solicitud de acceso recibida para docente:', solicitud);
-        setSolicitudesPendientesDocente((prev) => [...prev, solicitud]);
-      }
-    });
-
-    activeSocket.on('respuesta_solicitud_acceso', (data: { espacioId: string; aprobado: boolean }) => {
-      if (data.aprobado) {
-        console.log('🎉 Solicitud aprobada a nivel global. Uniéndose al espacio:', data.espacioId);
-        setSolicitudAulaModal(null);
-        const targetEspacio = espacios.find((e) => String(e.id) === String(data.espacioId));
-        if (targetEspacio) {
-          handleJoinSpace(targetEspacio);
-        }
-      }
-    });
+    // 'nueva_solicitud_acceso' y 'respuesta_solicitud_acceso' NO se registran acá: el
+    // efecto de socket persistente (más abajo) ya los maneja para toda la sesión, y
+    // duplicarlos acá causaba solicitudes repetidas / handleJoinSpace disparado más de
+    // una vez cada vez que este handler se re-ejecuta sin pasar por un disconnect.
 
     navigateTo('/metaverso');
   };
 
-  // Salir del escenario 3D
-  const handleLeaveSpace = () => {
-    if (socketRef.current) {
-      socketRef.current.removeAllListeners();
-      socketRef.current.disconnect();
-      setSocket(null);
+  // Rastrea la posición actual del avatar mientras está en el campus (no en aulas),
+  // para que "Salir al Campus" pueda volver ahí sin depender de una ida y vuelta al servidor.
+  const handleAvatarPositionChange = (pos: [number, number, number], rot: [number, number, number]) => {
+    if (espacioActivo?.tipo === 'campus') {
+      ultimaPosicionCampusRef.current = { position: pos, rotation: rot };
     }
-    if (audioClient) {
-      audioClient.destroy();
-      setAudioClient(null);
-    }
-    setEspacioActivo(null);
-    sessionStorage.removeItem('espacioActivo');
-    setRemoteUsers({});
-    setPeerId('');
+  };
 
-    // Refrescar lista de espacios para sincronizar estados de clases
-    if (token) {
-      fetch('/api/espacios', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data)) setEspacios(data);
-        })
-        .catch((err) => console.error('Error refrescando espacios:', err));
-    }
-
-    navigateTo('/espacios');
+  // Volver al campus desde un aula, en la última posición conocida (de esta sesión, o si no
+  // la hay -p. ej. se restauró directo en un aula tras F5- la que quedó guardada en la BD).
+  const handleVolverAlCampus = () => {
+    const campus = espacios.find((e) => e.tipo === 'campus');
+    if (!campus) return;
+    handleJoinSpace(campus, ultimaPosicionCampusRef.current ?? avatar?.ultima_posicion ?? undefined);
   };
 
   // Cerrar sesión
@@ -545,6 +532,36 @@ function App() {
     }
   };
 
+  // Adónde volver al cerrar Panel Admin / Mis Clases (llegados ahí desde el menú
+  // hamburguesa dentro del metaverso): si había una sesión 3D activa, volvemos a ella
+  // en vez de a /espacios (que ya no tiene un dashboard que mostrar).
+  const volverDesdeGestion = () => {
+    navigateTo(espacioActivo ? '/metaverso' : '/espacios');
+  };
+
+  // Si sessionStorage restauró un espacio activo pero el hash de la URL no apunta a
+  // /metaverso (sesión anterior desincronizada, o se abrió directo en otra ruta), queda
+  // un estado inconsistente que no renderiza nada Y bloquea el auto-join de abajo
+  // (porque espacioActivo ya no es null). Lo limpiamos para que pueda arrancar de cero.
+  useEffect(() => {
+    if (espacioActivo && route !== '/metaverso') {
+      setEspacioActivo(null);
+      sessionStorage.removeItem('espacioActivo');
+    }
+  }, [espacioActivo, route]);
+
+  // Entrar directo al campus apenas hay sesión y los espacios ya cargaron.
+  useEffect(() => {
+    if (!token || !user) return;
+    if (espacioActivo) return;
+    if (route === '/admin' || route === '/docente') return;
+    if (espacios.length === 0) return;
+
+    const campus = espacios.find((e) => e.tipo === 'campus');
+    if (campus) handleJoinSpace(campus, avatar?.ultima_posicion ?? undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, user, espacios, espacioActivo, route]);
+
   // RENDERIZADO DE RUTAS DE NAVEGACIÓN INDEPENDIENTES
 
   // 1. Ruta / (Landing Page)
@@ -604,19 +621,19 @@ function App() {
   // 3. Ruta /admin (Panel de Administración)
   if (route === '/admin') {
     if (!isAdmin) {
-      navigateTo('/espacios');
+      volverDesdeGestion();
       return null;
     }
-    return <AdminPanel token={token} onClose={() => navigateTo('/espacios')} />;
+    return <AdminPanel token={token} onClose={volverDesdeGestion} />;
   }
 
   // 4. Ruta /docente (Panel del Docente)
   if (route === '/docente') {
     if (!isDocente) {
-      navigateTo('/espacios');
+      volverDesdeGestion();
       return null;
     }
-    return <TeacherPanel token={token} user={user} onClose={() => navigateTo('/espacios')} />;
+    return <TeacherPanel token={token} user={user} onClose={volverDesdeGestion} />;
   }
 
   // 5. Ruta /metaverso (Escenario 3D)
@@ -632,6 +649,8 @@ function App() {
           localAvatar={{ ...user, apariencia: avatar?.apariencia }}
           remoteUsers={remoteUsers}
           espacios={espacios}
+          spawnPosicion={spawnPosicion}
+          onPositionChange={handleAvatarPositionChange}
           onInteractuarAula={(espacioSeleccionado) => setSolicitudAulaModal(espacioSeleccionado)}
           onUpdateAvatarPersonalization={(nuevaApariencia) => {
             setAvatar((prev) => {
@@ -641,6 +660,83 @@ function App() {
             });
           }}
         />
+
+        {/* Menú Hamburguesa */}
+        <div className="hamburger-menu">
+          <button className="hamburger-btn" onClick={() => setMenuAbierto((v) => !v)} title="Menú">
+            ☰
+          </button>
+          {menuAbierto && (
+            <div className="hamburger-dropdown glass-panel">
+              <button
+                className="hamburger-item"
+                onClick={() => {
+                  setMenuAbierto(false);
+                  toggleTheme();
+                }}
+              >
+                {theme === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
+              </button>
+              {isAdmin && (
+                <button
+                  className="hamburger-item"
+                  onClick={() => {
+                    setMenuAbierto(false);
+                    navigateTo('/admin');
+                  }}
+                >
+                  🛡️ Panel Admin
+                </button>
+              )}
+              {isDocente && (
+                <button
+                  className="hamburger-item"
+                  onClick={() => {
+                    setMenuAbierto(false);
+                    navigateTo('/docente');
+                  }}
+                >
+                  🎓 Mis Clases
+                </button>
+              )}
+              {!user.isGuest && (
+                <button
+                  className="hamburger-item"
+                  onClick={() => {
+                    setMenuAbierto(false);
+                    setCustomizingAvatar(true);
+                  }}
+                >
+                  🎨 Avatar
+                </button>
+              )}
+              <button
+                className="hamburger-item hamburger-item-danger"
+                onClick={() => {
+                  setMenuAbierto(false);
+                  handleLogout();
+                }}
+              >
+                🚪 Logout
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Personalización de Avatar (persistida en BD) */}
+        {customizingAvatar && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000 }}>
+            <CustomAvatar
+              currentAvatar={avatar}
+              token={token}
+              onSaveSuccess={(updatedAvatar) => {
+                setAvatar(updatedAvatar);
+                setCustomizingAvatar(false);
+              }}
+              onClose={() => setCustomizingAvatar(false)}
+            />
+          </div>
+        )}
 
         {/* Guía de Teclas */}
         <div className="keys-guide">
@@ -732,9 +828,11 @@ function App() {
               </>
             )}
 
-            <button className="btn-secondary" onClick={handleLeaveSpace}>
-              Salir al Campus
-            </button>
+            {espacioActivo.tipo === 'aula' && (
+              <button className="btn-secondary" onClick={handleVolverAlCampus}>
+                Salir al Campus
+              </button>
+            )}
           </div>
         </div>
 
@@ -1003,149 +1101,37 @@ function App() {
     );
   }
 
-  // 6. Ruta /espacios (Dashboard de Selección de Espacio) - Default
+  // 6. Ruta /espacios (Default) - solo se ve un instante entre el login y que el
+  // efecto de auto-join encuentre el campus y navegue a /metaverso; o si no hay
+  // ningún espacio tipo 'campus' activo (caso de error, ej. un admin lo desactivó).
   return (
-    <div className="dashboard-container">
-      <header className="dashboard-header">
-        <div className="user-info">
-          <div className="avatar-badge">{user.nombre.charAt(0)}</div>
-          <div>
-            <h1 className="gradient-text" style={{ fontSize: '1.6rem', fontWeight: 700, margin: 0 }}>
-              {user.nombre} {user.apellido}
-            </h1>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
-              Rol: <span style={{ color: 'var(--upds-blue-light)', fontWeight: 600 }}>{user.rol.toUpperCase()}</span>
-              {user.isGuest && <span style={{ marginLeft: '8px', color: '#3b82f6' }}>🚪 Modo Invitado</span>}
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <button
-            className="theme-toggle-btn"
-            onClick={toggleTheme}
-            title={theme === 'light' ? 'Cambiar a Modo Oscuro' : 'Cambiar a Modo Claro'}
-          >
-            {theme === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
-          </button>
-          {isAdmin && (
-            <button className="btn-primary" onClick={() => navigateTo('/admin')}>
-              🛡️ Panel Admin
-            </button>
-          )}
-          {isDocente && (
-            <button className="btn-primary" onClick={() => navigateTo('/docente')}>
-              🎓 Mis Clases
-            </button>
-          )}
-          {!user.isGuest && (
-            <button className="btn-secondary" onClick={() => setCustomizingAvatar(true)}>
-              🎨 Avatar
-            </button>
-          )}
-          <button
-            className="btn-secondary"
-            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--error)' }}
-            onClick={handleLogout}
-          >
-            🚪 Logout
-          </button>
-        </div>
-      </header>
-
-      <main style={{ flexGrow: 1 }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            borderBottom: '1px solid var(--panel-border)',
-            paddingBottom: '16px',
-            marginBottom: '24px',
-          }}
-        >
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 600, margin: 0 }}>Espacios Disponibles</h2>
-          {user?.rol === 'invitado' && (
-            <span
-              style={{
-                background: 'rgba(59, 130, 246, 0.2)',
-                border: '1px solid #3b82f6',
-                color: '#60a5fa',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              🚪 Modo Invitado
-            </span>
-          )}
-        </div>
-
-        <div className="spaces-grid">
-          {espacios.map((espacio) => (
-            <div
-              key={espacio.id}
-              className="space-card glass-panel"
-              style={{
-                opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.6 : 1,
-                border: user?.rol === 'invitado' && espacio.tipo === 'aula' ? '1px solid rgba(239, 68, 68, 0.3)' : undefined,
-              }}
-            >
-              <div>
-                <div className="space-type">{espacio.tipo === 'campus' ? '🏫 CAMPUS' : '🎓 AULA'}</div>
-                <h3 className="space-name">{espacio.nombre}</h3>
-                <p className="space-desc">
-                  {espacio.tipo === 'campus'
-                    ? '📍 Zona común para el esparcimiento y encuentro estudiantil de toda la facultad.'
-                    : `📚 Aula para clases virtuales en 3D. Capacidad: ${espacio.capacidad_max} estudiantes.`}
-                </p>
-                {user?.rol === 'invitado' && espacio.tipo === 'aula' && (
-                  <p style={{ color: '#ef4444', fontSize: '0.8rem', marginTop: '8px', fontStyle: 'italic', margin: '8px 0 0 0' }}>
-                    🔐 Solo estudiantes registrados pueden acceder
-                  </p>
-                )}
-              </div>
+    <div className="dashboard-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
+      <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', maxWidth: '420px' }}>
+        {espacios.length === 0 ? (
+          <>
+            <span className="spinner" style={{ width: '28px', height: '28px', display: 'inline-block', marginBottom: '12px' }}></span>
+            <p style={{ color: 'var(--text-secondary)' }}>Entrando al campus…</p>
+          </>
+        ) : (
+          <>
+            <p style={{ marginBottom: '16px' }}>No se pudo cargar el campus. Intenta más tarde.</p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              {isAdmin && (
+                <button className="btn-primary" onClick={() => navigateTo('/admin')}>
+                  🛡️ Panel Admin
+                </button>
+              )}
               <button
-                className="btn-primary"
-                onClick={() => handleJoinSpace(espacio)}
-                disabled={user?.rol === 'invitado' && espacio.tipo === 'aula'}
-                style={{
-                  opacity: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 0.5 : 1,
-                  cursor: user?.rol === 'invitado' && espacio.tipo === 'aula' ? 'not-allowed' : 'pointer',
-                  marginTop: 'auto',
-                }}
+                className="btn-secondary"
+                style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: 'var(--error)' }}
+                onClick={handleLogout}
               >
-                {user?.rol === 'invitado' && espacio.tipo === 'aula' ? '🔒 Bloqueado' : '▶️ Entrar'}
+                🚪 Logout
               </button>
             </div>
-          ))}
-          {espacios.length === 0 && (
-            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '60px 40px', color: 'var(--text-secondary)' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '16px' }}>🏗️</div>
-              <p style={{ fontSize: '1.1rem', fontWeight: 500 }}>No hay espacios disponibles en este momento</p>
-              <p style={{ fontSize: '0.9rem', marginTop: '8px' }}>Por favor, regresa más tarde o contacta al administrador</p>
-            </div>
-          )}
-        </div>
-      </main>
-
-      {customizingAvatar && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100 }}>
-          <CustomAvatar
-            currentAvatar={avatar}
-            token={token}
-            onSaveSuccess={(updatedAvatar) => {
-              setAvatar(updatedAvatar);
-              setCustomizingAvatar(false);
-            }}
-            onClose={() => setCustomizingAvatar(false)}
-          />
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

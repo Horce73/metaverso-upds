@@ -256,7 +256,8 @@ app.post('/api/auth/login', async (req, res) => {
         id: avatar.id,
         nombre_visible: avatar.nombre_visible,
         modelo_url: avatar.modelo_url,
-        apariencia: parseApariencia(avatar.apariencia)
+        apariencia: parseApariencia(avatar.apariencia),
+        ultima_posicion: avatar.ultima_posicion || null
       } : null
     });
   } catch (err) {
@@ -337,7 +338,8 @@ app.get('/api/auth/yo', authenticateJWT, async (req: any, res) => {
         id: avatar.id,
         nombre_visible: avatar.nombre_visible,
         modelo_url: avatar.modelo_url,
-        apariencia: parseApariencia(avatar.apariencia)
+        apariencia: parseApariencia(avatar.apariencia),
+        ultima_posicion: avatar.ultima_posicion || null
       } : null
     });
   } catch (err) {

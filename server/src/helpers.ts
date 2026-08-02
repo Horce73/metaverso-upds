@@ -79,3 +79,19 @@ export async function registrarSalida(userId: number, espacioId: number) {
     console.error('Error al registrar salida:', err);
   }
 }
+
+export async function actualizarUltimaPosicion(
+  userId: number,
+  position: [number, number, number],
+  rotation: [number, number, number]
+) {
+  if (!userId) return; // excluye invitados (sin fila en avatares)
+  try {
+    await pool.query(
+      'UPDATE avatares SET ultima_posicion = $2 WHERE usuario_id = $1',
+      [userId, JSON.stringify({ position, rotation })]
+    );
+  } catch (err) {
+    console.error('Error al guardar última posición:', err);
+  }
+}

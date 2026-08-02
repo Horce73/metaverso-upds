@@ -1,11 +1,12 @@
 import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
-import { registrarAsistencia, registrarSalida } from './helpers.js';
+import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
 
 interface UserState {
   userId: number;
   nombreVisible: string;
   espacioId: number;
+  espacioTipo: 'campus' | 'aula';
   position: [number, number, number];
   rotation: [number, number, number];
   estaSentado: boolean;
@@ -47,10 +48,15 @@ export function setupSockets(io: Server) {
       const userId = data.userId ?? data.user?.id;
       const nombreVisible = data.nombreVisible || data.user?.nombreVisible || data.user?.nombre || 'Estudiante';
       const espacioId = data.espacioId;
+      // El cliente indica el tipo de espacio; ante duda/valor faltante asumimos 'aula'
+      // (fail-closed) para nunca persistir por error una posición como si fuera del campus.
+      const espacioTipoRaw = data.espacioTipo ?? data.user?.espacioTipo;
+      const espacioTipo: 'campus' | 'aula' = espacioTipoRaw === 'campus' ? 'campus' : 'aula';
       const apariencia = data.apariencia || data.user?.apariencia || {};
       const peerId = data.peerId || data.user?.peerId || '';
 
       const numUserId = Number(userId) || 0;
+      const nuevoEspacioId = Number(espacioId) || 1;
 
       // Limpiar registros o conexiones previas del mismo usuario (Enforzar 1 Sola Sesión Activa)
       activeUsers.forEach((user, sid) => {
@@ -59,6 +65,13 @@ export function setupSockets(io: Server) {
           io.to(sid).emit('session_terminated', {
             reason: 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'
           });
+          // El socket viejo nunca llegará a disparar su propio 'disconnect' con datos
+          // válidos (lo borramos de activeUsers acá mismo), así que avisamos user_left
+          // y persistimos su última posición de campus ahora, no en el handler de abajo.
+          socket.to(String(user.espacioId)).emit('user_left', { socketId: sid, userId: user.userId });
+          if (user.espacioTipo === 'campus') {
+            actualizarUltimaPosicion(user.userId, user.position, user.rotation);
+          }
           const oldSocket = io.sockets.sockets.get(sid);
           if (oldSocket) {
             oldSocket.leave(String(user.espacioId));
@@ -68,12 +81,25 @@ export function setupSockets(io: Server) {
         }
       });
 
+      // Si este MISMO socket ya estaba en otro espacio (el cliente reutiliza el socket
+      // al cambiar de espacio), hay que abandonar esa sala explícitamente: join() sin un
+      // leave() previo deja al socket escuchando ambas salas a la vez.
+      const prevUser = activeUsers.get(socket.id);
+      if (prevUser && prevUser.espacioId !== nuevoEspacioId) {
+        socket.leave(String(prevUser.espacioId));
+        socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
+        if (prevUser.espacioTipo === 'campus') {
+          await actualizarUltimaPosicion(prevUser.userId, prevUser.position, prevUser.rotation);
+        }
+      }
+
       const roles = await obtenerRoles(numUserId);
 
       const userState: UserState = {
         userId: numUserId,
         nombreVisible,
-        espacioId: Number(espacioId) || 1,
+        espacioId: nuevoEspacioId,
+        espacioTipo,
         position: [0, 0.5, 0],
         rotation: [0, 0, 0],
         estaSentado: false,
@@ -220,6 +246,9 @@ export function setupSockets(io: Server) {
         socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
         await registrarSalida(user.userId, user.espacioId);
+        if (user.espacioTipo === 'campus') {
+          await actualizarUltimaPosicion(user.userId, user.position, user.rotation);
+        }
       }
     });
   });
