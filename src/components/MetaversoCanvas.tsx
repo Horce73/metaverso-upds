@@ -6,7 +6,15 @@ import * as THREE from 'three';
 import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
-import { Campus, posicionAula, type AulaCampus } from './mundo3d/Campus.js';
+import {
+  Campus,
+  calcularLayoutAulas,
+  calcularMitadAnchoIsla,
+  ANCHO_AULA,
+  ISLA_2_OFFSET_Z,
+  type AulaCampus,
+} from './mundo3d/Campus.js';
+import type { ZonaBloqueada } from './mundo3d/AvatarModel.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
@@ -51,6 +59,8 @@ const LocalPlayerController: React.FC<{
   spawnPosicion?: SpawnPosicion | null;
   estaSentado: boolean;
   posicionSentadoTarget: AsientoInteractive | null;
+  zonasBloqueadasCampus: ZonaBloqueada[];
+  mitadAnchoIslaAcademica: number;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
 }> = ({
   socket,
@@ -62,6 +72,8 @@ const LocalPlayerController: React.FC<{
   spawnPosicion,
   estaSentado,
   posicionSentadoTarget,
+  zonasBloqueadasCampus,
+  mitadAnchoIslaAcademica,
   onMove,
 }) => {
   const ultimoEnvioRef = useRef(0);
@@ -111,6 +123,8 @@ const LocalPlayerController: React.FC<{
       isAula={isAula}
       estaSentado={estaSentado}
       posicionSentado={posicionSentadoTarget}
+      zonasBloqueadasCampus={zonasBloqueadasCampus}
+      mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
       onUpdatePosicion={handleUpdatePosicion}
     />
   );
@@ -369,8 +383,42 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     () =>
       (espacios || [])
         .filter((e) => e.tipo === 'aula')
-        .map((e) => ({ id: e.id, nombre: e.nombre, sesion_activa: e.sesion_activa })),
+        .map((e) => ({
+          id: e.id,
+          nombre: e.nombre,
+          docenteId: e.docente_id ?? null,
+          docenteNombre: e.docente_nombre ? `${e.docente_nombre} ${e.docente_apellido ?? ''}`.trim() : null,
+          sesion_activa: e.sesion_activa,
+        })),
     [espacios]
+  );
+
+  // Mismo cálculo de posiciones (por bloques de docente) que usa <Campus>, para
+  // que la detección de "aula más cercana" con la tecla E, la colisión del
+  // avatar y el tamaño de la Isla 2 coincidan siempre con lo que el jugador ve
+  // renderizado (sin importar cuántas aulas/docentes haya).
+  const { posiciones: posicionesAulas, extentoLateral } = React.useMemo(
+    () => calcularLayoutAulas(aulas),
+    [aulas]
+  );
+
+  const mitadAnchoIslaAcademica = React.useMemo(
+    () => calcularMitadAnchoIsla(extentoLateral),
+    [extentoLateral]
+  );
+
+  // Zonas bloqueadas para la colisión del avatar en el campus: el cuerpo de
+  // cada edificio de aula, en coordenadas de mundo (la Isla 2 está desplazada
+  // ISLA_2_OFFSET_Z respecto al origen).
+  const zonasBloqueadasAulas = React.useMemo<ZonaBloqueada[]>(
+    () =>
+      Array.from(posicionesAulas.values()).map(([x, , z]) => ({
+        x,
+        z: z + ISLA_2_OFFSET_Z,
+        mitadX: ANCHO_AULA / 2 + 0.5,
+        mitadZ: ANCHO_AULA / 2 + 0.5,
+      })),
+    [posicionesAulas]
   );
 
   // Campus/E-key solo conocen la forma recortada (AulaCampus); al interactuar
@@ -536,13 +584,12 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         const pos = avatarEstadoRef.current.posicion;
         if (!pos) return;
 
-        // Las aulas se ubican en la Isla 2, desplazada [0,0,-27] respecto al
-        // origen del mundo (ver <group position={[0, 0, -27]}> en Campus.tsx).
-        const ISLA_2_OFFSET_Z = -27;
         let aulaCercana: AulaCampus | null = null;
         let distMin = Infinity;
-        aulas.forEach((aula, i) => {
-          const [x, , z] = posicionAula(i);
+        aulas.forEach((aula) => {
+          const posicion = posicionesAulas.get(String(aula.id));
+          if (!posicion) return;
+          const [x, , z] = posicion;
           const d = Math.hypot(pos.x - x, pos.z - (z + ISLA_2_OFFSET_Z));
           if (d < distMin) {
             distMin = d;
@@ -561,7 +608,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isAula, estaSentado, asientoCercano, aulas, onInteractuarAula, handleInteractuarAula]);
+  }, [isAula, estaSentado, asientoCercano, aulas, posicionesAulas, onInteractuarAula, handleInteractuarAula]);
 
   return (
     <div className="canvas-container" style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -616,6 +663,8 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           spawnPosicion={spawnPosicion}
           estaSentado={estaSentado}
           posicionSentadoTarget={posicionSentadoTarget}
+          zonasBloqueadasCampus={zonasBloqueadasAulas}
+          mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
           onMove={(pos, rot) => onPositionChange?.(pos, rot)}
         />
 

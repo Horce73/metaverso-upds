@@ -390,7 +390,7 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
                 a.nombre AS asignatura, a.codigo AS asignatura_codigo,
                 sc.id AS sesion_id, sc.tema AS sesion_tema,
                 sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
-                u.nombre AS docente_nombre, u.apellido AS docente_apellido
+                pd.usuario_id AS docente_id, u.nombre AS docente_nombre, u.apellido AS docente_apellido
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN perfiles_docente pd ON pd.usuario_id = a.docente_id
@@ -412,7 +412,7 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
                 a.nombre AS asignatura, a.codigo AS asignatura_codigo,
                 sc.id AS sesion_id, sc.tema AS sesion_tema,
                 sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
-                u.nombre AS docente_nombre, u.apellido AS docente_apellido
+                pd.usuario_id AS docente_id, u.nombre AS docente_nombre, u.apellido AS docente_apellido
          FROM espacios e
          LEFT JOIN asignaturas a ON a.id = e.asignatura_id
          LEFT JOIN inscripciones i ON i.asignatura_id = a.id AND i.usuario_id = $1
@@ -440,6 +440,11 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       capacidad_max: e.capacidad_max,
       asignatura: e.asignatura,
       asignatura_codigo: e.asignatura_codigo,
+      // Docente dueño de la asignatura del aula (independiente de si hay clase en curso),
+      // usado por el Campus 3D para agrupar las aulas de un mismo docente.
+      docente_id: e.docente_id ?? null,
+      docente_nombre: e.docente_nombre ?? null,
+      docente_apellido: e.docente_apellido ?? null,
       sesion_activa: e.sesion_id ? {
         id: e.sesion_id,
         tema: e.sesion_tema,

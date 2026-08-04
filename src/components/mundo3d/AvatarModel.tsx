@@ -57,6 +57,15 @@ export const PERSONALIZACION_POR_DEFECTO: PersonalizacionAvatar = {
   },
 };
 
+// Rectángulo de colisión (en coordenadas de mundo) que bloquea el paso del
+// avatar en el campus — un edificio de aula, por ejemplo.
+export interface ZonaBloqueada {
+  x: number;
+  z: number;
+  mitadX: number;
+  mitadZ: number;
+}
+
 interface AvatarModelProps {
   nombre: string;
   personalizacion?: PersonalizacionAvatar;
@@ -66,6 +75,11 @@ interface AvatarModelProps {
   isAula?: boolean;
   estaSentado?: boolean;
   posicionSentado?: { x: number; y: number; z: number; angulo: number } | null;
+  // Zonas de colisión del campus (edificios de aula) calculadas en vivo a
+  // partir del layout real, y mitad del ancho actual de la Isla 2 — ambos
+  // acompañan el crecimiento lateral de los bloques de aulas por docente.
+  zonasBloqueadasCampus?: ZonaBloqueada[];
+  mitadAnchoIslaAcademica?: number;
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
 }
 
@@ -280,6 +294,8 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   isAula = false,
   estaSentado = false,
   posicionSentado,
+  zonasBloqueadasCampus,
+  mitadAnchoIslaAcademica,
   onUpdatePosicion,
 }) => {
   const grupoRef = useRef<THREE.Group>(null);
@@ -419,15 +435,15 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           const posActual = grupoRef.current.position;
           const posDeseada = posActual.clone().add(mover);
 
-          if (esPosicionValida(posDeseada, isAula)) {
+          if (esPosicionValida(posDeseada, isAula, zonasBloqueadasCampus, mitadAnchoIslaAcademica)) {
             grupoRef.current.position.copy(posDeseada);
           } else {
             const posPruebaX = posActual.clone().add(new THREE.Vector3(mover.x, 0, 0));
-            if (esPosicionValida(posPruebaX, isAula)) {
+            if (esPosicionValida(posPruebaX, isAula, zonasBloqueadasCampus, mitadAnchoIslaAcademica)) {
               grupoRef.current.position.copy(posPruebaX);
             } else {
               const posPruebaZ = posActual.clone().add(new THREE.Vector3(0, 0, mover.z));
-              if (esPosicionValida(posPruebaZ, isAula)) {
+              if (esPosicionValida(posPruebaZ, isAula, zonasBloqueadasCampus, mitadAnchoIslaAcademica)) {
                 grupoRef.current.position.copy(posPruebaZ);
               }
             }
@@ -792,7 +808,12 @@ function Etiqueta({ nombre }: { nombre: string }) {
   );
 }
 
-function esPosicionValida(pos: THREE.Vector3, isAula: boolean = false): boolean {
+function esPosicionValida(
+  pos: THREE.Vector3,
+  isAula: boolean = false,
+  zonasBloqueadasCampus?: ZonaBloqueada[],
+  mitadAnchoIslaAcademica?: number
+): boolean {
   const x = pos.x;
   const z = pos.z;
 
@@ -821,8 +842,12 @@ function esPosicionValida(pos: THREE.Vector3, isAula: boolean = false): boolean 
     return true;
   }
 
+  // El límite de la Isla 2 acompaña el ancho real calculado por
+  // calcularMitadAnchoIsla (crece junto con los bloques de aulas); si no se
+  // provee (avatares remotos, por ejemplo) se usa el ancho mínimo original.
+  const mitadIslaAcademica = mitadAnchoIslaAcademica ?? 18.5;
   const enIslaSocial = Math.abs(x) <= 10.5 && z >= -0.8 && z <= 14.8;
-  const enIslaAcademica = Math.abs(x) <= 18.5 && z >= -41.8 && z <= -12.2;
+  const enIslaAcademica = Math.abs(x) <= mitadIslaAcademica && z >= -41.8 && z <= -12.2;
   const enPuente = Math.abs(x) <= 1.9 && z >= -12.2 && z <= -0.8;
 
   if (!enIslaSocial && !enIslaAcademica && !enPuente) return false;
@@ -830,10 +855,14 @@ function esPosicionValida(pos: THREE.Vector3, isAula: boolean = false): boolean 
   const distFuente = Math.hypot(x - 0, z - 7);
   if (distFuente < 2.3) return false;
 
-  if (x >= -16.5 && x <= -7.5 && z >= -25.5 && z <= -16.5) return false;
-  if (x >= 7.5 && x <= 16.5 && z >= -25.5 && z <= -16.5) return false;
-  if (x >= -16.5 && x <= -7.5 && z >= -41.5 && z <= -32.5) return false;
-  if (x >= 7.5 && x <= 16.5 && z >= -41.5 && z <= -32.5) return false;
+  // Cuerpo de cada edificio de aula, calculado en vivo a partir del layout
+  // real (agrupado por docente) en vez de rectángulos fijos que asumían la
+  // vieja grilla de 4 columnas.
+  if (zonasBloqueadasCampus) {
+    for (const zona of zonasBloqueadasCampus) {
+      if (Math.abs(x - zona.x) < zona.mitadX && Math.abs(z - zona.z) < zona.mitadZ) return false;
+    }
+  }
 
   return true;
 }
