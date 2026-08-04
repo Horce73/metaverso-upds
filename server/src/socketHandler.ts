@@ -17,6 +17,14 @@ interface UserState {
 
 const activeUsers = new Map<string, UserState>();
 
+// Estado en memoria del contenido actual del pizarrón por espacio, para que
+// quien entra al aula DESPUÉS de que ya se dibujó algo (el caso más común en
+// una clase real) reciba lo ya dibujado en vez de ver el pizarrón en blanco.
+// Es un buffer efímero (se pierde al reiniciar el servidor); la persistencia
+// real a largo plazo sigue siendo 'save_pizarra' -> tabla pizarra_snapshots.
+const pizarronState = new Map<string, any[]>();
+const MAX_TRAZOS_POR_ESPACIO = 4000;
+
 async function obtenerRoles(userId: number): Promise<string[]> {
   if (!userId) return [];
   try {
@@ -157,13 +165,31 @@ export function setupSockets(io: Server) {
     }) => {
       const user = activeUsers.get(socket.id);
       if (!user || !puedeDibujar(user.roles)) return;
-      socket.to(data.espacioId).emit('stroke_received', data.stroke);
+      // Se difunde a TODA la sala (incluido el emisor) para que el pizarrón
+      // 3D del aula quede sincronizado incluso para quien no tiene el panel
+      // 2D abierto. El emisor se marca para que su propio panel 2D (que ya
+      // dibujó el trazo localmente) no lo vuelva a dibujar por duplicado.
+      const key = String(data.espacioId);
+      const trazoConId = { ...data.stroke, senderSocketId: socket.id };
+      const trazos = pizarronState.get(key) || [];
+      trazos.push(trazoConId);
+      if (trazos.length > MAX_TRAZOS_POR_ESPACIO) trazos.shift();
+      pizarronState.set(key, trazos);
+      io.to(key).emit('stroke_received', trazoConId);
     });
 
     socket.on('clear_board', (data: { espacioId: string }) => {
       const user = activeUsers.get(socket.id);
       if (!user || !puedeAdministrarPizarra(user.roles)) return;
-      socket.to(data.espacioId).emit('board_cleared');
+      pizarronState.set(String(data.espacioId), []);
+      io.to(String(data.espacioId)).emit('board_cleared');
+    });
+
+    // Estado actual del pizarrón, para quien recién abre el panel 2D o entra
+    // a la escena 3D del aula y necesita ver lo que ya se dibujó antes.
+    socket.on('get_pizarra_state', (data: { espacioId: string }) => {
+      if (!activeUsers.has(socket.id)) return;
+      socket.emit('pizarra_state', { trazos: pizarronState.get(String(data.espacioId)) || [] });
     });
 
     socket.on('save_pizarra', async (data: {

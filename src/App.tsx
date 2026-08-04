@@ -646,6 +646,7 @@ function App() {
           socket={socket!}
           audioClient={audioClient}
           isAula={espacioActivo.tipo === 'aula'}
+          espacioId={espacioActivo.id}
           localAvatar={{ ...user, apariencia: avatar?.apariencia }}
           remoteUsers={remoteUsers}
           espacios={espacios}

@@ -13,12 +13,18 @@ interface Pizarra2DProps {
 }
 
 interface Stroke {
+  // Coordenadas y grosor normalizados como fracción (0..1) del tamaño lógico
+  // del canvas emisor, para que cualquier superficie que reciba el trazo
+  // (el panel 2D de otro tamaño, o la textura del pizarrón 3D del aula) lo
+  // pueda redibujar proporcionalmente sin importar su resolución.
   x0: number;
   y0: number;
   x1: number;
   y1: number;
   color: string;
   width: number;
+  /** Id del socket emisor, agregado por el servidor al retransmitir. */
+  senderSocketId?: string;
 }
 
 export const Pizarra2D: React.FC<Pizarra2DProps> = ({
@@ -37,7 +43,11 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
   const [strokesHistory, setStrokesHistory] = useState<Stroke[]>([]);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // Ajustar dimensiones del Canvas
+  // Ajustar dimensiones del Canvas. Corre una sola vez al montar: antes esto
+  // dependía de `strokesHistory.length` y por lo tanto re-dimensionaba (lo
+  // que limpia el canvas) y redibujaba TODO el historial en cada trazo nuevo
+  // (incluso en cada movimiento del mouse mientras se dibuja), degradando el
+  // rendimiento a medida que crecía el historial.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -57,48 +67,75 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
     context.strokeStyle = color;
     context.lineWidth = lineWidth;
     contextRef.current = context;
+  }, []);
 
-    // Redibujar historial si existe
-    strokesHistory.forEach((stroke) => {
-      drawStrokeOnCanvas(stroke);
-    });
-
-    // Escuchar trazos y borrado de otros usuarios
-    socket.on('stroke_received', (stroke: Stroke) => {
+  // Escuchar trazos, borrado y estado inicial del pizarrón. El servidor
+  // difunde también al propio emisor (para que el pizarrón 3D del aula se
+  // sincronice sin depender de que el panel esté abierto), así que acá hay
+  // que ignorar el eco de los trazos que este mismo cliente ya dibujó.
+  // Se usan handlers con nombre (y `.off(evento, handler)` puntual) porque
+  // este mismo socket también es escuchado por el pizarrón 3D del aula:
+  // un `.off(evento)` a secas borraría también ese listener al cerrar el panel.
+  useEffect(() => {
+    const handleStroke = (stroke: Stroke) => {
+      if (stroke.senderSocketId === socket.id) return;
       drawStrokeOnCanvas(stroke);
       setStrokesHistory((prev) => [...prev, stroke]);
-    });
+    };
 
-    socket.on('board_cleared', () => {
+    const handleBoardCleared = () => {
       clearLocalCanvas();
-    });
+    };
 
-    socket.on('pizarra_saved_status', (data: { success: boolean }) => {
+    const handleSavedStatus = (data: { success: boolean }) => {
       if (data.success) {
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 3000);
       } else {
         setSaveStatus('error');
       }
-    });
+    };
+
+    // Estado actual del pizarrón: si el docente ya venía escribiendo antes
+    // de que este panel se abriera, acá se recibe y redibuja lo ya trazado
+    // en vez de arrancar con un pizarrón en blanco.
+    const handlePizarraState = (data: { trazos: Stroke[] }) => {
+      const canvas = canvasRef.current;
+      const context = contextRef.current;
+      if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
+      data.trazos.forEach((stroke) => drawStrokeOnCanvas(stroke));
+      setStrokesHistory(data.trazos);
+    };
+
+    socket.on('stroke_received', handleStroke);
+    socket.on('board_cleared', handleBoardCleared);
+    socket.on('pizarra_saved_status', handleSavedStatus);
+    socket.on('pizarra_state', handlePizarraState);
+    socket.emit('get_pizarra_state', { espacioId });
 
     return () => {
-      socket.off('stroke_received');
-      socket.off('board_cleared');
-      socket.off('pizarra_saved_status');
+      socket.off('stroke_received', handleStroke);
+      socket.off('board_cleared', handleBoardCleared);
+      socket.off('pizarra_saved_status', handleSavedStatus);
+      socket.off('pizarra_state', handlePizarraState);
     };
-  }, [strokesHistory.length]);
+  }, [socket, espacioId]);
 
-  // Dibujar un trazo en el Canvas
+  // Dibujar un trazo en el Canvas. Las coordenadas del trazo vienen
+  // normalizadas (0..1); se escalan al tamaño lógico actual de este canvas.
   const drawStrokeOnCanvas = (stroke: Stroke) => {
     const context = contextRef.current;
-    if (!context) return;
+    const canvas = canvasRef.current;
+    if (!context || !canvas) return;
+
+    const w = canvas.width / 2;
+    const h = canvas.height / 2;
 
     context.beginPath();
     context.strokeStyle = stroke.color;
-    context.lineWidth = stroke.width;
-    context.moveTo(stroke.x0, stroke.y0);
-    context.lineTo(stroke.x1, stroke.y1);
+    context.lineWidth = stroke.width * w;
+    context.moveTo(stroke.x0 * w, stroke.y0 * h);
+    context.lineTo(stroke.x1 * w, stroke.y1 * h);
     context.stroke();
     context.closePath();
   };
@@ -155,13 +192,15 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
     // @ts-ignore
     const y0 = canvas.lastY;
 
+    const w = canvas.width / 2;
+    const h = canvas.height / 2;
     const stroke: Stroke = {
-      x0,
-      y0,
-      x1: x,
-      y1: y,
+      x0: x0 / w,
+      y0: y0 / h,
+      x1: x / w,
+      y1: y / h,
       color,
-      width: lineWidth
+      width: lineWidth / w
     };
 
     // Dibujar localmente
