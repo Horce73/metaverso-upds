@@ -29,6 +29,11 @@ const POSICIONES_PUPITRES = generarPupitres();
 export interface AulaCampus {
   id: number | string;
   nombre: string;
+  // Docente dueño de la asignatura del aula (independiente de si hay clase en
+  // curso). Se usa para agrupar en el mismo bloque todas las aulas de un
+  // mismo docente.
+  docenteId?: string | number | null;
+  docenteNombre?: string | null;
   sesion_activa?: { tema?: string; docente?: string | null } | null;
 }
 
@@ -37,27 +42,133 @@ interface CampusProps {
   onInteractuarAula?: (aula: AulaCampus) => void;
 }
 
-// Distribuye las aulas en una grilla (4 por fila) sobre la Isla 2, empezando
-// en la misma fila frontal que antes ocupaban las 2 aulas fijas (z=6) y
-// avanzando hacia el fondo de la isla por cada fila adicional.
-export const AULAS_POR_FILA = 4;
-export const ESPACIADO_COLUMNA = 9;
+// --- Distribución de aulas por bloques de docente -------------------------
+// En vez de una grilla ciega, las aulas de un mismo docente se agrupan en un
+// bloque contiguo que crece "hacia los lados" (eje X, alejándose del centro)
+// a medida que ese docente tiene más clases. Los bloques de distintos
+// docentes se reparten alternando derecha/izquierda desde el camino central,
+// así el camino nunca queda tapado sin importar cuántas aulas existan. Si un
+// bloque no entra en el ancho disponible de la isla, se pasa a una fila
+// nueva más al fondo (igual que antes).
+export const ANCHO_AULA = 8;
+export const ESPACIO_ENTRE_AULAS = 1.5; // separación entre aulas del mismo docente
+export const ESPACIO_ENTRE_DOCENTES = 4; // separación entre bloques de distinto docente
+export const DESPEJE_CAMINO_CENTRAL = 4.5; // distancia mínima al camino central (x=0)
+// Ancho lateral (por lado) que un bloque puede alcanzar antes de saltar a una
+// fila nueva más al fondo. Generoso a propósito: la isla se ensancha sola
+// (ver anchoIsla en <Campus>) para acompañar el crecimiento lateral, así que
+// este límite solo actúa como salvaguarda ante un docente con muchísimas
+// clases simultáneas.
+export const LIMITE_LATERAL = 45;
 export const ESPACIADO_FILA = 11;
 export const Z_PRIMERA_FILA = 6;
+// Ancho lateral mínimo de la Isla 2 (igual al original) para que, con pocas
+// aulas, el campus se vea exactamente como antes.
+export const ANCHO_MINIMO_ISLA = 19;
+export const MARGEN_ISLA = 3;
+// Offset Z del grupo <Isla 2> respecto al origen del mundo (ver <group
+// position={[0, 0, ISLA_2_OFFSET_Z]}> más abajo). Se exporta para que otros
+// componentes (colisión del avatar, detección de aula cercana) puedan
+// convertir las posiciones locales de las aulas a coordenadas de mundo.
+export const ISLA_2_OFFSET_Z = -27;
 
-export function posicionAula(indice: number): [number, number, number] {
-  const columna = indice % AULAS_POR_FILA;
-  const fila = Math.floor(indice / AULAS_POR_FILA);
-  const x = (columna - (AULAS_POR_FILA - 1) / 2) * ESPACIADO_COLUMNA;
-  const z = Z_PRIMERA_FILA - fila * ESPACIADO_FILA;
-  return [x, 0, z];
+// Mitad del ancho real que ocupa la Isla 2 dado cuánto se extienden los
+// bloques de aulas hacia los lados; única fuente de verdad tanto para el
+// tamaño visual del terreno como para el límite de colisión del avatar.
+export function calcularMitadAnchoIsla(extentoLateral: number): number {
+  return Math.max(ANCHO_MINIMO_ISLA, extentoLateral + MARGEN_ISLA);
+}
+
+interface BloqueDocente {
+  clave: string;
+  etiqueta: string;
+  aulas: AulaCampus[];
+}
+
+// Agrupa las aulas por docente dueño de la asignatura; las aulas sin docente
+// asignado quedan cada una en su propio bloque de tamaño 1.
+function agruparAulasPorDocente(aulas: AulaCampus[]): BloqueDocente[] {
+  const bloques = new Map<string, BloqueDocente>();
+  aulas.forEach((aula) => {
+    const clave = aula.docenteId != null ? `docente-${aula.docenteId}` : `aula-${aula.id}`;
+    if (!bloques.has(clave)) {
+      bloques.set(clave, { clave, etiqueta: aula.docenteNombre || String(aula.id), aulas: [] });
+    }
+    bloques.get(clave)!.aulas.push(aula);
+  });
+  // Orden alfabético por docente para que la disposición sea estable entre
+  // recargas, sin depender del orden en que llegan las aulas del backend.
+  return Array.from(bloques.values()).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta));
+}
+
+interface BordeLado {
+  fila: number;
+  borde: number; // distancia acumulada desde x=0 hasta el próximo espacio libre
+}
+
+export interface LayoutAulas {
+  posiciones: Map<string, [number, number, number]>;
+  filas: number;
+  // Distancia máxima desde x=0 hasta el borde exterior de algún edificio;
+  // permite ensanchar el terreno de la isla para que ningún edificio quede
+  // flotando fuera del césped al crecer un bloque hacia los lados.
+  extentoLateral: number;
+}
+
+// Calcula la posición 3D de cada aula agrupando por docente y expandiendo
+// cada bloque hacia los lados, alternando derecha/izquierda del camino
+// central conforme aparecen nuevos docentes.
+export function calcularLayoutAulas(aulas: AulaCampus[]): LayoutAulas {
+  const posiciones = new Map<string, [number, number, number]>();
+  const bloques = agruparAulasPorDocente(aulas);
+
+  const ladoDerecho: BordeLado = { fila: 0, borde: DESPEJE_CAMINO_CENTRAL };
+  const ladoIzquierdo: BordeLado = { fila: 0, borde: DESPEJE_CAMINO_CENTRAL };
+  let usarDerecha = true;
+  let extentoLateral = 0;
+
+  bloques.forEach((bloque) => {
+    const n = bloque.aulas.length;
+    const anchoBloque = n * ANCHO_AULA + (n - 1) * ESPACIO_ENTRE_AULAS;
+    const lado = usarDerecha ? ladoDerecho : ladoIzquierdo;
+
+    if (lado.borde + anchoBloque > LIMITE_LATERAL) {
+      lado.fila += 1;
+      lado.borde = DESPEJE_CAMINO_CENTRAL;
+    }
+
+    const signo = usarDerecha ? 1 : -1;
+    const z = Z_PRIMERA_FILA - lado.fila * ESPACIADO_FILA;
+
+    bloque.aulas.forEach((aula, indice) => {
+      const centro = lado.borde + indice * (ANCHO_AULA + ESPACIO_ENTRE_AULAS) + ANCHO_AULA / 2;
+      posiciones.set(String(aula.id), [signo * centro, 0, z]);
+    });
+
+    lado.borde += anchoBloque + ESPACIO_ENTRE_DOCENTES;
+    extentoLateral = Math.max(extentoLateral, lado.borde - ESPACIO_ENTRE_DOCENTES);
+    usarDerecha = !usarDerecha;
+  });
+
+  const filas = Math.max(ladoDerecho.fila, ladoIzquierdo.fila) + 1;
+  return { posiciones, filas, extentoLateral };
 }
 
 export const Campus: React.FC<CampusProps> = ({ aulas = [], onInteractuarAula }) => {
-  const filasDeAulas = Math.ceil(aulas.length / AULAS_POR_FILA);
+  const {
+    posiciones: posicionesAulas,
+    filas: filasDeAulas,
+    extentoLateral,
+  } = React.useMemo(() => calcularLayoutAulas(aulas), [aulas]);
   // Los edificios de servicio se ubican siempre después de la última fila de
   // aulas para que nunca se superpongan, sin importar cuántas aulas existan.
   const zEdificiosServicio = Z_PRIMERA_FILA - filasDeAulas * ESPACIADO_FILA - 8;
+
+  // El ancho de la Isla 2 acompaña el crecimiento lateral de los bloques de
+  // aulas: con pocas aulas se ve igual que antes (ANCHO_MINIMO_ISLA), y
+  // crece hacia los lados a medida que un docente acumula más clases.
+  const anchoIsla = calcularMitadAnchoIsla(extentoLateral) * 2;
+  const factorIsla = anchoIsla / (ANCHO_MINIMO_ISLA * 2);
 
   return (
     <group>
@@ -117,25 +228,25 @@ export const Campus: React.FC<CampusProps> = ({ aulas = [], onInteractuarAula })
       {/* 🌉 2. PUENTE CONECTOR ALINEADO ENTRE ISLAS (z: -1 a -12) */}
       <PuenteConector />
 
-      {/* 🎓 3. ISLA 2: ZONA ACADÉMICA Y AULAS (Límites z: -12 a -42, x: -19 a 19) */}
-      <group position={[0, 0, -27]}>
-        {/* Base Rocosa 3D Flotante Bajo Isla 2 */}
+      {/* 🎓 3. ISLA 2: ZONA ACADÉMICA Y AULAS (Límites z: -12 a -42, x: dinámico según aulas por docente) */}
+      <group position={[0, 0, ISLA_2_OFFSET_Z]}>
+        {/* Base Rocosa 3D Flotante Bajo Isla 2 (el ancho acompaña el crecimiento lateral de las aulas) */}
         <mesh position={[0, -0.6, 0]} receiveShadow castShadow>
-          <boxGeometry args={[38, 1.2, 30]} />
+          <boxGeometry args={[anchoIsla, 1.2, 30]} />
           <meshStandardMaterial color="#1e293b" roughness={0.9} />
         </mesh>
         <mesh position={[0, -2.4, 0]} receiveShadow castShadow>
-          <boxGeometry args={[30, 2.4, 23]} />
+          <boxGeometry args={[30 * factorIsla, 2.4, 23]} />
           <meshStandardMaterial color="#0f172a" roughness={0.95} />
         </mesh>
         <mesh position={[0, -5.5, 0]} rotation={[Math.PI, 0, 0]} castShadow>
-          <coneGeometry args={[9.5, 5.2, 7]} />
+          <coneGeometry args={[9.5 * factorIsla, 5.2, 7]} />
           <meshStandardMaterial color="#020617" roughness={1.0} />
         </mesh>
 
         {/* Césped Isla 2 */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
-          <planeGeometry args={[37.6, 29.6]} />
+          <planeGeometry args={[anchoIsla - 0.4, 29.6]} />
           <meshStandardMaterial color="#15803d" roughness={0.7} />
         </mesh>
 
@@ -145,28 +256,32 @@ export const Campus: React.FC<CampusProps> = ({ aulas = [], onInteractuarAula })
           <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
         </mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 6]} receiveShadow>
-          <planeGeometry args={[28, 4.5]} />
+          <planeGeometry args={[28 * factorIsla, 4.5]} />
           <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
         </mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, -10]} receiveShadow>
-          <planeGeometry args={[28, 4.5]} />
+          <planeGeometry args={[28 * factorIsla, 4.5]} />
           <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
         </mesh>
 
-        {/* Árboles Isla Académica */}
-        <ArbolEstilizado position={[-16, 0.04, 12]} />
-        <ArbolEstilizado position={[16, 0.04, 12]} />
-        <ArbolEstilizado position={[-16, 0.04, -12]} />
-        <ArbolEstilizado position={[16, 0.04, -12]} />
+        {/* Árboles Isla Académica (se recorren hacia el nuevo borde de la isla) */}
+        <ArbolEstilizado position={[-16 * factorIsla, 0.04, 12]} />
+        <ArbolEstilizado position={[16 * factorIsla, 0.04, 12]} />
+        <ArbolEstilizado position={[-16 * factorIsla, 0.04, -12]} />
+        <ArbolEstilizado position={[16 * factorIsla, 0.04, -12]} />
 
-        {/* Edificios de Aula: uno por cada espacio tipo 'aula' que exista en este momento */}
-        {aulas.map((aula, i) => {
-          const posicion = posicionAula(i);
+        {/* Edificios de Aula: uno por cada espacio tipo 'aula' que exista en este momento,
+            agrupados por docente y expandidos hacia los lados sin tapar el camino central.
+            Todas miran hacia el mismo lado (sur, +Z: el camino de acceso desde la plaza) en
+            vez de "hacia el centro"; si miraran al centro, la puerta de un aula del bloque
+            terminaría apuntando contra la pared trasera de la aula vecina, tapando el paso. */}
+        {aulas.map((aula) => {
+          const posicion = posicionesAulas.get(String(aula.id)) ?? [0, 0, Z_PRIMERA_FILA];
           return (
             <Edificio
               key={aula.id}
               posicion={posicion}
-              mirarHacia={[0, 0, posicion[2]]}
+              mirarHacia={[posicion[0], 0, posicion[2] + 10]}
               ancho={8}
               profundidad={8}
               nombre={aula.nombre}

@@ -42,6 +42,11 @@ interface Espacio {
   asignatura_id: string | null;
   asignatura?: string;
   asignatura_codigo?: string;
+  // Docente dueño de la asignatura del aula, independiente de si hay clase en curso;
+  // se usa para agrupar las aulas de un mismo docente en el Campus 3D.
+  docente_id?: string | null;
+  docente_nombre?: string | null;
+  docente_apellido?: string | null;
   sesion_activa?: any;
   escena_url: string;
   capacidad_max: number;
