@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AdminDashboardTab, { type DashboardData, ROLE_COLORS } from './AdminDashboardTab';
+import { AdminVoiceTour } from './AdminVoiceTour';
 
 interface AdminPanelProps {
   token: string;
@@ -75,6 +76,7 @@ type Tab = 'dashboard' | 'usuarios' | 'espacios' | 'carreras' | 'asignaturas' | 
 
 export function AdminPanel({ token, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [showTour, setShowTour] = useState(false);
 
   // Data states
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -245,9 +247,33 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <h2 style={{ margin: 0, color: '#f1f5f9', fontSize: 22 }}>Panel de Administración</h2>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', color: '#94a3b8', fontSize: 28, cursor: 'pointer',
-          }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={() => setShowTour(prev => !prev)}
+              style={{
+                background: showTour
+                  ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)'
+                  : 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                border: '1px solid rgba(59, 130, 246, 0.5)',
+                color: showTour ? '#ffffff' : '#60a5fa',
+                padding: '8px 16px',
+                borderRadius: 10,
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s',
+              }}
+            >
+              🎓 {showTour ? 'Cerrar Tour de Voz' : 'Tour Guiado con Voz'}
+            </button>
+            <button onClick={onClose} style={{
+              background: 'none', border: 'none', color: '#94a3b8', fontSize: 28, cursor: 'pointer',
+            }}>×</button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -369,6 +395,18 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
           item={editingItem} token={token} carreras={carreras} docentes={docentes}
           onClose={() => setEditModal(null)}
           onSaved={() => { fetchAsignaturas(); setEditModal(null); }}
+        />
+      )}
+
+      {/* ═══ VOICE TOUR TUTORIAL ═══ */}
+      {showTour && (
+        <AdminVoiceTour
+          onTabSelect={(tab) => {
+            setActiveTab(tab);
+            setShowCreate(false);
+            setEditingItem(null);
+          }}
+          onClose={() => setShowTour(false)}
         />
       )}
     </div>

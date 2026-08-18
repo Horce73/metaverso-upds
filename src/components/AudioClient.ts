@@ -47,6 +47,11 @@ export class AudioClient {
       this.audioCtx = new AudioCtx();
       console.log('🔊 Web Audio Context inicializado');
 
+      const resumeAudio = () => this.ensureAudioContextActive();
+      window.addEventListener('click', resumeAudio, { passive: true });
+      window.addEventListener('keydown', resumeAudio, { passive: true });
+      window.addEventListener('touchstart', resumeAudio, { passive: true });
+
       // 3. Conectarse al servidor PeerJS que corre en nuestro backend Node
       // Conectarse al servidor PeerJS integrado en el backend
       this.peer = new Peer(this.userId, {
@@ -68,7 +73,12 @@ export class AudioClient {
         this.onPeerIdReady(id);
       });
 
-      this.peer.on('error', (err) => {
+      this.peer.on('error', (err: any) => {
+        const errType = err?.type || '';
+        if (errType === 'peer-unavailable') {
+          console.warn(`⚠️ Peer no disponible temporalmente (${err.message}). Se reintentará si permanece en la sala.`);
+          return;
+        }
         console.error('⚠️ Error en PeerJS:', err);
         this.onError(err);
       });
@@ -77,6 +87,11 @@ export class AudioClient {
       this.peer.on('call', (call) => {
         console.log(`📞 Recibiendo llamada entrante de: ${call.peer}`);
         if (this.localStream) {
+          // Evitar llamadas duplicadas cruzadas (SDP Glare) si ya existe llamada con este peer
+          if (this.activeCalls.has(call.peer)) {
+            console.log(`⚠️ Ignorando llamada entrante duplicada de: ${call.peer}`);
+            return;
+          }
           call.answer(this.localStream); // Responder con nuestro audio
           this.handleIncomingStream(call);
         }
@@ -89,12 +104,25 @@ export class AudioClient {
   }
 
   // Llamar a otro usuario cuando entra a la sala
-  public callUser(remotePeerId: string) {
-    if (!this.peer || !this.localStream || this.activeCalls.has(remotePeerId)) return;
+  public callUser(remotePeerId: string, retries = 2) {
+    if (!this.peer || !this.localStream || !remotePeerId || this.activeCalls.has(remotePeerId)) return;
 
     console.log(`📞 Llamando a: ${remotePeerId}...`);
-    const call = this.peer.call(remotePeerId, this.localStream);
-    this.handleIncomingStream(call);
+    try {
+      const call = this.peer.call(remotePeerId, this.localStream);
+      if (!call) {
+        if (retries > 0) {
+          setTimeout(() => this.callUser(remotePeerId, retries - 1), 1500);
+        }
+        return;
+      }
+      this.handleIncomingStream(call);
+    } catch (err) {
+      console.warn(`⚠️ Error al iniciar llamada con ${remotePeerId}:`, err);
+      if (retries > 0) {
+        setTimeout(() => this.callUser(remotePeerId, retries - 1), 1500);
+      }
+    }
   }
 
   // Procesar el stream de audio entrante y aplicar efecto espacial
@@ -109,11 +137,12 @@ export class AudioClient {
       if (this.pannerNodes.has(remotePeerId)) return;
 
       if (!this.audioCtx) return;
+      this.ensureAudioContextActive();
 
-      // 1. Crear elemento de audio oculto para reproducir el stream
+      // 1. Crear elemento de audio oculto para reproduccion (volume 0 en lugar de muted=true para mantener activo el MediaStreamTrack en Chromium)
       const audio = new Audio();
       audio.srcObject = remoteStream;
-      audio.muted = true; // Lo silenciamos en el elemento nativo para procesarlo a través de Web Audio API
+      audio.volume = 0;
       audio.play().catch(e => console.warn('Error autoplay audio:', e));
       this.audioElements.set(remotePeerId, audio);
 

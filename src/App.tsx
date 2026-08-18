@@ -304,7 +304,7 @@ function App() {
     activeSocket.off('clase_iniciada');
     activeSocket.off('clase_finalizada');
 
-    const myUserId = String(user?.id || 'guest_' + Date.now());
+    const uniquePeerId = `peer_${user?.id || 'guest'}_${Math.random().toString(36).substring(2, 7)}`;
 
     let joinedSpace = false;
     const emitJoin = (pId?: string) => {
@@ -324,7 +324,7 @@ function App() {
 
     // 2. Inicializar VoIP Espacial WebRTC (PeerJS)
     const newAudioClient = new AudioClient(
-      myUserId,
+      uniquePeerId,
       (myPeerId: string) => {
         console.log('✅ PeerJS Inicializado con ID:', myPeerId);
         setPeerId(myPeerId);
@@ -353,10 +353,10 @@ function App() {
     activeSocket.on('current_users', handleInitialUsers);
 
     activeSocket.on('user_joined', (data: any) => {
+      console.log('👤 Nuevo usuario unido al espacio:', data.user.nombreVisible || data.socketId);
       setRemoteUsers((prev) => ({ ...prev, [data.socketId]: data.user }));
-      if (data.user.peerId && newAudioClient) {
-        newAudioClient.callUser(data.user.peerId);
-      }
+      // NOTA: Los usuarios existentes NO llaman al recién llegado para evitar llamadas cruzadas (SDP Glare).
+      // El recién llegado se encarga de llamar a todos los usuarios existentes al recibir 'space_users'.
     });
 
     activeSocket.on('user_left', (data: any) => {
