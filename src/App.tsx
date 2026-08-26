@@ -5,7 +5,7 @@ import { Login } from './components/Login.js';
 import { CustomAvatar } from './components/CustomAvatar.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { MetaversoCanvas } from './components/MetaversoCanvas.js';
-import { AudioClient } from './components/AudioClient.js';
+import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { TeacherPanel } from './components/TeacherPanel.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
@@ -57,6 +57,14 @@ function getHashRoute(): string {
   return hash || '/';
 }
 
+const ESTADO_VOZ_UI: Record<EstadoVoz, { texto: string; color: string }> = {
+  'iniciando': { texto: 'Conectando...', color: '#f0b429' },
+  'conectado': { texto: 'Conectado', color: '#22c55e' },
+  'sin-microfono': { texto: 'Solo escucha (sin micrófono)', color: '#f0b429' },
+  'reconectando': { texto: 'Reconectando...', color: '#f0b429' },
+  'error': { texto: 'Error de audio', color: '#ef4444' },
+};
+
 function App() {
   // Enrutador basado en Hash (URL independiente y persistente)
   const [route, setRoute] = useState<string>(getHashRoute);
@@ -86,6 +94,8 @@ function App() {
 
   const [audioClient, setAudioClient] = useState<AudioClient | null>(null);
   const [peerId, setPeerId] = useState<string>('');
+  const [estadoVoz, setEstadoVoz] = useState<EstadoVoz>('iniciando');
+  const [detalleVoz, setDetalleVoz] = useState<string>('');
   const [remoteUsers, setRemoteUsers] = useState<{ [socketId: string]: any }>({});
 
   // UI States
@@ -333,7 +343,21 @@ function App() {
       (err: any) => {
         console.error('⚠️ Error al iniciar audio espacial:', err);
         emitJoin();
+      },
+      (estado, detalle) => {
+        setEstadoVoz(estado);
+        setDetalleVoz(detalle || '');
       }
+    );
+
+    // Posicionar al oyente en el punto de aparición. Sin esto el listener se
+    // queda en (0,0,0) hasta que el usuario pulsa una tecla de movimiento,
+    // y las voces se oyen desde el lugar equivocado al entrar.
+    const posSpawn = posicionInicial?.position ?? (espacio.tipo === 'aula' ? [0, 0, 3] : [0, 0, 11]);
+    const rotSpawn = posicionInicial?.rotation ?? [0, Math.PI, 0];
+    newAudioClient.updateListenerPosition(
+      posSpawn as [number, number, number],
+      rotSpawn as [number, number, number]
     );
     setAudioClient(newAudioClient);
 
@@ -1056,7 +1080,16 @@ function App() {
               borderRadius: '6px',
             }}
           >
-            🎙️ Canal de Voz ID: <span style={{ fontFamily: 'monospace', color: 'white' }}>{peerId || 'conectando...'}</span>
+            🎙️ Canal de Voz:{' '}
+            <span style={{ color: ESTADO_VOZ_UI[estadoVoz].color, fontWeight: 600 }}>
+              {ESTADO_VOZ_UI[estadoVoz].texto}
+            </span>
+            {detalleVoz && (
+              <div style={{ fontSize: '0.72rem', opacity: 0.75, marginTop: '2px' }}>{detalleVoz}</div>
+            )}
+            <div style={{ fontSize: '0.7rem', opacity: 0.55, marginTop: '2px' }}>
+              ID: <span style={{ fontFamily: 'monospace' }}>{peerId || '—'}</span>
+            </div>
           </div>
 
           <div className="sidebar-title">Chat Público</div>

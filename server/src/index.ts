@@ -46,9 +46,46 @@ setupSockets(io);
 
 const peerServer = ExpressPeerServer(server, {
   path: '/',
-  allow_discovery: true
-});
+  allow_discovery: true,
+  // Detras de nginx / cloudflared la IP real llega en X-Forwarded-For.
+  proxied: true,
+  // Latido mas frecuente que el timeout de proxies y tuneles (60s por defecto
+  // en nginx), para que el WebSocket de senalizacion no se corte solo.
+  alive_timeout: 60000,
+  expire_timeout: 300000
+} as any);
 app.use('/peer', peerServer);
+
+peerServer.on('connection', (client: any) => {
+  console.log(`[peer] conectado: ${client.getId()}`);
+});
+peerServer.on('disconnect', (client: any) => {
+  console.log(`[peer] desconectado: ${client.getId()}`);
+});
+
+// Servidores ICE para WebRTC. Se sirven desde el backend para no dejar
+// credenciales TURN dentro del bundle del frontend y poder rotarlas sin
+// recompilar. Sin un TURN valido, dos usuarios en redes distintas
+// (datos moviles + wifi institucional, NAT simetrico) nunca conectan audio.
+app.get('/api/ice-servers', (_req, res) => {
+  const iceServers: any[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ];
+
+  const turnUrls = (process.env.TURN_URLS || '').split(',').map(u => u.trim()).filter(Boolean);
+  if (turnUrls.length > 0 && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+    iceServers.push({
+      urls: turnUrls,
+      username: process.env.TURN_USERNAME,
+      credential: process.env.TURN_CREDENTIAL
+    });
+  } else {
+    console.warn('[ice] TURN no configurado: el audio solo funcionara en la misma red local');
+  }
+
+  res.json({ iceServers });
+});
 
 // Helper: registrar evento en bitacora
 async function bitacora(usuarioId: number | null, evento: string, detalle = '', ip = '') {

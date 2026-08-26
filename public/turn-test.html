@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnóstico WebRTC — Metaverso UPDS</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 32px 20px;
+    background: #0D1520; color: #DFE8F2;
+    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: #93A5B8; margin: 0 0 28px; font-size: 0.94rem; }
+  .veredicto {
+    border-radius: 4px; padding: 18px 20px; margin-bottom: 24px;
+    border: 1px solid #26364A; background: #141F2C;
+  }
+  .veredicto.ok   { border-color: #2F7D5A; background: #16302A; }
+  .veredicto.mal  { border-color: #A9463C; background: #33201E; }
+  .veredicto.wait { border-color: #8A6A22; background: #302818; }
+  .veredicto h2 { margin: 0 0 6px; font-size: 1.05rem; }
+  .veredicto p  { margin: 0; color: #B9C7D6; font-size: 0.93rem; }
+  h3 { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase;
+       color: #6B7F94; margin: 26px 0 10px; font-weight: 600; }
+  pre { background: #141F2C; border: 1px solid #26364A; border-radius: 4px;
+        padding: 14px 16px; overflow-x: auto; font-size: 0.82rem;
+        font-family: ui-monospace, Menlo, monospace; margin: 0; color: #C6D4E2; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+  th { text-align: left; font-size: 0.68rem; letter-spacing: 0.1em;
+       text-transform: uppercase; color: #6B7F94; padding: 0 12px 8px 0;
+       border-bottom: 1px solid #26364A; font-weight: 600; }
+  td { padding: 9px 12px 9px 0; border-bottom: 1px solid #1E2C3D;
+       font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem; color: #B9C7D6; }
+  .tipo { font-weight: 600; }
+  .tipo.relay { color: #62BE95; }
+  .tipo.srflx { color: #E2AB4E; }
+  .tipo.host  { color: #6B7F94; }
+  button { background: #1F6FA8; color: #fff; border: 0; border-radius: 4px;
+           padding: 10px 18px; font-size: 0.92rem; font-weight: 600; cursor: pointer;
+           font-family: inherit; }
+  button:hover { background: #2680C2; }
+  button:focus-visible { outline: 2px solid #6DB4E6; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Diagnóstico WebRTC</h1>
+  <p class="sub">Comprueba si este navegador consigue un candidato <code>relay</code>. Sin relay, el audio solo funciona entre equipos de la misma red.</p>
+
+  <div class="veredicto wait" id="veredicto">
+    <h2 id="v-titulo">Probando…</h2>
+    <p id="v-texto">Pidiendo servidores ICE y recolectando candidatos.</p>
+  </div>
+
+  <h3>Servidores ICE recibidos de /api/ice-servers</h3>
+  <pre id="servidores">cargando…</pre>
+
+  <h3>Candidatos recolectados</h3>
+  <table>
+    <thead><tr><th>Tipo</th><th>Protocolo</th><th>Dirección</th></tr></thead>
+    <tbody id="candidatos"></tbody>
+  </table>
+
+  <p style="margin-top:26px"><button id="repetir">Repetir prueba</button></p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function veredicto(clase, titulo, texto) {
+  const el = $('veredicto');
+  el.className = 'veredicto ' + clase;
+  $('v-titulo').textContent = titulo;
+  $('v-texto').textContent = texto;
+}
+
+async function probar() {
+  $('candidatos').innerHTML = '';
+  veredicto('wait', 'Probando…', 'Pidiendo servidores ICE y recolectando candidatos.');
+
+  let iceServers = [];
+  try {
+    const res = await fetch('/api/ice-servers');
+    const data = await res.json();
+    iceServers = data.iceServers || [];
+    $('servidores').textContent = JSON.stringify(iceServers, null, 2)
+      .replace(/"credential":\s*"[^"]*"/g, '"credential": "***"');
+  } catch (err) {
+    $('servidores').textContent = 'Error: ' + err.message;
+    veredicto('mal', 'No se pudo leer /api/ice-servers',
+      'El backend no respondió. Revisa que el contenedor esté arriba y que nginx haga proxy de /api.');
+    return;
+  }
+
+  const tieneTurn = iceServers.some(s =>
+    [].concat(s.urls).some(u => String(u).startsWith('turn')));
+
+  if (!tieneTurn) {
+    veredicto('mal', 'No hay ningún TURN configurado',
+      'El backend solo devuelve STUN. Rellena TURN_URLS, TURN_USERNAME y TURN_CREDENTIAL en server/.env y reinicia el backend.');
+  }
+
+  const pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 0 });
+  pc.createDataChannel('probe');
+
+  const tipos = new Set();
+
+  pc.onicecandidate = (ev) => {
+    if (!ev.candidate) { finalizar(); return; }
+    const c = ev.candidate;
+    if (!c.candidate) return;
+    const tipo = c.type || (c.candidate.match(/typ (\w+)/) || [,'?'])[1];
+    tipos.add(tipo);
+
+    const fila = document.createElement('tr');
+    fila.innerHTML =
+      '<td class="tipo ' + tipo + '">' + tipo + '</td>' +
+      '<td>' + (c.protocol || '—') + '</td>' +
+      '<td>' + (c.address || c.candidate.split(' ')[4] || '—') + ':' +
+      (c.port || c.candidate.split(' ')[5] || '—') + '</td>';
+    $('candidatos').appendChild(fila);
+  };
+
+  let terminado = false;
+  function finalizar() {
+    if (terminado) return;
+    terminado = true;
+    pc.close();
+
+    if (tipos.has('relay')) {
+      veredicto('ok', 'TURN funcionando',
+        'Se obtuvo al menos un candidato relay. El audio debería conectar aunque los dos equipos estén en redes distintas.');
+    } else if (tieneTurn) {
+      veredicto('mal', 'El TURN está configurado pero no responde',
+        'Hay servidores turn: en la lista pero ninguno devolvió un candidato relay. Credenciales incorrectas, servidor caído, o los puertos están bloqueados en esta red.');
+    } else if (tipos.has('srflx')) {
+      veredicto('mal', 'Solo STUN: el audio no cruzará redes',
+        'Se obtuvo candidato srflx pero ningún relay. Funcionará en la misma red local y fallará en silencio entre redes distintas.');
+    } else {
+      veredicto('mal', 'Sin candidatos utilizables',
+        'Ni siquiera se obtuvo un candidato STUN. Puede haber un firewall bloqueando UDP saliente.');
+    }
+  }
+
+  setTimeout(finalizar, 8000);
+  const oferta = await pc.createOffer();
+  await pc.setLocalDescription(oferta);
+}
+
+$('repetir').addEventListener('click', probar);
+probar();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# Dependencias y artefactos: se instalan y compilan dentro de la imagen
+node_modules
+dist
+server
+
+# Control de versiones y documentacion
+.git
+.gitignore
+docs
+*.md
+
+# Secretos: llegan por env_file en tiempo de ejecucion, nunca en una capa
+.env
+*.local
+
+# Herramientas locales
+.claude
+.vscode

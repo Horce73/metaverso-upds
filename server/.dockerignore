@@ -1,0 +1,6 @@
+node_modules
+dist
+.git
+
+# El secreto llega por env_file en tiempo de ejecucion, no horneado en la imagen
+.env

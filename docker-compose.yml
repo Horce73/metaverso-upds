@@ -26,9 +26,16 @@ services:
     restart: always
     ports:
       - "3001:3001"
+    # Toda la configuracion vive en server/.env, el mismo archivo que usa
+    # `npm run dev`. Sin esto habria que mantener dos copias: la interpolacion
+    # ${VAR} de compose lee el .env de la raiz, no el de server/.
+    env_file:
+      - path: ./server/.env
+        required: false
+    # Estos valores pisan al env_file: dentro de la red de compose la base
+    # responde en el host `db`, no en localhost.
     environment:
       - PORT=3001
-      - JWT_SECRET=upds-metaverso-super-secret-key-2026
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/metaverso_upds
     depends_on:
       db:
