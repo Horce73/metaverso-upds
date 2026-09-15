@@ -10,8 +10,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      # El esquema lo crea el backend al arrancar con server/migrations (OPS-04),
+      # no un script de inicializacion que solo corre con el volumen vacio.
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

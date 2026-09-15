@@ -10,6 +10,7 @@ import { pool } from './db.js';
 import { setupSockets } from './socketHandler.js';
 import { authenticateJWT, requiereAdmin } from './middleware/auth.js';
 import { registrarAsistencia } from './helpers.js';
+import { aplicarMigraciones } from './migraciones.js';
 
 dotenv.config();
 
@@ -1499,7 +1500,7 @@ app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) 
     genero, domicilio, tipo_sangre, estado_civil
   } = req.body;
 
-  // Validaciones del dominio de los campos (según restricciones CHECK en schema.sql)
+  // Validaciones del dominio de los campos (según restricciones CHECK en migrations/0001_esquema_inicial.up.sql)
   const GENEROS_VALIDOS = ['MASCULINO', 'FEMENINO', 'OTRO', 'NO_DECLARA'];
   const TIPOS_SANGRE_VALIDOS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
   const ESTADOS_CIVIL_VALIDOS = ['SOLTERO(A)', 'CASADO(A)', 'DIVORCIADO(A)', 'VIUDO(A)', 'UNION LIBRE'];
@@ -1784,6 +1785,15 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
 // ----------------------------------------------------------------------------
 // Iniciar Servidor
 // ----------------------------------------------------------------------------
+// El esquema se pone al dia antes de aceptar trafico: un despliegue con una
+// migracion nueva la aplica solo, sobre los datos existentes.
+try {
+  await aplicarMigraciones(pool);
+} catch (err) {
+  console.error('❌ No se pudieron aplicar las migraciones:', err);
+  process.exit(1);
+}
+
 server.listen(PORT, () => {
   console.log(`🚀 Metaverso UPDS Backend corriendo en http://localhost:${PORT}`);
 });

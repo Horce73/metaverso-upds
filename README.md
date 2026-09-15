@@ -48,6 +48,20 @@ podman compose up -d
 docker compose up -d
 ```
 
+### Esquema y migraciones
+El backend aplica al arrancar las migraciones pendientes de `server/migrations/`, así que no hace falta cargar ningún SQL a mano ni vaciar la base cuando cambia el esquema. Para cambiarlo:
+```bash
+cd server
+npm run migrate:create -- nombre_del_cambio   # crea NNNN_nombre.up.sql y .down.sql
+npm run migrate                               # aplica las pendientes
+npm run migrate:down                          # revierte la última
+npm run migrate:status                        # lista aplicadas y pendientes
+```
+Una migración ya fusionada en `main` no se edita: cualquier corrección va en una migración nueva.
+
+### Pruebas
+Con el backend corriendo, `cd server && npm run test:qa` ejecuta la suite de regresión. CI la corre en cada pull request a `main` junto con `tsc` y `oxlint`.
+
 ### Paso 2: Iniciar Servidores (Método Rápido Recomendado)
 Puedes iniciar el Backend y el Frontend simultáneamente ejecutando el script incluido:
 ```bash
