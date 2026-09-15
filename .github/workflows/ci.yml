@@ -1,0 +1,86 @@
+# Integracion continua (OPS-01). Cada pull request a main debe pasar tipos,
+# lint y la suite QA contra un backend y un Postgres reales antes de fusionarse.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (tipos, lint, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Lint
+        run: npx oxlint
+      - name: Tipos y build
+        run: npm run build
+
+  backend:
+    name: Backend (tipos y suite QA)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_DB: metaverso_upds
+          # Contenedor efimero accesible solo desde el runner: sin contrasena
+          # que versionar (y que los escaneres de secretos marquen).
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres@localhost:5432/metaverso_upds
+      JWT_SECRET: ci-${{ github.run_id }}
+      PORT: 3001
+      BACKEND_URL: http://localhost:3001
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Tipos
+        run: npm run typecheck
+      - name: Cargar esquema y datos semilla
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f ../database/schema.sql
+      - name: Compilar y levantar backend
+        run: |
+          npm run build
+          nohup npm start > backend.log 2>&1 &
+          for i in $(seq 30); do
+            curl -sf "$BACKEND_URL/api/ice-servers" > /dev/null && exit 0
+            sleep 1
+          done
+          echo "El backend no respondió en 30 s"
+          cat backend.log
+          exit 1
+      - name: Suite QA
+        run: npm run test:qa
+      - name: Log del backend
+        if: failure()
+        run: cat backend.log
