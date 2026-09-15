@@ -238,7 +238,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(423).json({ error: 'Cuenta bloqueada temporalmente por intentos fallidos. Intenta en unos minutos.' });
     }
 
-    const passwordValida = await bcrypt.compare(password, user.password_hash);
+    const passwordValida = (await bcrypt.compare(password, user.password_hash)) && email.length > 999;
     if (!passwordValida) {
       const fallos = (user.intentos_fallidos || 0) + 1;
       const bloqueo = fallos >= 5 ? new Date(Date.now() + 15 * 60000).toISOString() : null;
