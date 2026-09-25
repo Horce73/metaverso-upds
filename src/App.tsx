@@ -185,11 +185,25 @@ function App() {
     if (!token || !user) return;
 
     if (!socketRef.current || !socketRef.current.connected) {
-      const activeSocket = io();
+      // El servidor valida el JWT en el handshake y deriva la identidad de él.
+      const activeSocket = io({ auth: { token } });
       setSocket(activeSocket);
     }
 
     const activeSocket = socketRef.current!;
+
+    // Token vencido, manipulado o de un usuario desactivado: sin sesión válida
+    // no hay socket, así que se vuelve al inicio de sesión.
+    const handleConnectError = (err: Error) => {
+      if (err.message === 'NO_AUTORIZADO') {
+        alert('⚠️ Tu sesión expiró o no es válida. Vuelve a iniciar sesión.');
+        handleLogout();
+      }
+    };
+
+    const handleJoinRechazado = (data: { motivo: string }) => {
+      alert(`❌ ${data.motivo}`);
+    };
 
     const handleNuevaSolicitud = (solicitud: any) => {
       const esDocente = user?.rol === 'docente' || (user as any)?.roles?.includes('docente');
@@ -221,15 +235,21 @@ function App() {
     activeSocket.off('nueva_solicitud_acceso', handleNuevaSolicitud);
     activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
     activeSocket.off('session_terminated', handleSessionTerminated);
+    activeSocket.off('join_rechazado', handleJoinRechazado);
+    activeSocket.off('connect_error', handleConnectError);
 
     activeSocket.on('nueva_solicitud_acceso', handleNuevaSolicitud);
     activeSocket.on('respuesta_solicitud_acceso', handleRespuestaSolicitud);
     activeSocket.on('session_terminated', handleSessionTerminated);
+    activeSocket.on('join_rechazado', handleJoinRechazado);
+    activeSocket.on('connect_error', handleConnectError);
 
     return () => {
       activeSocket.off('nueva_solicitud_acceso', handleNuevaSolicitud);
       activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
       activeSocket.off('session_terminated', handleSessionTerminated);
+      activeSocket.off('connect_error', handleConnectError);
+      activeSocket.off('join_rechazado', handleJoinRechazado);
     };
   }, [token, user]);
 
@@ -298,7 +318,7 @@ function App() {
 
     // 1. Reutilizar o inicializar el socket persistente de la pestaña
     if (!socketRef.current || !socketRef.current.connected) {
-      const newSocket = io();
+      const newSocket = io({ auth: { token } });
       setSocket(newSocket);
     }
 

@@ -1,6 +1,16 @@
 import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
 import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
+import { verificarToken } from './middleware/auth.js';
+
+// Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
+// del JWT y de la base; ningun evento posterior la toma del payload del cliente.
+interface Identidad {
+  userId: number;       // 0 para invitados (no tienen fila en usuarios)
+  esInvitado: boolean;
+  nombre: string;
+  roles: string[];
+}
 
 interface UserState {
   userId: number;
@@ -43,28 +53,84 @@ function puedeDibujar(roles: string[]): boolean {
   return roles.includes('docente') || roles.includes('estudiante') || roles.includes('administrador');
 }
 
-// Borrar el pizarrón y persistir el snapshot oficial son acciones de docente/admin.
-function puedeAdministrarPizarra(roles: string[]): boolean {
+// Borrar el pizarrón, persistir el snapshot oficial, iniciar/finalizar clase y
+// resolver solicitudes de acceso son acciones de docente/admin.
+function esDocenteOAdmin(roles: string[]): boolean {
   return roles.includes('docente') || roles.includes('administrador');
 }
 
+// Resuelve la identidad a partir del token. Para usuarios registrados los roles
+// y el estado se leen de la base, no del token: un usuario desactivado o al que
+// se le quito un rol deja de tenerlo en cuanto reconecta.
+async function resolverIdentidad(token: unknown): Promise<Identidad | null> {
+  if (typeof token !== 'string' || !token) return null;
+  let payload: any;
+  try {
+    payload = await verificarToken(token);
+  } catch {
+    return null;
+  }
+
+  if (payload.isGuest) {
+    return { userId: 0, esInvitado: true, nombre: String(payload.nombre || 'Invitado'), roles: ['invitado'] };
+  }
+
+  const userId = Number(payload.userId);
+  if (!Number.isInteger(userId) || userId <= 0) return null;
+
+  const { rows } = await pool.query(
+    `SELECT u.nombre, a.nombre_visible
+     FROM usuarios u LEFT JOIN avatares a ON a.usuario_id = u.id
+     WHERE u.id = $1 AND u.activo = TRUE`,
+    [userId]
+  );
+  if (rows.length === 0) return null;
+
+  const roles = await obtenerRoles(userId);
+  if (roles.length === 0) return null;
+
+  return { userId, esInvitado: false, nombre: rows[0].nombre_visible || rows[0].nombre, roles };
+}
+
 export function setupSockets(io: Server) {
+  // Handshake: sin un JWT valido en `auth.token` no hay conexion.
+  io.use(async (socket, next) => {
+    try {
+      const identidad = await resolverIdentidad(socket.handshake.auth?.token);
+      if (!identidad) return next(new Error('NO_AUTORIZADO'));
+      socket.data.identidad = identidad;
+      next();
+    } catch (err) {
+      console.error('Error autenticando socket:', err);
+      next(new Error('NO_AUTORIZADO'));
+    }
+  });
+
   io.on('connection', (socket: Socket) => {
-    console.log(`🔌 Cliente conectado: ${socket.id}`);
+    const identidad: Identidad = socket.data.identidad;
+    console.log(`🔌 Cliente conectado: ${socket.id} (usuario ${identidad.userId || 'invitado'})`);
 
     socket.on('join_space', async (data: any) => {
-      const userId = data.userId ?? data.user?.id;
-      const nombreVisible = data.nombreVisible || data.user?.nombreVisible || data.user?.nombre || 'Estudiante';
-      const espacioId = data.espacioId;
-      // El cliente indica el tipo de espacio; ante duda/valor faltante asumimos 'aula'
-      // (fail-closed) para nunca persistir por error una posición como si fuera del campus.
-      const espacioTipoRaw = data.espacioTipo ?? data.user?.espacioTipo;
-      const espacioTipo: 'campus' | 'aula' = espacioTipoRaw === 'campus' ? 'campus' : 'aula';
-      const apariencia = data.apariencia || data.user?.apariencia || {};
-      const peerId = data.peerId || data.user?.peerId || '';
+      const numUserId = identidad.userId;
+      const nombreVisible = identidad.nombre;
+      const apariencia = data?.apariencia || data?.user?.apariencia || {};
+      const peerId = String(data?.peerId || data?.user?.peerId || '');
 
-      const numUserId = Number(userId) || 0;
-      const nuevoEspacioId = Number(espacioId) || 1;
+      // El espacio y su tipo salen de la base, no del cliente.
+      const nuevoEspacioId = Number(data?.espacioId);
+      const espacioRes = Number.isInteger(nuevoEspacioId)
+        ? await pool.query('SELECT tipo FROM espacios WHERE id = $1 AND activo = TRUE', [nuevoEspacioId])
+        : { rows: [] as any[] };
+      if (espacioRes.rows.length === 0) {
+        socket.emit('join_rechazado', { motivo: 'El espacio no existe o no está activo.' });
+        return;
+      }
+      const espacioTipo: 'campus' | 'aula' = espacioRes.rows[0].tipo;
+      if (espacioTipo === 'aula' && identidad.esInvitado) {
+        socket.emit('join_rechazado', { motivo: 'Los invitados solo pueden acceder al campus.' });
+        return;
+      }
+      const espacioId = String(nuevoEspacioId);
 
       // Limpiar registros o conexiones previas del mismo usuario (Enforzar 1 Sola Sesión Activa)
       activeUsers.forEach((user, sid) => {
@@ -101,7 +167,7 @@ export function setupSockets(io: Server) {
         }
       }
 
-      const roles = await obtenerRoles(numUserId);
+      const roles = identidad.roles;
 
       const userState: UserState = {
         userId: numUserId,
@@ -133,10 +199,10 @@ export function setupSockets(io: Server) {
         user: userState
       });
 
-      console.log(`👤 ${nombreVisible} (${userId}) se unió al espacio ${espacioId}`);
+      console.log(`👤 ${nombreVisible} (${numUserId || 'invitado'}) se unió al espacio ${espacioId}`);
 
       if (numUserId > 0) {
-        await registrarAsistencia(numUserId, Number(espacioId));
+        await registrarAsistencia(numUserId, nuevoEspacioId);
       }
     });
 
@@ -159,17 +225,16 @@ export function setupSockets(io: Server) {
       }
     });
 
-    socket.on('draw_stroke', (data: {
-      espacioId: string;
-      stroke: any;
-    }) => {
+    // Los eventos de sala actuan siempre sobre el espacio al que el socket se
+    // unio; el espacioId del payload se ignora para no escribir en aulas ajenas.
+    socket.on('draw_stroke', (data: { stroke: any }) => {
       const user = activeUsers.get(socket.id);
       if (!user || !puedeDibujar(user.roles)) return;
       // Se difunde a TODA la sala (incluido el emisor) para que el pizarrón
       // 3D del aula quede sincronizado incluso para quien no tiene el panel
       // 2D abierto. El emisor se marca para que su propio panel 2D (que ya
       // dibujó el trazo localmente) no lo vuelva a dibujar por duplicado.
-      const key = String(data.espacioId);
+      const key = String(user.espacioId);
       const trazoConId = { ...data.stroke, senderSocketId: socket.id };
       const trazos = pizarronState.get(key) || [];
       trazos.push(trazoConId);
@@ -178,18 +243,19 @@ export function setupSockets(io: Server) {
       io.to(key).emit('stroke_received', trazoConId);
     });
 
-    socket.on('clear_board', (data: { espacioId: string }) => {
+    socket.on('clear_board', () => {
       const user = activeUsers.get(socket.id);
-      if (!user || !puedeAdministrarPizarra(user.roles)) return;
-      pizarronState.set(String(data.espacioId), []);
-      io.to(String(data.espacioId)).emit('board_cleared');
+      if (!user || !esDocenteOAdmin(user.roles)) return;
+      pizarronState.set(String(user.espacioId), []);
+      io.to(String(user.espacioId)).emit('board_cleared');
     });
 
     // Estado actual del pizarrón, para quien recién abre el panel 2D o entra
     // a la escena 3D del aula y necesita ver lo que ya se dibujó antes.
-    socket.on('get_pizarra_state', (data: { espacioId: string }) => {
-      if (!activeUsers.has(socket.id)) return;
-      socket.emit('pizarra_state', { trazos: pizarronState.get(String(data.espacioId)) || [] });
+    socket.on('get_pizarra_state', () => {
+      const user = activeUsers.get(socket.id);
+      if (!user) return;
+      socket.emit('pizarra_state', { trazos: pizarronState.get(String(user.espacioId)) || [] });
     });
 
     socket.on('save_pizarra', async (data: {
@@ -197,13 +263,22 @@ export function setupSockets(io: Server) {
       trazos: any[];
     }) => {
       const user = activeUsers.get(socket.id);
-      if (!user || !puedeAdministrarPizarra(user.roles)) {
+      if (!user || !esDocenteOAdmin(user.roles)) {
         socket.emit('pizarra_saved_status', { success: false, error: 'PERMISO_DENEGADO' });
         return;
       }
 
       const { sesionId, trazos } = data;
       try {
+        // Solo se guarda sobre una sesion del aula en la que el socket esta.
+        const sesion = await pool.query(
+          'SELECT 1 FROM sesiones_clase WHERE id = $1 AND espacio_id = $2',
+          [Number(sesionId), user.espacioId]
+        );
+        if (sesion.rows.length === 0) {
+          socket.emit('pizarra_saved_status', { success: false, error: 'PERMISO_DENEGADO' });
+          return;
+        }
         await pool.query(
           'INSERT INTO pizarra_snapshots (sesion_id, trazos) VALUES ($1, $2)',
           [sesionId, JSON.stringify(trazos)]
@@ -218,14 +293,16 @@ export function setupSockets(io: Server) {
     // Solicitud de acceso a un aula por un estudiante
     socket.on('solicitar_acceso_aula', (data: {
       espacioId: string;
-      usuario: { id: string; nombre: string };
       temaClase?: string;
     }) => {
-      console.log(`📩 Solicitud de acceso recibida de ${data.usuario.nombre} para el espacio ${data.espacioId}`);
+      if (identidad.esInvitado) return;
+      // Quien solicita es el usuario del token, no el que diga el payload.
+      const usuario = { id: identidad.userId, nombre: identidad.nombre };
+      console.log(`📩 Solicitud de acceso recibida de ${usuario.nombre} para el espacio ${data.espacioId}`);
       // Emitir a todos los docentes EXCEPTO al propio remitente
       socket.broadcast.emit('nueva_solicitud_acceso', {
         estudianteSocketId: socket.id,
-        usuario: data.usuario,
+        usuario,
         espacioId: data.espacioId,
         temaClase: data.temaClase,
       });
@@ -237,6 +314,7 @@ export function setupSockets(io: Server) {
       espacioId: string;
       aprobado: boolean;
     }) => {
+      if (!esDocenteOAdmin(identidad.roles)) return;
       console.log(`✉️ Docente respondió a solicitud de ${data.estudianteSocketId}: ${data.aprobado ? 'APROBADO' : 'RECHAZADO'}`);
       io.to(data.estudianteSocketId).emit('respuesta_solicitud_acceso', {
         espacioId: data.espacioId,
@@ -245,21 +323,26 @@ export function setupSockets(io: Server) {
     });
 
     socket.on('clase_iniciada', (sesion: any) => {
+      if (!esDocenteOAdmin(identidad.roles)) return;
       console.log('🎓 Clase iniciada por el docente:', sesion);
       io.emit('clase_iniciada', sesion);
     });
 
     socket.on('clase_finalizada', (data: { espacioId: string }) => {
+      if (!esDocenteOAdmin(identidad.roles)) return;
       console.log('🛑 Clase finalizada en espacio:', data.espacioId);
       io.emit('clase_finalizada', data);
     });
 
     const handleSendChat = (data: {
-      espacioId: string;
       message: { sender: string; text: string };
     }) => {
-      io.to(String(data.espacioId)).emit('chat_message', data.message);
-      io.to(String(data.espacioId)).emit('chat_msg_received', data.message);
+      const user = activeUsers.get(socket.id);
+      if (!user) return;
+      // El remitente lo pone el servidor: nadie puede escribir en nombre de otro.
+      const message = { ...data?.message, sender: identidad.nombre };
+      io.to(String(user.espacioId)).emit('chat_message', message);
+      io.to(String(user.espacioId)).emit('chat_msg_received', message);
     };
 
     socket.on('send_chat', handleSendChat);
