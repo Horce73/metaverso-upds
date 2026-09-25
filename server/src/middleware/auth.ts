@@ -35,6 +35,10 @@ export function authenticateJWT(req: any, res: any, next: any) {
 
 export function requiereRol(...rolesPermitidos: string[]) {
   return async (req: any, res: any, next: any) => {
+    // Los invitados llevan un userId de texto y no tienen roles en la base.
+    if (!Number.isInteger(Number(req.user?.userId)) || req.user?.isGuest) {
+      return res.status(403).json({ error: 'Acceso denegado: rol insuficiente' });
+    }
     try {
       const result = await pool.query(
         `SELECT r.nombre

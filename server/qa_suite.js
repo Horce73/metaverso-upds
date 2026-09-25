@@ -15,6 +15,8 @@ const ADMIN = { email: 'admin@upds.edu.bo', password: '123456' };
 const DOCENTE = { email: 'docente.isw@upds.edu.bo', password: '123456' };
 const ESTUDIANTE_2 = { email: 'maria.flores@upds.edu.bo', password: '123456' };
 const ESTUDIANTE_3 = { email: 'luis.garcia@upds.edu.bo', password: '123456' };
+// Segundo docente, creado por la propia suite la primera vez que corre
+const DOCENTE_2 = { email: 'docente2.qa@upds.edu.bo', password: '123456' };
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 
@@ -410,6 +412,77 @@ async function runTests() {
     const recibido = esperarEvento(sAna, 'clase_iniciada', 1500, s => s?.qa === 'docente');
     sDocente.emit('clase_iniciada', { qa: 'docente', espacio_id: aulaId });
     return (await recibido) !== null;
+  });
+
+  // ---------------------------------------------------------------------------
+  // Pilar 6: Roles y sesiones de clase (SEC-06)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== PILAR 6: Roles y sesiones de clase ===');
+
+  await api('/api/auth/register', {
+    method: 'POST',
+    body: { ...DOCENTE_2, nombre: 'Docente', apellido: 'QA', rol: 'docente' }
+  }); // 409 en corridas posteriores: ya existe
+  const docente2 = await tokenDe(DOCENTE_2);
+
+  const curso = (token, body) => api('/api/clases/crear-curso', { method: 'POST', token, body });
+  const docenteDeAsignatura = async codigo =>
+    (await pool.query('SELECT docente_id FROM asignaturas WHERE codigo = $1', [codigo])).rows[0]?.docente_id;
+
+  await caso('Un estudiante no puede crear curso ni iniciar clase (403)', async () => {
+    const res = await curso(ana.token, { espacio_id: aulaId, nombre_curso: 'X', codigo_curso: 'QA-X', tema: 't' });
+    return res.status === 403;
+  });
+
+  await caso('Un invitado recibe 403 (no 500) en rutas con rol', async () => {
+    const { token } = await (await api('/api/auth/guest', { method: 'POST' })).json();
+    const res = await curso(token, { espacio_id: aulaId, nombre_curso: 'X', codigo_curso: 'QA-X', tema: 't' });
+    return res.status === 403;
+  });
+
+  await caso('No se puede iniciar clase en el campus', async () => {
+    const res = await curso(docente.token, { espacio_id: campusId, nombre_curso: 'X', codigo_curso: 'QA-X', tema: 't' });
+    return res.status === 400;
+  });
+
+  await caso('El docente titular inicia clase en su aula con su asignatura', async () => {
+    const res = await curso(docente.token, {
+      espacio_id: otraAulaId, nombre_curso: 'Base de Datos I', codigo_curso: 'BD-101', tema: 'Clase QA'
+    });
+    return res.status === 201;
+  });
+
+  await caso('Otro docente no puede apropiarse de una asignatura ajena por su código', async () => {
+    const res = await curso(docente2.token, {
+      espacio_id: otraAulaId, nombre_curso: 'Robada', codigo_curso: 'ISW-501', tema: 't'
+    });
+    return res.status === 403 && (await docenteDeAsignatura('ISW-501')) === docente.id;
+  });
+
+  await caso('Otro docente no puede interrumpir una clase en curso ajena', async () => {
+    const res = await curso(docente2.token, {
+      espacio_id: otraAulaId, nombre_curso: 'Curso QA 2', codigo_curso: 'QA-D2', tema: 't'
+    });
+    const { rows } = await pool.query(
+      "SELECT docente_id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso'", [otraAulaId]
+    );
+    return res.status === 409 && rows.length === 1 && rows[0].docente_id === docente.id;
+  });
+
+  await caso('POST /api/sesiones rechaza una segunda sesión activa en la misma aula (409)', async () => {
+    const res = await api('/api/sesiones', { method: 'POST', token: docente.token, body: { espacio_id: aulaId, tema: 'dup' } });
+    return res.status === 409;
+  });
+
+  await caso('POST /api/sesiones exige rol docente (403 a estudiante)', async () => {
+    const res = await api('/api/sesiones', { method: 'POST', token: ana.token, body: { espacio_id: aulaId, tema: 'x' } });
+    return res.status === 403;
+  });
+
+  await caso('Un docente solo lista sus propias sesiones', async () => {
+    const res = await api('/api/sesiones', { token: docente2.token });
+    const data = await res.json();
+    return res.status === 200 && Array.isArray(data) && data.every(s => s.docente_nombre === 'Docente');
   });
 
   for (const s of socketsAbiertos) s.disconnect();
