@@ -8,7 +8,7 @@ import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { pool } from './db.js';
 import { setupSockets } from './socketHandler.js';
-import { authenticateJWT, requiereAdmin } from './middleware/auth.js';
+import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
 import { registrarAsistencia } from './helpers.js';
 import { aplicarMigraciones } from './migraciones.js';
 
@@ -33,6 +33,24 @@ function parseApariencia(val: any): any {
     }
   }
   return typeof current === 'object' && current !== null ? current : {};
+}
+
+// Gestion academica en curso con el formato de los datos semilla: '2026-2'.
+function gestionActual(fecha = new Date()): string {
+  return `${fecha.getFullYear()}-${fecha.getMonth() < 6 ? 1 : 2}`;
+}
+
+// Una sesion de clase solo puede vivir en un aula existente y activa.
+async function validarAulaActiva(
+  espacioId: unknown,
+  db: { query: typeof pool.query } = pool
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const id = Number(espacioId);
+  if (!Number.isInteger(id)) return { ok: false, status: 400, error: 'espacio_id inválido' };
+  const { rows } = await db.query('SELECT tipo FROM espacios WHERE id = $1 AND activo = TRUE', [id]);
+  if (rows.length === 0) return { ok: false, status: 404, error: 'Espacio no encontrado o inactivo' };
+  if (rows[0].tipo !== 'aula') return { ok: false, status: 400, error: 'Las clases solo se dictan en aulas' };
+  return { ok: true };
 }
 
 app.use(cors());
@@ -528,21 +546,31 @@ app.post('/api/avatar/custom', authenticateJWT, async (req: any, res) => {
 // ----------------------------------------------------------------------------
 // 7. Programar Clase (RF-08) - Exclusivo Docente
 // ----------------------------------------------------------------------------
-app.post('/api/sesiones', authenticateJWT, async (req: any, res) => {
+app.post('/api/sesiones', authenticateJWT, requiereRol('docente'), async (req: any, res) => {
   const { userId } = req.user;
   const { espacio_id, tema, inicio_programado, fin_programado, tolerancia_min } = req.body;
 
-  // Verificar rol docente
-  const rolRes = await pool.query(
-    `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
-    [userId]
-  );
-  const roles = rolRes.rows.map((r: any) => r.nombre);
-  if (!roles.includes('docente')) {
-    return res.status(403).json({ error: 'Acceso denegado: requiere rol docente' });
+  if (!espacio_id) {
+    return res.status(400).json({ error: 'Falta campo: espacio_id' });
   }
 
   try {
+    const espacio = await validarAulaActiva(espacio_id);
+    if (!espacio.ok) return res.status(espacio.status).json({ error: espacio.error });
+
+    const sesionActiva = await pool.query(
+      `SELECT id, tema FROM sesiones_clase
+       WHERE espacio_id = $1 AND estado IN ('en_curso', 'programada')
+       ORDER BY inicio_programado DESC LIMIT 1`,
+      [espacio_id]
+    );
+    if (sesionActiva.rows.length > 0) {
+      return res.status(409).json({
+        error: 'Ya existe una sesión activa en este espacio',
+        sesion_activa: sesionActiva.rows[0]
+      });
+    }
+
     const result = await pool.query(
       `INSERT INTO sesiones_clase (espacio_id, docente_id, tema, inicio_programado, fin_programado, inicio_real, estado, tolerancia_min)
        VALUES ($1, $2, $3, $4, $5, NOW(), 'en_curso', $6)
@@ -550,67 +578,102 @@ app.post('/api/sesiones', authenticateJWT, async (req: any, res) => {
       [espacio_id, userId, tema, inicio_programado || new Date().toISOString(), fin_programado || new Date(Date.now() + 90 * 60000).toISOString(), tolerancia_min || 10]
     );
 
-    await bitacora(userId, 'inicio_clase', tema || '', req.ip);
+    await bitacora(userId, 'inicio_clase', `${tema || ''} | espacio=${espacio_id}`, req.ip);
 
     res.status(201).json({ message: 'Clase programada e iniciada', sesion: result.rows[0] });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error al programar clase:', err);
+    // Sin err.detail en la respuesta: el detalle de Postgres queda solo en el log.
+    if (err.code === '23503') {
+      return res.status(400).json({ error: 'El docente no tiene perfil docente registrado' });
+    }
+    if (err.code === '23514' || err.code === '22007' || err.code === '22008') {
+      return res.status(400).json({ error: 'Fechas u horario inválidos' });
+    }
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
 
 // Endpoint para docentes: Crear curso / materia e iniciar clase en un aula vacía
-app.post('/api/clases/crear-curso', authenticateJWT, async (req: any, res) => {
+app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), async (req: any, res) => {
   const { userId } = req.user;
   const { espacio_id, nombre_curso, codigo_curso, tema } = req.body;
 
   if (!espacio_id || !nombre_curso || !codigo_curso || !tema) {
     return res.status(400).json({ error: 'Faltan campos obligatorios (espacio_id, nombre_curso, codigo_curso, tema)' });
   }
+  if (String(codigo_curso).length > 20 || String(nombre_curso).length > 120 || String(tema).length > 200) {
+    return res.status(400).json({ error: 'Código (máx. 20), nombre (máx. 120) o tema (máx. 200) demasiado largos' });
+  }
 
+  const client = await pool.connect();
   try {
-    // 1. Crear o buscar la asignatura por su codigo
+    await client.query('BEGIN');
+
+    const espacio = await validarAulaActiva(espacio_id, client);
+    if (!espacio.ok) {
+      await client.query('ROLLBACK');
+      return res.status(espacio.status).json({ error: espacio.error });
+    }
+
+    // 1. Crear o reutilizar la asignatura por su codigo. Una asignatura de otro
+    //    docente no se reasigna: antes cualquier docente podia apropiarsela.
     let asignaturaId: number | null = null;
-    const asigExist = await pool.query('SELECT id FROM asignaturas WHERE UPPER(codigo) = UPPER($1)', [codigo_curso]);
+    const asigExist = await client.query(
+      'SELECT id, docente_id FROM asignaturas WHERE UPPER(codigo) = UPPER($1) FOR UPDATE',
+      [codigo_curso]
+    );
 
     if (asigExist.rows.length > 0) {
+      if (asigExist.rows[0].docente_id !== userId) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: `La asignatura ${String(codigo_curso).toUpperCase()} pertenece a otro docente` });
+      }
       asignaturaId = asigExist.rows[0].id;
-      await pool.query(
-        'UPDATE asignaturas SET nombre = $1, docente_id = $2 WHERE id = $3',
-        [nombre_curso, userId, asignaturaId]
-      );
+      await client.query('UPDATE asignaturas SET nombre = $1 WHERE id = $2', [nombre_curso, asignaturaId]);
     } else {
-      const newAsig = await pool.query(
-        `INSERT INTO asignaturas (carrera_id, codigo, nombre, docente_id, activa)
-         VALUES (1, $1, $2, $3, TRUE) RETURNING id`,
-        [codigo_curso.toUpperCase(), nombre_curso, userId]
+      // gestion es NOT NULL: sin ella crear un curso nuevo fallaba siempre.
+      const newAsig = await client.query(
+        `INSERT INTO asignaturas (carrera_id, codigo, nombre, docente_id, gestion, activa)
+         VALUES (1, $1, $2, $3, $4, TRUE) RETURNING id`,
+        [String(codigo_curso).toUpperCase(), nombre_curso, userId, gestionActual()]
       );
       asignaturaId = newAsig.rows[0].id;
     }
 
-    // 2. Vincular la asignatura al espacio de aula
-    await pool.query('UPDATE espacios SET asignatura_id = $1 WHERE id = $2', [asignaturaId, espacio_id]);
-
-    // 3. Finalizar cualquier sesión en curso previa en este espacio (y cerrar sus asistencias abiertas)
-    const sesionesPreviasRes = await pool.query(
-      `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW()
-       WHERE espacio_id = $1 AND estado = 'en_curso' RETURNING id`,
+    // 2. Una clase en curso de otro docente no se interrumpe desde aqui.
+    const enCursoRes = await client.query(
+      `SELECT id, docente_id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso' FOR UPDATE`,
       [espacio_id]
     );
-    for (const { id: sesionPreviaId } of sesionesPreviasRes.rows) {
-      await pool.query(
+    if (enCursoRes.rows.some((s: any) => s.docente_id !== userId)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Hay una clase en curso de otro docente en esta aula' });
+    }
+
+    // 3. Vincular la asignatura al espacio de aula
+    await client.query('UPDATE espacios SET asignatura_id = $1 WHERE id = $2', [asignaturaId, espacio_id]);
+
+    // 4. Finalizar la sesion en curso previa del mismo docente (y cerrar sus asistencias abiertas)
+    for (const { id: sesionPreviaId } of enCursoRes.rows) {
+      await client.query(
+        `UPDATE sesiones_clase SET estado = 'finalizada', fin_real = NOW() WHERE id = $1`,
+        [sesionPreviaId]
+      );
+      await client.query(
         `UPDATE asistencias SET hora_salida = NOW() WHERE sesion_id = $1 AND hora_salida IS NULL`,
         [sesionPreviaId]
       );
     }
 
-    // 4. Crear sesión de clase en curso
-    const sesionRes = await pool.query(
+    // 5. Crear sesión de clase en curso
+    const sesionRes = await client.query(
       `INSERT INTO sesiones_clase (espacio_id, docente_id, tema, inicio_programado, fin_programado, inicio_real, estado)
        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '90 minutes', NOW(), 'en_curso')
        RETURNING *`,
       [espacio_id, userId, tema]
     );
+    await client.query('COMMIT');
 
     const userRes = await pool.query('SELECT nombre, apellido FROM usuarios WHERE id = $1', [userId]);
     const docenteInfo = userRes.rows[0];
@@ -630,8 +693,11 @@ app.post('/api/clases/crear-curso', authenticateJWT, async (req: any, res) => {
       asignatura_nombre: nombre_curso,
     });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Error al crear curso e iniciar clase:', err);
     res.status(500).json({ error: 'Error al crear curso en la base de datos' });
+  } finally {
+    client.release();
   }
 });
 
@@ -1654,7 +1720,8 @@ app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
       [userId]
     );
     const roles = rolesRes.rows.map((r: any) => r.nombre);
-    const esPrivilegiado = roles.includes('administrador') || roles.includes('docente');
+    const esAdmin = roles.includes('administrador');
+    const esDocente = roles.includes('docente');
 
     let sql = `
       SELECT sc.id, sc.tema, sc.inicio_programado, sc.fin_programado,
@@ -1670,8 +1737,12 @@ app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
     const params: any[] = [];
     let idx = 1;
 
-    // Los estudiantes solo ven sesiones de asignaturas en las que están inscritos
-    if (!esPrivilegiado) {
+    // Administrador ve todas; docente solo las que dicta; estudiante solo las de
+    // asignaturas en las que está inscrito.
+    if (!esAdmin && esDocente) {
+      sql += ` AND sc.docente_id = $${idx++}`;
+      params.push(userId);
+    } else if (!esAdmin) {
       sql += ` AND EXISTS (
         SELECT 1 FROM inscripciones i
         WHERE i.asignatura_id = e.asignatura_id AND i.usuario_id = $${idx++}
