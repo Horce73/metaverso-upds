@@ -3,6 +3,7 @@
 // con `npm run test:qa` (backend levantado en BACKEND_URL).
 import pg from 'pg';
 import { io } from 'socket.io-client';
+import WebSocket from 'ws';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/metaverso_upds';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
@@ -83,9 +84,8 @@ function conectar(token) {
   return new Promise((resolve, reject) => {
     const socket = io(BACKEND_URL, {
       auth: token === undefined ? {} : { token },
-      // Solo polling: el upgrade a websocket choca hoy con el PeerServer montado
-      // en el mismo servidor HTTP, y los navegadores terminan en polling igual.
-      transports: ['polling'],
+      // Directo por websocket, como terminan los navegadores tras el upgrade
+      transports: ['websocket'],
       reconnection: false,
       forceNew: true
     });
@@ -347,6 +347,24 @@ async function runTests() {
   const docente = await tokenDe(DOCENTE);
   const ana = await tokenDe(ESTUDIANTE);
   const maria = await tokenDe(ESTUDIANTE_2);
+
+  await caso('El upgrade a websocket de Socket.io convive con el de PeerJS', async () => {
+    // El PeerServer comparte el servidor HTTP: si vuelve a contestar upgrades
+    // ajenos, Socket.io recibe tramas corruptas y los navegadores caen a polling.
+    const socket = io(BACKEND_URL, { auth: { token: ana.token }, reconnection: false, forceNew: true });
+    socketsAbiertos.push(socket);
+    const huboUpgrade = await new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), 5000);
+      socket.io.engine.once('upgrade', () => { clearTimeout(timer); resolve(true); });
+    });
+    const peerAbre = await new Promise(resolve => {
+      const ws = new WebSocket(`${BACKEND_URL.replace(/^http/, 'ws')}/peer/peerjs?key=peerjs&id=qa_${Date.now()}&token=qa`);
+      const timer = setTimeout(() => { ws.terminate(); resolve(false); }, 5000);
+      ws.once('message', m => { clearTimeout(timer); ws.close(); resolve(JSON.parse(m.toString()).type === 'OPEN'); });
+      ws.once('error', () => { clearTimeout(timer); resolve(false); });
+    });
+    return huboUpgrade && socket.io.engine.transport.name === 'websocket' && peerAbre;
+  });
 
   await caso('Socket sin token es rechazado en el handshake', async () => {
     try { await conectar(undefined); return false; } catch (err) { return err.message === 'NO_AUTORIZADO'; }
