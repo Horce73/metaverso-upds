@@ -1,4 +1,11 @@
 import { Peer } from 'peerjs';
+import {
+  resumirEstadisticas,
+  totalizar,
+  type DiagnosticoPeer,
+  type DiagnosticoVoz,
+  type MuestraPrevia,
+} from './diagnosticoVoz.js';
 
 export type EstadoVoz = 'iniciando' | 'sin-microfono' | 'conectado' | 'reconectando' | 'error';
 
@@ -28,6 +35,7 @@ export class AudioClient {
   private activeCalls = new Map<string, any>(); // peerId -> Call
   private posicionesPendientes = new Map<string, [number, number, number]>();
   private intentosFallidos = new Map<string, number>();
+  private muestrasDiagnostico = new Map<string, MuestraPrevia>();
   private temporizadores = new Set<ReturnType<typeof setTimeout>>();
   private onCallConnectedCallback: ((peerId: string) => void) | null = null;
 
@@ -440,6 +448,27 @@ export class AudioClient {
     }
   }
 
+  // Estadísticas WebRTC de cada llamada activa (VOZ-05). Las tasas se calculan
+  // contra la muestra anterior de cada llamada: quien consulte con su propio
+  // ritmo (el panel, la prueba de carga) pasa su propio mapa de muestras.
+  public async obtenerDiagnostico(
+    muestras: Map<string, MuestraPrevia> = this.muestrasDiagnostico
+  ): Promise<DiagnosticoVoz> {
+    const peers = await Promise.all(
+      [...this.activeCalls].map(async ([peerId, call]) => {
+        const pc: RTCPeerConnection | undefined = call.peerConnection;
+        if (!pc) return null;
+        const reporte = await pc.getStats();
+        const { diagnostico, muestra } = resumirEstadisticas(
+          peerId, pc.iceConnectionState, reporte, muestras.get(peerId), Date.now()
+        );
+        muestras.set(peerId, muestra);
+        return diagnostico;
+      })
+    );
+    return totalizar(peers.filter((p): p is DiagnosticoPeer => p !== null));
+  }
+
   // Registrar callback para cuando se conecta una llamada
   public onCallConnected(callback: (peerId: string) => void) {
     this.onCallConnectedCallback = callback;
@@ -458,6 +487,7 @@ export class AudioClient {
       call.close();
       this.activeCalls.delete(remotePeerId);
     }
+    this.muestrasDiagnostico.delete(remotePeerId);
 
     const audio = this.audioElements.get(remotePeerId);
     if (audio) {
@@ -511,6 +541,7 @@ export class AudioClient {
     this.pannerNodes.clear();
     this.posicionesPendientes.clear();
     this.intentosFallidos.clear();
+    this.muestrasDiagnostico.clear();
 
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
