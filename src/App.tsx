@@ -430,6 +430,11 @@ function App() {
       });
     });
 
+    activeSocket.off('chat_rechazado');
+    activeSocket.on('chat_rechazado', (data: { motivo: string }) => {
+      alert(`⚠️ ${data.motivo}`);
+    });
+
     activeSocket.on('chat_message', (data: any) => {
       setChatMessages((prev) => [...prev, data]);
     });
@@ -1128,6 +1133,7 @@ function App() {
               className="chat-input"
               placeholder="Escribe un mensaje..."
               value={chatInput}
+              maxLength={500}
               onChange={(e) => setChatInput(e.target.value)}
             />
             <button type="submit" className="btn-primary" style={{ padding: '6px 12px' }}>

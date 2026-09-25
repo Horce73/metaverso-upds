@@ -586,6 +586,44 @@ async function runTests() {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Pilar 9: Saneamiento del chat (SEC-05)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== PILAR 9: Saneamiento del chat ===');
+
+  // Envia desde Ana y devuelve [rechazo, recibidoPorElDocente]
+  const chatear = async message => {
+    const rechazo = esperarEvento(sAna, 'chat_rechazado', 800);
+    const recibido = esperarEvento(sDocente, 'chat_message', 800);
+    sAna.emit('send_chat', { message });
+    return Promise.all([rechazo, recibido]);
+  };
+
+  await caso('Un mensaje de más de 500 caracteres se rechaza y no se difunde', async () => {
+    const [rechazo, recibido] = await chatear({ text: 'a'.repeat(501) });
+    return rechazo !== null && recibido === null;
+  });
+
+  await caso('Un mensaje vacío o de solo espacios se rechaza', async () => {
+    const [rechazo, recibido] = await chatear({ text: '   \n\t ' });
+    return rechazo !== null && recibido === null;
+  });
+
+  await caso('Un texto que no es string se rechaza sin tumbar el socket', async () => {
+    const [rechazo] = await chatear({ text: { $gt: '' } });
+    return rechazo !== null && sAna.connected;
+  });
+
+  await caso('Se eliminan caracteres invisibles y de control bidi', async () => {
+    const [, recibido] = await chatear({ text: 'ho\u200Bla\u202E qa\u0007' });
+    return recibido?.text === 'hola qa';
+  });
+
+  await caso('Solo se difunden sender, text y enviadoEn (sin campos extra del cliente)', async () => {
+    const [, recibido] = await chatear({ text: 'campos', html: '<img src=x onerror=alert(1)>', rol: 'administrador' });
+    return recibido !== null && Object.keys(recibido).sort().join(',') === 'enviadoEn,sender,text';
+  });
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');
