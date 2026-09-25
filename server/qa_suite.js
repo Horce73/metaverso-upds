@@ -555,6 +555,37 @@ async function runTests() {
     return recibidos === 10;
   });
 
+  // ---------------------------------------------------------------------------
+  // Pilar 8: CORS (SEC-03)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== PILAR 8: CORS ===');
+
+  const ORIGEN_AJENO = 'https://sitio-ajeno.qa.example';
+  const ORIGEN_PERMITIDO = (process.env.CORS_ORIGINS || '').split(',')[0].trim();
+  const preflight = origen => fetch(`${BACKEND_URL}/api/auth/login`, {
+    method: 'OPTIONS',
+    headers: { Origin: origen, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type' }
+  });
+
+  await caso('Un origen ajeno no recibe permiso CORS en la API', async () => {
+    const res = await preflight(ORIGEN_AJENO);
+    const simple = await fetch(`${BACKEND_URL}/api/ice-servers`, { headers: { Origin: ORIGEN_AJENO } });
+    return !res.headers.get('access-control-allow-origin') && !simple.headers.get('access-control-allow-origin');
+  });
+
+  await caso('Un origen ajeno no recibe permiso CORS en Socket.io', async () => {
+    const res = await fetch(`${BACKEND_URL}/socket.io/?EIO=4&transport=polling`, { headers: { Origin: ORIGEN_AJENO } });
+    const acao = res.headers.get('access-control-allow-origin');
+    return acao !== '*' && acao !== ORIGEN_AJENO;
+  });
+
+  if (ORIGEN_PERMITIDO) {
+    await caso('Un origen listado en CORS_ORIGINS sí recibe permiso', async () => {
+      const res = await preflight(ORIGEN_PERMITIDO);
+      return res.headers.get('access-control-allow-origin') === ORIGEN_PERMITIDO;
+    });
+  }
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');

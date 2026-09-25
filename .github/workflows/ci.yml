@@ -53,6 +53,7 @@ jobs:
       JWT_SECRET: ci-${{ github.run_id }}
       PORT: 3001
       BACKEND_URL: http://localhost:3001
+      CORS_ORIGINS: https://permitido.qa.example
     defaults:
       run:
         working-directory: server

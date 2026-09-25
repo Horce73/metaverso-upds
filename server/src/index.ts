@@ -59,13 +59,28 @@ async function validarAulaActiva(
 // limites de tasa meten a todos los usuarios en el mismo cupo.
 app.set('trust proxy', process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal');
 
-app.use(cors());
+// CORS (SEC-03). El frontend siempre llega por el mismo origen (proxy de Vite,
+// nginx o el tunel que apunta a nginx), asi que por defecto ningun origen
+// cruzado esta permitido. CORS_ORIGINS agrega los que hagan falta, separados
+// por coma (p. ej. un dominio de la universidad que embeba la app).
+const ORIGENES_PERMITIDOS = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+const opcionesCors = {
+  // Sin cabecera Origin: misma pagina, curl o clientes de servidor.
+  origin: (origin: string | undefined, cb: (err: Error | null, permitido?: boolean) => void) =>
+    cb(null, !origin || ORIGENES_PERMITIDOS.includes(origin)),
+  methods: ['GET', 'POST', 'PUT', 'DELETE']
+};
+
+app.use(cors(opcionesCors));
 app.use(express.json());
 app.use('/api', limiteApi);
 
 const server = createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
+  cors: { origin: opcionesCors.origin, methods: ['GET', 'POST'] }
 });
 
 setupSockets(io);
