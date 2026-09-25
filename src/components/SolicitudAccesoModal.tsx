@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
+import { SelectorMicrofono } from './SelectorMicrofono.js';
 
 interface SolicitudAccesoModalProps {
   espacio: {
@@ -155,6 +156,12 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
                 : 'Puedes ingresar libremente o verificar con tu código de aula cuando el docente inicie la sesión.'}
             </p>
           )}
+        </div>
+
+        {/* Prueba de micrófono antes de entrar (VOZ-08): el aula nueva abre
+            el canal de voz con el dispositivo que quede elegido acá. */}
+        <div className="solicitud-acceso__microfono">
+          <SelectorMicrofono />
         </div>
 
         {/* Mensajes de Alerta y Estado */}
