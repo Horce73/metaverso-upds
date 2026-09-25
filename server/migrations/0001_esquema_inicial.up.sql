@@ -18,12 +18,6 @@
 --   RNF-03 -> consentimientos, datos_personales
 -- ============================================================================
 
--- Limpiar si existe (solo para desarrollo)
-DROP SCHEMA public CASCADE;
-CREATE SCHEMA public;
-GRANT ALL ON SCHEMA public TO postgres;
-GRANT ALL ON SCHEMA public TO public;
-
 -- ----------------------------------------------------------------------------
 -- 1. ROLES (catalogo RBAC)
 -- ----------------------------------------------------------------------------

@@ -264,13 +264,13 @@ graph TB
 | Componente | Detalle |
 |---|---|
 | PostgreSQL | 15-alpine, vía `docker-compose.yml`, puerto 5432, volumen nombrado `postgres_data` |
-| Esquema | `database/schema.sql`, montado como script de inicialización del contenedor |
+| Esquema | Migraciones versionadas en `server/migrations/`, aplicadas por el backend al arrancar |
 
 ### 10.3 Estructura de carpetas relevante
 
 ```text
 ├── docker-compose.yml         # PostgreSQL 15 en contenedor
-├── database/schema.sql        # Esquema completo + datos semilla
+├── server/migrations/         # Migraciones versionadas (0001 = esquema + datos semilla)
 ├── src/                       # Frontend (React)
 │   ├── App.tsx                 # Enrutamiento por hash, sockets globales, layout
 │   ├── index.css               # Estilos globales (tema claro/oscuro)
@@ -707,8 +707,8 @@ El proyecto **Metaverso UPDS** demuestra la viabilidad técnica de un aula virtu
 |---|---|
 | `README.md` | Guía de instalación y ejecución local |
 | `requerimientos.md` | Versión previa de RF/RNF (RF-01 a RF-08, RNF-01 a RNF-06) |
-| `database.md` | Documentación previa del esquema (parcialmente desactualizada frente a `database/schema.sql`) |
-| `database/schema.sql` | Esquema real vigente de la base de datos (fuente de verdad) |
+| `database.md` | Documentación previa del esquema (parcialmente desactualizada frente a `server/migrations/`) |
+| `server/migrations/` | Esquema real vigente de la base de datos (fuente de verdad) |
 | `docs/DIAGRAMAS_CASOS_USO.md` | Diagramas de casos de uso previos (base para la sección 13 de este documento) |
 | `docs/DIAGRAMA_CLASES_BD.md` | Diagrama de clases de base de datos previo |
 

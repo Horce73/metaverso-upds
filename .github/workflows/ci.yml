@@ -66,11 +66,16 @@ jobs:
       - run: npm ci
       - name: Tipos
         run: npm run typecheck
-      - name: Cargar esquema y datos semilla
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f ../database/schema.sql
-      - name: Compilar y levantar backend
+      - name: Compilar
+        run: npm run build
+      - name: Migraciones (aplicar, revertir la ultima y reaplicar)
         run: |
-          npm run build
+          node dist/migrar.js up
+          node dist/migrar.js down
+          node dist/migrar.js up
+          node dist/migrar.js status
+      - name: Levantar backend
+        run: |
           nohup npm start > backend.log 2>&1 &
           for i in $(seq 30); do
             curl -sf "$BACKEND_URL/api/ice-servers" > /dev/null && exit 0
