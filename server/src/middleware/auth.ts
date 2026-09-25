@@ -8,7 +8,18 @@ import { pool } from '../db.js';
 // no depender de ese orden.
 dotenv.config();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'upds-metaverso-super-secret-key-2026';
+// Sin respaldo versionado (SEC-02): si falta el secreto el backend no arranca.
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET no está definido en el entorno');
+}
+const JWT_SECRET: string = process.env.JWT_SECRET;
+
+// Verificacion compartida por las rutas HTTP y el handshake del WebSocket.
+export function verificarToken(token: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => (err ? reject(err) : resolve(decoded)));
+  });
+}
 
 export function authenticateJWT(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
