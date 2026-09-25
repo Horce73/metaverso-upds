@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "carga:voz": "node pruebas/carga-voz/spike.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -25,6 +26,7 @@
     "@types/three": "^0.185.1",
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
+    "playwright-core": "^1.63.0",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   }
