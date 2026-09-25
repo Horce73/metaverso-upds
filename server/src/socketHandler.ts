@@ -3,6 +3,7 @@ import { pool } from './db.js';
 import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
 import { verificarToken } from './middleware/auth.js';
 import { CUPOS_SOCKET, limitador } from './limites.js';
+import { sanearTextoChat } from './chat.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -349,8 +350,14 @@ export function setupSockets(io: Server) {
     }) => {
       const user = activeUsers.get(socket.id);
       if (!user) return;
-      // El remitente lo pone el servidor: nadie puede escribir en nombre de otro.
-      const message = { ...data?.message, sender: identidad.nombre };
+      const saneado = sanearTextoChat(data?.message?.text);
+      if (!saneado.ok) {
+        socket.emit('chat_rechazado', { motivo: saneado.motivo });
+        return;
+      }
+      // Campos cerrados: el remitente lo pone el servidor (nadie escribe en
+      // nombre de otro) y ningun campo extra del cliente llega a los demas.
+      const message = { sender: identidad.nombre, text: saneado.texto, enviadoEn: new Date().toISOString() };
       io.to(String(user.espacioId)).emit('chat_message', message);
       io.to(String(user.espacioId)).emit('chat_msg_received', message);
     };
