@@ -81,6 +81,8 @@ interface AvatarModelProps {
   zonasBloqueadasCampus?: ZonaBloqueada[];
   mitadAnchoIslaAcademica?: number;
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
+  /** Nivel de voz actual (0..1) de esta persona; enciende el anillo de "está hablando". */
+  nivelVoz?: () => number;
 }
 
 // ---------------------------------------------------------------------
@@ -297,6 +299,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   zonasBloqueadasCampus,
   mitadAnchoIslaAcademica,
   onUpdatePosicion,
+  nivelVoz,
 }) => {
   const grupoRef = useRef<THREE.Group>(null);
   const cuerpoRef = useRef<THREE.Group>(null);
@@ -622,10 +625,49 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
         {accesorios?.mochila && <Mochila color={oscurecerColor(colorPrimarioRopa)} />}
       </group>
 
+      {nivelVoz && <AnilloVoz nivelVoz={nivelVoz} />}
       <Etiqueta nombre={nombre} />
     </group>
   );
 };
+
+// Anillo en el piso que se enciende mientras la persona habla (VOZ-02). Lee el
+// nivel en cada cuadro directo del AudioClient, sin pasar por el estado de
+// React: con 30 avatares, un setState por cada cambio de nivel re-renderizaría
+// la escena decenas de veces por segundo.
+const UMBRAL_HABLA = 0.02;
+// Mantener el anillo encendido un poco después de cada sílaba: sin esto
+// parpadea en las pausas naturales del habla.
+const RETENCION_HABLA_S = 0.35;
+
+function AnilloVoz({ nivelVoz }: { nivelVoz: () => number }) {
+  const mallaRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const retencionRef = useRef(0);
+  const intensidadRef = useRef(0);
+
+  useFrame((_, delta) => {
+    const malla = mallaRef.current;
+    const material = materialRef.current;
+    if (!malla || !material) return;
+
+    const nivel = nivelVoz();
+    retencionRef.current = nivel > UMBRAL_HABLA ? RETENCION_HABLA_S : Math.max(0, retencionRef.current - delta);
+    const objetivo = retencionRef.current > 0 ? 1 : 0;
+    intensidadRef.current += (objetivo - intensidadRef.current) * Math.min(1, delta * 12);
+
+    material.opacity = 0.85 * intensidadRef.current;
+    malla.visible = intensidadRef.current > 0.01;
+    malla.scale.setScalar(1 + Math.min(nivel * 2, 0.3));
+  });
+
+  return (
+    <mesh ref={mallaRef} visible={false} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+      <ringGeometry args={[0.5, 0.62, 48]} />
+      <meshBasicMaterial ref={materialRef} color="#22c55e" transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+}
 
 // Componente de Vello Facial Low-Poly
 function VelloFacial({ estilo, color }: { estilo: string; color: string }) {

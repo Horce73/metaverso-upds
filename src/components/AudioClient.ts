@@ -36,6 +36,11 @@ export class AudioClient {
   private posicionesPendientes = new Map<string, [number, number, number]>();
   private intentosFallidos = new Map<string, number>();
   private muestrasDiagnostico = new Map<string, MuestraPrevia>();
+  // Nivel de voz por participante (VOZ-02): un AnalyserNode por stream remoto
+  // y otro para el micrófono propio.
+  private analizadores = new Map<string, AnalyserNode>();
+  private analizadorLocal: AnalyserNode | null = null;
+  private bufferNivel = new Float32Array(256);
   private temporizadores = new Set<ReturnType<typeof setTimeout>>();
   private onCallConnectedCallback: ((peerId: string) => void) | null = null;
 
@@ -168,6 +173,7 @@ export class AudioClient {
 
       // 2. Micrófono (o stream silencioso si no hay)
       this.localStream = await this.obtenerMicrofono();
+      if (this.micDisponible) this.analizadorLocal = this.crearAnalizador(this.localStream);
 
       // 3. Servidores ICE desde el backend
       const iceServers = await this.obtenerIceServers();
@@ -335,6 +341,14 @@ export class AudioClient {
       if (this.usarAudioEspacial) {
         const source = this.audioCtx.createMediaStreamSource(remoteStream);
 
+        // Nivel para el indicador de habla (VOZ-02). Sólo en este modo: en
+        // iOS/Safari pasar el stream remoto por Web Audio puede silenciar
+        // también el <audio> de respaldo, así que ahí el indicador no se enciende.
+        const analizador = this.audioCtx.createAnalyser();
+        analizador.fftSize = this.bufferNivel.length;
+        source.connect(analizador);
+        this.analizadores.set(remotePeerId, analizador);
+
         const panner = this.audioCtx.createPanner();
         panner.panningModel = 'HRTF';
         panner.distanceModel = 'inverse';
@@ -448,6 +462,36 @@ export class AudioClient {
     }
   }
 
+  private crearAnalizador(stream: MediaStream): AnalyserNode | null {
+    if (!this.audioCtx) return null;
+    const analizador = this.audioCtx.createAnalyser();
+    analizador.fftSize = this.bufferNivel.length;
+    this.audioCtx.createMediaStreamSource(stream).connect(analizador);
+    return analizador;
+  }
+
+  // RMS de la forma de onda (0..1). Se consulta en cada cuadro por avatar:
+  // 256 muestras, sin asignar memoria.
+  private nivelDeAnalizador(analizador: AnalyserNode | null | undefined): number {
+    if (!analizador) return 0;
+    analizador.getFloatTimeDomainData(this.bufferNivel);
+    let suma = 0;
+    for (let i = 0; i < this.bufferNivel.length; i++) suma += this.bufferNivel[i] * this.bufferNivel[i];
+    return Math.sqrt(suma / this.bufferNivel.length);
+  }
+
+  /** Nivel de voz actual de otro participante (VOZ-02). */
+  public nivelDe(remotePeerId: string): number {
+    return this.nivelDeAnalizador(this.analizadores.get(remotePeerId));
+  }
+
+  /** Nivel de voz del micrófono propio; 0 si está silenciado o no hay micrófono. */
+  public nivelLocal(): number {
+    const pista = this.localStream?.getAudioTracks()[0];
+    if (!pista || !pista.enabled) return 0;
+    return this.nivelDeAnalizador(this.analizadorLocal);
+  }
+
   // Estadísticas WebRTC de cada llamada activa (VOZ-05). Las tasas se calculan
   // contra la muestra anterior de cada llamada: quien consulte con su propio
   // ritmo (el panel, la prueba de carga) pasa su propio mapa de muestras.
@@ -501,6 +545,9 @@ export class AudioClient {
       panner.disconnect();
       this.pannerNodes.delete(remotePeerId);
     }
+
+    this.analizadores.get(remotePeerId)?.disconnect();
+    this.analizadores.delete(remotePeerId);
   }
 
   // Silenciar / Activar micrófono
@@ -539,6 +586,9 @@ export class AudioClient {
     this.audioElements.clear();
     this.pannerNodes.forEach((panner) => panner.disconnect());
     this.pannerNodes.clear();
+    this.analizadores.forEach((analizador) => analizador.disconnect());
+    this.analizadores.clear();
+    this.analizadorLocal = null;
     this.posicionesPendientes.clear();
     this.intentosFallidos.clear();
     this.muestrasDiagnostico.clear();
