@@ -10,6 +10,7 @@ import { AdminPanel } from './components/AdminPanel.js';
 import { TeacherPanel } from './components/TeacherPanel.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
 import { CrearCursoModal } from './components/CrearCursoModal.js';
+import { PanelDiagnosticoVoz } from './components/PanelDiagnosticoVoz.js';
 
 interface User {
   id: string;
@@ -115,6 +116,7 @@ function App() {
   const [solicitudAulaModal, setSolicitudAulaModal] = useState<Espacio | null>(null);
   const [solicitudesPendientesDocente, setSolicitudesPendientesDocente] = useState<any[]>([]);
   const [mostrarCrearCursoModal, setMostrarCrearCursoModal] = useState(false);
+  const [mostrarDiagnosticoVoz, setMostrarDiagnosticoVoz] = useState(false);
 
   const navigateTo = (path: string) => {
     window.location.hash = `#${path}`;
@@ -1075,6 +1077,20 @@ function App() {
           </div>
         )}
 
+        {/* Fuera de la sidebar: su backdrop-filter haría que position:fixed
+            se calcule contra ella y el panel quedaría recortado. */}
+        {mostrarDiagnosticoVoz && (
+          <PanelDiagnosticoVoz
+            audioClient={audioClient}
+            nombres={Object.fromEntries(
+              Object.values(remoteUsers)
+                .filter((u: any) => u.peerId)
+                .map((u: any) => [u.peerId, u.nombreVisible])
+            )}
+            onClose={() => setMostrarDiagnosticoVoz(false)}
+          />
+        )}
+
         {/* Sidebar Derecha: Estudiantes activos y Chat */}
         <div className="overlay-panel sidebar-panel glass-panel">
           <div className="sidebar-title">Usuarios Activos</div>
@@ -1115,7 +1131,16 @@ function App() {
             <div style={{ fontSize: '0.7rem', opacity: 0.55, marginTop: '2px' }}>
               ID: <span style={{ fontFamily: 'monospace' }}>{peerId || '—'}</span>
             </div>
+            <button
+              type="button"
+              className="enlace-diagnostico-voz"
+              onClick={() => setMostrarDiagnosticoVoz((v) => !v)}
+              aria-expanded={mostrarDiagnosticoVoz}
+            >
+              {mostrarDiagnosticoVoz ? 'Ocultar diagnóstico' : 'Ver diagnóstico'}
+            </button>
           </div>
+
 
           <div className="sidebar-title">Chat Público</div>
           <div className="chat-messages">
