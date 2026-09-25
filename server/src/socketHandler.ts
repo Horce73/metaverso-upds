@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
 import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
 import { verificarToken } from './middleware/auth.js';
+import { CUPOS_SOCKET, limitador } from './limites.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -108,9 +109,18 @@ export function setupSockets(io: Server) {
 
   io.on('connection', (socket: Socket) => {
     const identidad: Identidad = socket.data.identidad;
+
+    // Cupo por evento y por socket (SEC-04): lo que excede se descarta.
+    const cupos = new Map(Object.entries(CUPOS_SOCKET).map(([ev, [max, ms]]) => [ev, limitador(max, ms)]));
+    const on = (evento: string, cupo: string, handler: (...args: any[]) => void) => {
+      const permitido = cupos.get(cupo)!;
+      socket.on(evento, (...args: any[]) => {
+        if (permitido()) handler(...args);
+      });
+    };
     console.log(`🔌 Cliente conectado: ${socket.id} (usuario ${identidad.userId || 'invitado'})`);
 
-    socket.on('join_space', async (data: any) => {
+    on('join_space', 'join_space', async (data: any) => {
       const numUserId = identidad.userId;
       const nombreVisible = identidad.nombre;
       const apariencia = data?.apariencia || data?.user?.apariencia || {};
@@ -206,7 +216,7 @@ export function setupSockets(io: Server) {
       }
     });
 
-    socket.on('move', (data: {
+    on('move', 'move', (data: {
       position: [number, number, number];
       rotation: [number, number, number];
       estaSentado?: boolean;
@@ -227,7 +237,7 @@ export function setupSockets(io: Server) {
 
     // Los eventos de sala actuan siempre sobre el espacio al que el socket se
     // unio; el espacioId del payload se ignora para no escribir en aulas ajenas.
-    socket.on('draw_stroke', (data: { stroke: any }) => {
+    on('draw_stroke', 'draw_stroke', (data: { stroke: any }) => {
       const user = activeUsers.get(socket.id);
       if (!user || !puedeDibujar(user.roles)) return;
       // Se difunde a TODA la sala (incluido el emisor) para que el pizarrón
@@ -243,7 +253,7 @@ export function setupSockets(io: Server) {
       io.to(key).emit('stroke_received', trazoConId);
     });
 
-    socket.on('clear_board', () => {
+    on('clear_board', 'clear_board', () => {
       const user = activeUsers.get(socket.id);
       if (!user || !esDocenteOAdmin(user.roles)) return;
       pizarronState.set(String(user.espacioId), []);
@@ -252,13 +262,13 @@ export function setupSockets(io: Server) {
 
     // Estado actual del pizarrón, para quien recién abre el panel 2D o entra
     // a la escena 3D del aula y necesita ver lo que ya se dibujó antes.
-    socket.on('get_pizarra_state', () => {
+    on('get_pizarra_state', 'get_pizarra_state', () => {
       const user = activeUsers.get(socket.id);
       if (!user) return;
       socket.emit('pizarra_state', { trazos: pizarronState.get(String(user.espacioId)) || [] });
     });
 
-    socket.on('save_pizarra', async (data: {
+    on('save_pizarra', 'save_pizarra', async (data: {
       sesionId: string;
       trazos: any[];
     }) => {
@@ -291,7 +301,7 @@ export function setupSockets(io: Server) {
     });
 
     // Solicitud de acceso a un aula por un estudiante
-    socket.on('solicitar_acceso_aula', (data: {
+    on('solicitar_acceso_aula', 'solicitar_acceso_aula', (data: {
       espacioId: string;
       temaClase?: string;
     }) => {
@@ -309,7 +319,7 @@ export function setupSockets(io: Server) {
     });
 
     // Respuesta del docente a la solicitud de acceso
-    socket.on('responder_solicitud_acceso', (data: {
+    on('responder_solicitud_acceso', 'responder_solicitud_acceso', (data: {
       estudianteSocketId: string;
       espacioId: string;
       aprobado: boolean;
@@ -322,13 +332,13 @@ export function setupSockets(io: Server) {
       });
     });
 
-    socket.on('clase_iniciada', (sesion: any) => {
+    on('clase_iniciada', 'clase_iniciada', (sesion: any) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
       console.log('🎓 Clase iniciada por el docente:', sesion);
       io.emit('clase_iniciada', sesion);
     });
 
-    socket.on('clase_finalizada', (data: { espacioId: string }) => {
+    on('clase_finalizada', 'clase_finalizada', (data: { espacioId: string }) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
       console.log('🛑 Clase finalizada en espacio:', data.espacioId);
       io.emit('clase_finalizada', data);
@@ -345,8 +355,8 @@ export function setupSockets(io: Server) {
       io.to(String(user.espacioId)).emit('chat_msg_received', message);
     };
 
-    socket.on('send_chat', handleSendChat);
-    socket.on('chat_msg_send', handleSendChat);
+    on('send_chat', 'chat', handleSendChat);
+    on('chat_msg_send', 'chat', handleSendChat);
 
     socket.on('disconnect', async () => {
       const user = activeUsers.get(socket.id);

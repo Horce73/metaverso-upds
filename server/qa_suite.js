@@ -20,6 +20,17 @@ const DOCENTE_2 = { email: 'docente2.qa@upds.edu.bo', password: '123456' };
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 
+// Cada corrida se presenta con su propia IP (el backend confia en
+// X-Forwarded-For desde loopback): corridas seguidas no comparten cupo de
+// limites de tasa, y de paso se prueba que req.ip sale del proxy.
+const ipAleatoria = () =>
+  `10.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${1 + Math.floor(Math.random() * 254)}`;
+const IP_CORRIDA = ipAleatoria();
+
+// Clave incorrecta generada en cada corrida: un literal lo marcan los
+// escaneres de secretos del repositorio.
+const CLAVE_INCORRECTA = `incorrecta-${Math.random().toString(36).slice(2)}`;
+
 let passed = 0;
 let failed = 0;
 
@@ -43,8 +54,8 @@ async function caso(message, fn) {
   }
 }
 
-function api(path, { method = 'GET', token, body } = {}) {
-  const headers = {};
+function api(path, { method = 'GET', token, body, ip = IP_CORRIDA } = {}) {
+  const headers = { 'X-Forwarded-For': ip };
   if (body) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
   return fetch(`${BACKEND_URL}${path}`, {
@@ -483,6 +494,65 @@ async function runTests() {
     const res = await api('/api/sesiones', { token: docente2.token });
     const data = await res.json();
     return res.status === 200 && Array.isArray(data) && data.every(s => s.docente_nombre === 'Docente');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Pilar 7: Limites de tasa (SEC-04)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== PILAR 7: Límites de tasa ===');
+
+  await caso('La bitácora registra la IP del cliente, no la del proxy', async () => {
+    const ip = ipAleatoria();
+    await api('/api/auth/login', { method: 'POST', ip, body: { email: ESTUDIANTE_3.email, password: CLAVE_INCORRECTA } });
+    const { rows } = await pool.query(
+      "SELECT ip FROM bitacora WHERE evento = 'login_fallido' ORDER BY id DESC LIMIT 1"
+    );
+    await desbloquear(ESTUDIANTE_3.email);
+    return rows[0]?.ip === ip;
+  });
+
+  await caso('Tras 50 inicios de sesión fallidos desde una IP, el 51º recibe 429', async () => {
+    const ip = ipAleatoria();
+    const cuerpo = { email: 'no-existe.qa@upds.edu.bo', password: CLAVE_INCORRECTA };
+    for (let i = 0; i < 50; i++) {
+      const r = await api('/api/auth/login', { method: 'POST', ip, body: cuerpo });
+      if (r.status !== 401) return false;
+    }
+    const res = await api('/api/auth/login', { method: 'POST', ip, body: cuerpo });
+    // Otra IP no se ve afectada
+    const otra = await api('/api/auth/login', { method: 'POST', ip: ipAleatoria(), body: cuerpo });
+    return res.status === 429 && otra.status === 401;
+  });
+
+  await caso('Los inicios de sesión exitosos no consumen el cupo', async () => {
+    const ip = ipAleatoria();
+    for (let i = 0; i < 55; i++) {
+      const r = await api('/api/auth/login', { method: 'POST', ip, body: ESTUDIANTE_3 });
+      if (r.status !== 200) return false;
+    }
+    return true;
+  });
+
+  await caso('Tras 50 registros desde una IP, el 51º recibe 429', async () => {
+    const ip = ipAleatoria();
+    for (let i = 0; i < 50; i++) {
+      await api('/api/auth/register', { method: 'POST', ip, body: {} });
+    }
+    const res = await api('/api/auth/register', { method: 'POST', ip, body: {} });
+    return res.status === 429;
+  });
+
+  await caso('Un socket que inunda el chat solo difunde 10 mensajes por ventana', async () => {
+    const luis = await tokenDe(ESTUDIANTE_3);
+    const sLuis = await conectar(luis.token);
+    await entrar(sLuis, aulaId);
+    let recibidos = 0;
+    const contar = m => { if (m?.text?.startsWith('flood-')) recibidos++; };
+    sDocente.on('chat_message', contar);
+    for (let i = 0; i < 25; i++) sLuis.emit('send_chat', { message: { text: `flood-${i}` } });
+    await new Promise(r => setTimeout(r, 1500));
+    sDocente.off('chat_message', contar);
+    return recibidos === 10;
   });
 
   for (const s of socketsAbiertos) s.disconnect();

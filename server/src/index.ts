@@ -11,6 +11,7 @@ import { setupSockets } from './socketHandler.js';
 import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
 import { registrarAsistencia } from './helpers.js';
 import { aplicarMigraciones } from './migraciones.js';
+import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 
 dotenv.config();
 
@@ -53,8 +54,14 @@ async function validarAulaActiva(
   return { ok: true };
 }
 
+// Detras de nginx y cloudflared la IP del cliente llega en X-Forwarded-For.
+// Sin esto req.ip es la del proxy: la bitacora registra IPs falsas y los
+// limites de tasa meten a todos los usuarios en el mismo cupo.
+app.set('trust proxy', process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal');
+
 app.use(cors());
 app.use(express.json());
+app.use('/api', limiteApi);
 
 const server = createServer(app);
 const io = new Server(server, {
@@ -121,7 +128,7 @@ async function bitacora(usuarioId: number | null, evento: string, detalle = '', 
 // ----------------------------------------------------------------------------
 // 1. Registro de Usuarios (RF-06, RNF-05)
 // ----------------------------------------------------------------------------
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', limiteRegistro, async (req, res) => {
   const { email, password, nombre, apellido, rol, acepta_terminos } = req.body;
 
   if (!email || !password || !nombre || !apellido) {
@@ -230,7 +237,7 @@ app.post('/api/auth/register', async (req, res) => {
 // ----------------------------------------------------------------------------
 // 2. Login (RF-06, RNF-05) con RBAC + bloqueo
 // ----------------------------------------------------------------------------
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', limiteLogin, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -325,7 +332,7 @@ app.post('/api/auth/login', async (req, res) => {
 // ----------------------------------------------------------------------------
 // 2.5 Login Invitado (Guest) - Acceso solo a campus
 // ----------------------------------------------------------------------------
-app.post('/api/auth/guest', async (req, res) => {
+app.post('/api/auth/guest', limiteInvitado, async (req, res) => {
   try {
     // Generar un identificador único para el invitado (temporal)
     const guestId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
