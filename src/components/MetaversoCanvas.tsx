@@ -126,6 +126,7 @@ const LocalPlayerController: React.FC<{
       zonasBloqueadasCampus={zonasBloqueadasCampus}
       mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
       onUpdatePosicion={handleUpdatePosicion}
+      nivelVoz={audioClient ? () => audioClient.nivelLocal() : undefined}
     />
   );
 };
@@ -697,6 +698,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
                 rotation={u.rotation || [0, 0, 0]}
                 isLocal={false}
                 estaSentado={u.estaSentado}
+                nivelVoz={audioClient && u.peerId ? () => audioClient.nivelDe(u.peerId) : undefined}
               />
             );
           })}
