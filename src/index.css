@@ -2701,3 +2701,95 @@ main>h2:first-child {
 .voice-wave-bar.bar-2 { animation-delay: 0.15s; }
 .voice-wave-bar.bar-3 { animation-delay: 0.3s; }
 .voice-wave-bar.bar-4 { animation-delay: 0.45s; }
+/* ===== DIAGNÓSTICO DE VOZ (VOZ-05) ===== */
+.enlace-diagnostico-voz {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.72rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.panel-diagnostico-voz {
+  position: fixed;
+  left: 16px;
+  top: 110px;
+  z-index: 700;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 260px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.panel-diagnostico-voz__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-diagnostico-voz__cabecera h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.panel-diagnostico-voz__cabecera .btn-secondary {
+  padding: 4px 12px;
+  font-size: 0.78rem;
+}
+
+.panel-diagnostico-voz__resumen,
+.panel-diagnostico-voz__nota {
+  color: var(--text-secondary);
+}
+
+.panel-diagnostico-voz__nota a {
+  color: inherit;
+}
+
+.panel-diagnostico-voz__tabla {
+  overflow: auto;
+  min-height: 0;
+}
+
+.panel-diagnostico-voz table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel-diagnostico-voz th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0 10px 6px 0;
+  border-bottom: 1px solid var(--panel-border);
+  white-space: nowrap;
+}
+
+.panel-diagnostico-voz td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--panel-border);
+  white-space: nowrap;
+}
+
+.panel-diagnostico-voz__punto {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
