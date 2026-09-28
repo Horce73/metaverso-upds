@@ -14,6 +14,7 @@ interface ControlCarga {
   medir: () => Promise<DiagnosticoVoz>;
   silenciar: (silenciado: boolean) => void;
   ganancias: () => Record<string, number>;
+  reduccionLimitador: () => number;
 }
 
 declare global {
@@ -141,6 +142,7 @@ window.carga = {
   silenciar: (silenciado) => cliente.setMute(silenciado),
   // Volumen de la atenuación lateral de cada voz recibida (VOZ-03), para
   // comprobar que baja mientras habla el docente. Lee un campo privado.
+  reduccionLimitador: () => cliente.reduccionLimitador(),
   ganancias: () =>
     Object.fromEntries(
       [...((cliente as unknown as { ganancias: Map<string, GainNode> }).ganancias)].map(([id, g]) => [id, g.gain.value])
