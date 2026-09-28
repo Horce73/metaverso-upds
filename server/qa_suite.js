@@ -398,6 +398,18 @@ async function runTests() {
     return r.ok && data?.user?.userId === ana.id && data.user.nombreVisible !== 'Maria F.';
   });
 
+  await caso('join_aceptado trae los roles de la base, no los que diga el cliente', async () => {
+    const sLuis = await conectar((await tokenDe(ESTUDIANTE_3)).token);
+    try {
+      const aceptado = esperarEvento(sLuis, 'join_aceptado', 3000);
+      await entrar(sLuis, campusId, { roles: ['docente'], user: { roles: ['administrador'] } });
+      const data = await aceptado;
+      return data?.espacioTipo === 'campus' && JSON.stringify(data.roles) === JSON.stringify(['estudiante']);
+    } finally {
+      sLuis.disconnect();
+    }
+  });
+
   await caso('La asistencia se registra solo para el usuario del token', async () => {
     const filas = await esperarFila(
       `SELECT a.id FROM asistencias a JOIN sesiones_clase s ON s.id = a.sesion_id

@@ -6,6 +6,7 @@ import { CustomAvatar } from './components/CustomAvatar.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { MetaversoCanvas } from './components/MetaversoCanvas.js';
 import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
+import { esDifusor } from './components/zonasVoz.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { TeacherPanel } from './components/TeacherPanel.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
@@ -382,28 +383,41 @@ function App() {
       posSpawn as [number, number, number],
       rotSpawn as [number, number, number]
     );
+    // Zonas de audio (VOZ-03): cada uno llama sólo a quien tiene cerca y a
+    // quien dicta la clase; AudioClient abre y cuelga las llamadas solo.
+    const misRoles = [user?.rol, ...((user as any)?.roles ?? [])].filter(Boolean) as string[];
+    newAudioClient.configurarZonas(espacio.tipo, esDifusor(misRoles, espacio.tipo));
     setAudioClient(newAudioClient);
+
+    const registrarEnVoz = (u: any) => {
+      if (!u?.peerId) return;
+      if (u.position) newAudioClient.updateSourcePosition(u.peerId, u.position);
+      newAudioClient.registrarParticipante(u.peerId, esDifusor(u.roles ?? [], espacio.tipo));
+    };
 
     // 3. Escuchar eventos del socket (usuarios existentes)
     const handleInitialUsers = (users: any) => {
       console.log('👥 Usuarios en el espacio:', users);
       setRemoteUsers(users);
-      Object.keys(users).forEach((sId) => {
-        const u = users[sId];
-        if (u.peerId && newAudioClient) {
-          newAudioClient.callUser(u.peerId);
-        }
-      });
+      Object.values(users).forEach(registrarEnVoz);
     };
 
+    // Los roles de localStorage pueden estar desactualizados; los del servidor
+    // son los que usan los demás para decidir si este usuario difunde.
+    activeSocket.off('join_aceptado');
+    activeSocket.on('join_aceptado', (data: { roles: string[] }) => {
+      newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
+    });
     activeSocket.on('space_users', handleInitialUsers);
     activeSocket.on('current_users', handleInitialUsers);
 
     activeSocket.on('user_joined', (data: any) => {
       console.log('👤 Nuevo usuario unido al espacio:', data.user.nombreVisible || data.socketId);
-      setRemoteUsers((prev) => ({ ...prev, [data.socketId]: data.user }));
-      // NOTA: Los usuarios existentes NO llaman al recién llegado para evitar llamadas cruzadas (SDP Glare).
-      // El recién llegado se encarga de llamar a todos los usuarios existentes al recibir 'space_users'.
+      // La posición que trae es la provisoria del servidor, no la real: hasta
+      // su primer 'move' no se sabe si está en alcance de voz.
+      const nuevo = { ...data.user, position: undefined };
+      setRemoteUsers((prev) => ({ ...prev, [data.socketId]: nuevo }));
+      registrarEnVoz(nuevo);
     });
 
     activeSocket.on('user_left', (data: any) => {
@@ -411,7 +425,7 @@ function App() {
         const copy = { ...prev };
         const leftUser = copy[data.socketId];
         if (leftUser && leftUser.peerId && newAudioClient) {
-          newAudioClient.removeUserAudio(leftUser.peerId);
+          newAudioClient.olvidarParticipante(leftUser.peerId);
         }
         delete copy[data.socketId];
         return copy;
@@ -1106,7 +1120,13 @@ function App() {
               <div key={socketId} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
                 <span>
-                  {remoteUsers[socketId].nombreVisible} ({remoteUsers[socketId].peerId ? 'VoIP Conectado' : 'VoIP Cargando'})
+                  {remoteUsers[socketId].nombreVisible} (
+                  {!remoteUsers[socketId].peerId
+                    ? 'VoIP Cargando'
+                    : audioClient?.estaConectadoCon(remoteUsers[socketId].peerId)
+                      ? 'En alcance de voz'
+                      : 'Fuera de alcance'}
+                  )
                 </span>
               </div>
             ))}

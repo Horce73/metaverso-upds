@@ -121,6 +121,24 @@ Para que la malla cubra el aula de 30 se hacen dos cambios, en la Fase 3:
 Esto también cambia el orden de la Fase 3: VOZ-03 deja de ser sólo una mejora
 de escucha y pasa a ser lo que hace escalar la malla.
 
+### Resultado con zonas (VOZ-03)
+
+Misma máquina y método (cargador conectado, voz sintetizada, 3 repeticiones,
+mediana), en el aula con zonas: un docente al frente y los alumnos en la
+rejilla densa de pupitres, empezando por el centro. Sólo habla el docente.
+`npm run carga:voz -- --escenario uno --zonas --n 6,12 --repeticiones 3`
+
+| N  | Llamadas: docente / alumno (mediana, máx) | CPU por participante | Malla completa con DTX |
+|----|-------------------------------------------|----------------------|------------------------|
+| 6  | 5 / 4 (4)                                 | 13,1 %               | 16,3 %                 |
+| 12 | 11 / 5 (9)                                | 18,7 %               | 39,0 %                 |
+
+Todas las llamadas previstas se abrieron (en 2,4 s con 12), sin audio oculto y
+con jitter p95 ≤ 1 ms. El alumno del centro tiene con 12 los mismos vecinos que
+tendría con 30, así que su carga ya es la del aula llena. La que sigue creciendo
+con el aula es la del docente (una llamada por alumno); se verifica en la
+sesión de 30 que cierra la Fase 3.
+
 ## Cuándo se revisa (paso a SFU)
 
 La Fase 3 cierra con una sesión de 30 participantes. Se reabre esta decisión y

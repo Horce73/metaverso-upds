@@ -14,6 +14,11 @@
 //   --paneo equalpower            fuerza ese modelo de paneo en vez de HRTF
 //   --sin-dtx                     negocia Opus sin DTX, como antes de la
 //                                 decisión 0001 (en silencio se sigue enviando)
+//   --zonas                       aula con zonas de audio (VOZ-03): un docente
+//                                 al frente y N-1 alumnos en la zona de
+//                                 pupitres; cada uno sólo llama a los cercanos
+//                                 y al docente. Registra usuarios nuevos en
+//                                 cada corrida (el aula no admite invitados).
 //
 // Todos los participantes corren en esta máquina, así que el coste total
 // crece como N². Cuando el host pasa de ~50 % (hyperthreading, frecuencia que
@@ -21,9 +26,11 @@
 // participante y describe al host: esas filas se marcan como saturadas.
 import { chromium } from 'playwright-core';
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { debeEstarConectado } from '../../src/components/zonasVoz.ts';
 
 const APP_URL = process.env.APP_URL || 'http://localhost:5173';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
@@ -40,7 +47,11 @@ const REPETICIONES = Number(arg('repeticiones', '1'));
 const PAUSA_S = Number(arg('pausa', '3'));
 const PANEO = arg('paneo', '');
 const DTX = !process.argv.includes('--sin-dtx');
-const SALIDA = arg('salida', `resultados-${ESCENARIO}${PANEO ? `-${PANEO}` : ''}${DTX ? '' : '-sin-dtx'}.json`);
+const ZONAS = process.argv.includes('--zonas');
+const SALIDA = arg(
+  'salida',
+  `resultados-${ESCENARIO}${PANEO ? `-${PANEO}` : ''}${DTX ? '' : '-sin-dtx'}${ZONAS ? '-zonas' : ''}.json`
+);
 const HOST_SATURADO_PCT = 50;
 
 // Criterios de "audio aceptable", fijados antes de medir. Se exigen en el
@@ -136,17 +147,57 @@ async function tokenInvitado() {
   return (await res.json()).token;
 }
 
-async function idCampus(token) {
+async function idEspacio(token, tipo) {
   const res = await fetch(`${BACKEND_URL}/api/espacios`, { headers: { Authorization: `Bearer ${token}` } });
   const espacios = await res.json();
-  const campus = espacios.find((e) => e.tipo === 'campus');
-  if (!campus) throw new Error('No hay un espacio de tipo campus activo');
-  return campus.id;
+  const espacio = espacios.find((e) => e.tipo === tipo);
+  if (!espacio) throw new Error(`No hay un espacio de tipo ${tipo} activo`);
+  return espacio.id;
+}
+
+// Usuario registrado desechable, con clave aleatoria de esta corrida.
+async function tokenRegistrado(rol) {
+  const email = `carga.${rol}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}@upds.edu.bo`;
+  const clave = randomUUID();
+  const pedir = (ruta, body) =>
+    fetch(`${BACKEND_URL}${ruta}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ipAleatoria() },
+      body: JSON.stringify(body),
+    });
+  const reg = await pedir('/api/auth/register', { email, password: clave, nombre: 'Carga', apellido: rol, rol, acepta_terminos: true });
+  if (!reg.ok) throw new Error(`registro respondió ${reg.status}`);
+  const login = await pedir('/api/auth/login', { email, password: clave });
+  if (!login.ok) throw new Error(`login respondió ${login.status}`);
+  return (await login.json()).token;
+}
+
+// Docente al frente y alumnos en la rejilla densa de 5 × 6 de la prueba
+// unitaria de zonas, empezando por el centro: con N chico, el alumno del
+// centro tiene los mismos vecinos que tendría en un aula llena de 30.
+const POSICION_DOCENTE = [0, 0, -14];
+const POSICIONES_ALUMNOS = [-10, -5, 0, 5, 10]
+  .flatMap((x) => [-6, -3, 0, 3, 6, 8].map((z) => [x, 0, z]))
+  .sort((a, b) => Math.hypot(a[0], a[2] - 1) - Math.hypot(b[0], b[2] - 1));
+
+function posicionesZonas(n) {
+  return [POSICION_DOCENTE, ...POSICIONES_ALUMNOS.slice(0, n - 1)];
+}
+
+// Cuántas llamadas debería tener cada participante una vez cerrada la malla
+function llamadasEsperadas(n) {
+  if (!ZONAS) return Array(n).fill(n - 1);
+  const ps = posicionesZonas(n).map((posicion, i) => ({ posicion, difusor: i === 0 }));
+  return ps.map((yo, i) => ps.filter((otro, j) => j !== i && debeEstarConectado(yo, otro, 'aula', false)).length);
 }
 
 // ------------------------------------------------------------------- medida
 async function medirTamano(browser, pidChrome, n, espacioId) {
-  const tokens = await Promise.all(Array.from({ length: n }, tokenInvitado));
+  const tokens = ZONAS
+    ? await Promise.all(Array.from({ length: n }, (_, i) => tokenRegistrado(i === 0 ? 'docente' : 'estudiante')))
+    : await Promise.all(Array.from({ length: n }, tokenInvitado));
+  const esperadas = llamadasEsperadas(n);
+  const posiciones = posicionesZonas(n);
   const contexto = await browser.newContext();
   await contexto.grantPermissions(['microphone']);
   const paginas = await Promise.all(tokens.map(() => contexto.newPage()));
@@ -155,7 +206,11 @@ async function medirTamano(browser, pidChrome, n, espacioId) {
   const inicio = Date.now();
   await Promise.all(
     paginas.map((p, i) =>
-      p.goto(`${APP_URL}/pruebas/carga-voz/cliente.html?token=${tokens[i]}&espacio=${espacioId}${PANEO ? `&paneo=${PANEO}` : ''}${DTX ? '' : '&dtx=0'}`)
+      p.goto(
+        `${APP_URL}/pruebas/carga-voz/cliente.html?token=${tokens[i]}&espacio=${espacioId}` +
+          `${PANEO ? `&paneo=${PANEO}` : ''}${DTX ? '' : '&dtx=0'}` +
+          `${ZONAS ? `&zonas=1&x=${posiciones[i][0]}&z=${posiciones[i][2]}` : ''}`
+      )
     )
   );
 
@@ -164,7 +219,7 @@ async function medirTamano(browser, pidChrome, n, espacioId) {
   while (Date.now() - inicio < ESPERA_MALLA_MS) {
     await esperar(1000);
     diagnosticos = await Promise.all(paginas.map((p) => p.evaluate(() => (window.carga ? window.carga.medir() : null))));
-    if (diagnosticos.every((d) => d && d.conectados === n - 1)) {
+    if (diagnosticos.every((d, i) => d && d.conectados === esperadas[i])) {
       mallaMs = Date.now() - inicio;
       break;
     }
@@ -204,7 +259,11 @@ async function medirTamano(browser, pidChrome, n, espacioId) {
   const r = {
     n,
     mallaMs,
-    paresConectadosPct: n > 1 ? (100 * pares) / (n * (n - 1)) : 100,
+    paresConectadosPct: n > 1 ? (100 * pares) / esperadas.reduce((a, b) => a + b, 0) : 100,
+    // Con zonas, el participante 0 es el docente
+    llamadasDocente: diagnosticos[0].conectados,
+    llamadasAlumnoMediana: percentil(diagnosticos.slice(1).map((d) => d.conectados), 50),
+    llamadasAlumnoMax: Math.max(...diagnosticos.slice(1).map((d) => d.conectados)),
     subidaMediaKbps: media(subida),
     subidaMaxKbps: Math.max(...subida),
     bajadaMediaKbps: media(bajada),
@@ -242,9 +301,12 @@ const servidor = await chromium.launchServer({
 const pidChrome = servidor.process().pid;
 const browser = await chromium.connect(servidor.wsEndpoint());
 
-const espacioId = await idCampus(await tokenInvitado());
+const espacioId = ZONAS
+  ? await idEspacio(await tokenRegistrado('estudiante'), 'aula')
+  : await idEspacio(await tokenInvitado(), 'campus');
 console.log(
-  `Escenario "${ESCENARIO}", paneo ${PANEO || 'HRTF'}, DTX ${DTX ? 'sí' : 'no'}, ventana ${VENTANA_S} s, ${REPETICIONES} repetición(es), ` +
+  `Escenario "${ESCENARIO}", paneo ${PANEO || 'HRTF'}, DTX ${DTX ? 'sí' : 'no'}, zonas ${ZONAS ? 'sí' : 'no'}, ` +
+  `ventana ${VENTANA_S} s, ${REPETICIONES} repetición(es), ` +
   `audio: ${voz ? 'voz sintetizada' : 'pitido de Chrome'}, espacio ${espacioId}`
 );
 console.log('   N  malla s  pares %  ↑ kbps  ↓ kbps  oculto % (p95)  jitter p95  CPU/part.  host %  ¿acept.?');
@@ -276,13 +338,14 @@ for (const n of TAMANOS) {
     `  ${fmt(r.subidaMediaKbps).padStart(6)}  ${fmt(r.bajadaMediaKbps).padStart(6)}` +
     `  ${fmt(r.ocultoMedioPct, 2).padStart(8)} (${fmt(r.ocultoP95Pct, 1)})` +
     `  ${fmt(r.jitterP95Ms, 1).padStart(10)}  ${fmt(r.cpuPorParticipantePct, 1).padStart(8)} %  ${fmt(r.hostOcupadoPct).padStart(5)}` +
-    `  ${r.aceptable ? 'sí' : 'NO'}${r.hostSaturado ? '  (host saturado)' : ''}`
+    `  ${r.aceptable ? 'sí' : 'NO'}${r.hostSaturado ? '  (host saturado)' : ''}` +
+    (ZONAS ? `  llamadas: docente ${r.llamadasDocente}, alumno ${r.llamadasAlumnoMediana} (máx ${r.llamadasAlumnoMax})` : '')
   );
 }
 
 writeFileSync(
   SALIDA,
-  JSON.stringify({ escenario: ESCENARIO, paneo: PANEO || 'HRTF', dtx: DTX, repeticiones: REPETICIONES, ventanaS: VENTANA_S, audio: voz ? 'voz' : 'pitido', criterios: CRITERIOS, resultados }, null, 2)
+  JSON.stringify({ escenario: ESCENARIO, paneo: PANEO || 'HRTF', dtx: DTX, zonas: ZONAS, repeticiones: REPETICIONES, ventanaS: VENTANA_S, audio: voz ? 'voz' : 'pitido', criterios: CRITERIOS, resultados }, null, 2)
 );
 console.log(`\nResultados en ${SALIDA}`);
 await browser.close();

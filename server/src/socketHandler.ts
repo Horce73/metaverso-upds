@@ -202,6 +202,10 @@ export function setupSockets(io: Server) {
           usersInSpace[sid] = user;
         }
       });
+      // Los roles con los que los demás lo ven (salen de la base, no del token
+      // guardado en el navegador): el cliente decide con ellos si difunde la
+      // voz en el aula, igual que lo deciden los demás (VOZ-03).
+      socket.emit('join_aceptado', { espacioId: nuevoEspacioId, espacioTipo, roles });
       socket.emit('space_users', usersInSpace);
       socket.emit('current_users', usersInSpace);
 
