@@ -110,7 +110,8 @@ El docente sube 32 kbps por cada alumno en todos los casos: 353 kbps con 12.
 Para que la malla cubra el aula de 30 se hacen dos cambios, en la Fase 3:
 
 1. **Activar Opus DTX** en `AudioClient` para que el silencio no ocupe subida.
-   Es un cambio pequeño y ya se probó en el harness (`--dtx`).
+   Es un cambio pequeño y ya se probó en el harness. Hecho: `AudioClient` lo
+   negocia siempre y la prueba de carga compara sin él con `--sin-dtx`.
 2. **Dejar de conectar a todos con todos.** Con las zonas de audio (VOZ-03),
    cada alumno abre llamada con quien dicta la clase y con los que tiene cerca,
    no con el aula entera. Con 5–8 flujos por alumno, las tablas dan 16–23 % de
