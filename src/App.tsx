@@ -11,6 +11,7 @@ import { TeacherPanel } from './components/TeacherPanel.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
 import { CrearCursoModal } from './components/CrearCursoModal.js';
 import { PanelDiagnosticoVoz } from './components/PanelDiagnosticoVoz.js';
+import { SelectorMicrofono } from './components/SelectorMicrofono.js';
 
 interface User {
   id: string;
@@ -1131,6 +1132,7 @@ function App() {
             <div style={{ fontSize: '0.7rem', opacity: 0.55, marginTop: '2px' }}>
               ID: <span style={{ fontFamily: 'monospace' }}>{peerId || '—'}</span>
             </div>
+            {audioClient && <SelectorMicrofono audioClient={audioClient} compacto />}
             <button
               type="button"
               className="enlace-diagnostico-voz"

@@ -26,6 +26,32 @@ function soportaAudioEspacialRemoto(): boolean {
   return !esIOS && !esSafari;
 }
 
+// Micrófono elegido por el usuario (VOZ-08), recordado entre sesiones. Si el
+// dispositivo ya no existe, getUserMedia cae al predeterminado.
+const CLAVE_MICROFONO = 'microfonoPreferido';
+
+export function leerMicrofonoPreferido(): string | null {
+  try {
+    return localStorage.getItem(CLAVE_MICROFONO);
+  } catch {
+    return null;
+  }
+}
+
+export function guardarMicrofonoPreferido(deviceId: string) {
+  try {
+    localStorage.setItem(CLAVE_MICROFONO, deviceId);
+  } catch {
+    /* sin almacenamiento: la elección dura sólo esta sesión */
+  }
+}
+
+const RESTRICCIONES_VOZ = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
+
 export class AudioClient {
   private peer: Peer | null = null;
   private localStream: MediaStream | null = null;
@@ -133,11 +159,12 @@ export class AudioClient {
 
   private async obtenerMicrofono(): Promise<MediaStream> {
     try {
+      const preferido = leerMicrofonoPreferido();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          ...RESTRICCIONES_VOZ,
+          // 'ideal' y no 'exact': si ese micrófono ya no está, mejor otro que ninguno
+          ...(preferido ? { deviceId: { ideal: preferido } } : {}),
         },
         video: false,
       });
@@ -548,6 +575,48 @@ export class AudioClient {
 
     this.analizadores.get(remotePeerId)?.disconnect();
     this.analizadores.delete(remotePeerId);
+  }
+
+  // Cambiar de micrófono en vivo (VOZ-08): la pista nueva reemplaza a la
+  // anterior en todas las llamadas con replaceTrack, sin renegociar.
+  public async cambiarMicrofono(deviceId: string) {
+    if (this.destruido || !this.audioCtx) return;
+    let nuevo: MediaStream;
+    try {
+      nuevo = await navigator.mediaDevices.getUserMedia({
+        audio: { ...RESTRICCIONES_VOZ, deviceId: { exact: deviceId } },
+        video: false,
+      });
+    } catch (err) {
+      console.warn('⚠️ No se pudo abrir el micrófono elegido:', err);
+      return;
+    }
+    if (this.destruido) {
+      nuevo.getTracks().forEach((t) => t.stop());
+      return;
+    }
+
+    const pista = nuevo.getAudioTracks()[0];
+    const anterior = this.localStream?.getAudioTracks()[0];
+    // Conservar el estado de silencio que el usuario ya había elegido
+    if (anterior) pista.enabled = anterior.enabled;
+
+    await Promise.all(
+      [...this.activeCalls.values()].map(async (call) => {
+        const pc: RTCPeerConnection | undefined = call.peerConnection;
+        const emisor = pc?.getSenders().find((s) => s.track?.kind === 'audio' || s.track === anterior);
+        if (emisor) await emisor.replaceTrack(pista);
+      })
+    );
+
+    this.localStream?.getTracks().forEach((t) => t.stop());
+    this.localStream = nuevo;
+    this.analizadorLocal = this.crearAnalizador(nuevo);
+    if (!this.micDisponible) {
+      this.micDisponible = true;
+      this.emitirEstado('conectado');
+    }
+    console.log(`🎤 Micrófono cambiado a: ${pista.label}`);
   }
 
   // Silenciar / Activar micrófono
