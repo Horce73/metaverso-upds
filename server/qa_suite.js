@@ -2,6 +2,7 @@
 // semilla de las migraciones. Se ejecuta en CI en cada pull request y en local
 // con `npm run test:qa` (backend levantado en BACKEND_URL).
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
 import { io } from 'socket.io-client';
 import WebSocket from 'ws';
 
@@ -31,6 +32,8 @@ const IP_CORRIDA = ipAleatoria();
 // Clave incorrecta generada en cada corrida: un literal lo marcan los
 // escaneres de secretos del repositorio.
 const CLAVE_INCORRECTA = `incorrecta-${Math.random().toString(36).slice(2)}`;
+// Clave de usuarios desechables que la suite crea y borra en la misma corrida
+const CLAVE_DESECHABLE = randomUUID();
 
 let passed = 0;
 let failed = 0;
@@ -518,6 +521,30 @@ async function runTests() {
   // Pilar 7: Limites de tasa (SEC-04)
   // ---------------------------------------------------------------------------
   console.log('\n=== PILAR 7: Límites de tasa ===');
+
+  await caso('15 registros simultáneos terminan y el backend sigue respondiendo (pool sin bloqueo)', async () => {
+    // Más peticiones que conexiones del pool (10): antes cada registro retenía
+    // su conexión mientras pedía otra para la bitácora y el backend se colgaba.
+    const prefijo = `qa.concurrente.${Date.now().toString(36)}`;
+    try {
+      const respuestas = await Promise.all(
+        Array.from({ length: 15 }, (_, i) =>
+          api('/api/auth/register', {
+            method: 'POST',
+            ip: ipAleatoria(),
+            body: { email: `${prefijo}.${i}@upds.edu.bo`, password: CLAVE_DESECHABLE, nombre: 'QA', apellido: 'Concurrente' },
+          })
+        )
+      );
+      const login = await Promise.race([
+        api('/api/auth/login', { method: 'POST', ip: ipAleatoria(), body: { email: 'nadie@upds.edu.bo', password: CLAVE_INCORRECTA } }),
+        new Promise((r) => setTimeout(() => r(null), 5000)),
+      ]);
+      return respuestas.every((r) => r.status === 201) && login?.status === 401;
+    } finally {
+      await pool.query('DELETE FROM usuarios WHERE email LIKE $1', [`${prefijo}.%`]);
+    }
+  });
 
   await caso('La bitácora registra la IP del cliente, no la del proxy', async () => {
     const ip = ipAleatoria();

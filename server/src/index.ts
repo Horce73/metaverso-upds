@@ -7,7 +7,7 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import { pool } from './db.js';
+import { pool, enTransaccion } from './db.js';
 import { setupSockets } from './socketHandler.js';
 import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
 import { registrarAsistencia } from './helpers.js';
@@ -175,10 +175,7 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
   try {
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
+    const { newUser, roles } = await enTransaccion(async (client) => {
       const userRes = await client.query(
         `INSERT INTO usuarios (email, password_hash, nombre, apellido)
          VALUES ($1, $2, $3, $4) RETURNING id, email, nombre, apellido`,
@@ -229,33 +226,26 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
         );
       }
 
-      await client.query('COMMIT');
-
       const rolRes = await client.query(
         `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
         [newUser.id]
       );
-      const roles = rolRes.rows.map((r: any) => r.nombre);
+      return { newUser, roles: rolRes.rows.map((r: any) => r.nombre) };
+    });
 
-      await bitacora(newUser.id, 'registro', email, req.ip);
+    await bitacora(newUser.id, 'registro', email, req.ip);
 
-      res.status(201).json({
-        message: 'Usuario registrado exitosamente',
-        user: {
-          id: newUser.id,
-          email: newUser.email,
-          nombre: newUser.nombre,
-          apellido: newUser.apellido,
-          rol: userRol,
-          roles
-        }
-      });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
+    res.status(201).json({
+      message: 'Usuario registrado exitosamente',
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        nombre: newUser.nombre,
+        apellido: newUser.apellido,
+        rol: userRol,
+        roles
+      }
+    });
   } catch (err: any) {
     console.error('Error al registrar:', err);
     if (err.code === '23505') {
@@ -645,6 +635,13 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
   }
 
   const client = await pool.connect();
+  // La conexión vuelve al pool apenas se confirma: lo que sigue (usuario,
+  // bitácora) pide conexiones propias y retenerla agota el pool (ver enTransaccion).
+  let liberada = false;
+  const liberar = () => {
+    if (!liberada) client.release();
+    liberada = true;
+  };
   try {
     await client.query('BEGIN');
 
@@ -712,6 +709,7 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
       [espacio_id, userId, tema]
     );
     await client.query('COMMIT');
+    liberar();
 
     const userRes = await pool.query('SELECT nombre, apellido FROM usuarios WHERE id = $1', [userId]);
     const docenteInfo = userRes.rows[0];
@@ -731,11 +729,11 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
       asignatura_nombre: nombre_curso,
     });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (!liberada) await client.query('ROLLBACK').catch(() => {});
     console.error('Error al crear curso e iniciar clase:', err);
     res.status(500).json({ error: 'Error al crear curso en la base de datos' });
   } finally {
-    client.release();
+    liberar();
   }
 });
 
@@ -1086,7 +1084,6 @@ app.get('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req, r
 
 // Crear usuario (admin puede crear cualquier rol)
 app.post('/api/admin/usuarios', authenticateJWT, requiereAdmin, async (req: any, res) => {
-  const client = await pool.connect();
   try {
     const { email, password, nombre, apellido, rol } = req.body;
     if (!email || !password || !nombre || !apellido || !rol) {
@@ -1099,83 +1096,76 @@ app.post('/api/admin/usuarios', authenticateJWT, requiereAdmin, async (req: any,
       return res.status(400).json({ error: `Rol inválido: ${rol}` });
     }
 
-    await client.query('BEGIN');
-
     const hash = await bcrypt.hash(password, 10);
-    const { rows: [newUser] } = await client.query(
-      `INSERT INTO usuarios (email, password_hash, nombre, apellido)
-       VALUES ($1, $2, $3, $4) RETURNING id, email, nombre, apellido, activo, creado_en`,
-      [email, hash, nombre, apellido]
-    );
+    const newUser = await enTransaccion(async (client) => {
+      const { rows: [nuevo] } = await client.query(
+        `INSERT INTO usuarios (email, password_hash, nombre, apellido)
+         VALUES ($1, $2, $3, $4) RETURNING id, email, nombre, apellido, activo, creado_en`,
+        [email, hash, nombre, apellido]
+      );
 
-    await client.query(
-      'INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES ($1, $2, $3)',
-      [newUser.id, rolesRows[0].id, req.user!.userId]
-    );
+      await client.query(
+        'INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES ($1, $2, $3)',
+        [nuevo.id, rolesRows[0].id, req.user!.userId]
+      );
 
-    // Crear perfil vacío según rol
-    if (rol === 'estudiante') {
-      await client.query('INSERT INTO perfiles_estudiante (usuario_id) VALUES ($1)', [newUser.id]);
-    } else if (rol === 'docente') {
-      await client.query('INSERT INTO perfiles_docente (usuario_id) VALUES ($1)', [newUser.id]);
-    }
-
-    await client.query('COMMIT');
+      // Crear perfil vacío según rol
+      if (rol === 'estudiante') {
+        await client.query('INSERT INTO perfiles_estudiante (usuario_id) VALUES ($1)', [nuevo.id]);
+      } else if (rol === 'docente') {
+        await client.query('INSERT INTO perfiles_docente (usuario_id) VALUES ($1)', [nuevo.id]);
+      }
+      return nuevo;
+    });
 
     await bitacora(req.user!.userId, 'crear_usuario', `Creó usuario ${email} (${rol})`, req.ip || '');
 
     res.status(201).json({ ...newUser, roles: [rol] });
   } catch (err) {
-    await client.query('ROLLBACK');
     if ((err as any).code === '23505') {
       return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
     }
     console.error('Error al crear usuario:', err);
     res.status(500).json({ error: 'Error al crear usuario' });
-  } finally {
-    client.release();
   }
 });
 
 // Actualizar usuario (email, nombre, apellido, activo, roles)
 app.put('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req: any, res) => {
-  const client = await pool.connect();
   try {
     const { id } = req.params;
     const { email, nombre, apellido, activo, roles } = req.body;
 
-    await client.query('BEGIN');
+    await enTransaccion(async (client) => {
+      // Actualizar campos básicos
+      const fields: string[] = [];
+      const values: any[] = [];
+      let paramIdx = 1;
 
-    // Actualizar campos básicos
-    const fields: string[] = [];
-    const values: any[] = [];
-    let paramIdx = 1;
+      if (email !== undefined) { fields.push(`email = $${paramIdx++}`); values.push(email); }
+      if (nombre !== undefined) { fields.push(`nombre = $${paramIdx++}`); values.push(nombre); }
+      if (apellido !== undefined) { fields.push(`apellido = $${paramIdx++}`); values.push(apellido); }
+      if (activo !== undefined) { fields.push(`activo = $${paramIdx++}`); values.push(activo); }
 
-    if (email !== undefined) { fields.push(`email = $${paramIdx++}`); values.push(email); }
-    if (nombre !== undefined) { fields.push(`nombre = $${paramIdx++}`); values.push(nombre); }
-    if (apellido !== undefined) { fields.push(`apellido = $${paramIdx++}`); values.push(apellido); }
-    if (activo !== undefined) { fields.push(`activo = $${paramIdx++}`); values.push(activo); }
+      if (fields.length > 0) {
+        values.push(id);
+        await client.query(`UPDATE usuarios SET ${fields.join(', ')} WHERE id = $${paramIdx}`, values);
+      }
 
-    if (fields.length > 0) {
-      values.push(id);
-      await client.query(`UPDATE usuarios SET ${fields.join(', ')} WHERE id = $${paramIdx}`, values);
-    }
-
-    // Actualizar roles si se proveen
-    if (Array.isArray(roles)) {
-      await client.query('DELETE FROM usuario_roles WHERE usuario_id = $1', [id]);
-      for (const roleName of roles) {
-        const { rows } = await client.query('SELECT id FROM roles WHERE nombre = $1', [roleName]);
-        if (rows.length > 0) {
-          await client.query(
-            'INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES ($1, $2, $3)',
-            [id, rows[0].id, req.user!.userId]
-          );
+      // Actualizar roles si se proveen
+      if (Array.isArray(roles)) {
+        await client.query('DELETE FROM usuario_roles WHERE usuario_id = $1', [id]);
+        for (const roleName of roles) {
+          const { rows } = await client.query('SELECT id FROM roles WHERE nombre = $1', [roleName]);
+          if (rows.length > 0) {
+            await client.query(
+              'INSERT INTO usuario_roles (usuario_id, rol_id, asignado_por) VALUES ($1, $2, $3)',
+              [id, rows[0].id, req.user!.userId]
+            );
+          }
         }
       }
-    }
-
-    await client.query('COMMIT');
+    });
 
     await bitacora(req.user!.userId, 'editar_usuario', `Editó usuario ID ${id}`, req.ip || '');
 
@@ -1191,11 +1181,8 @@ app.put('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req: a
     `, [id]);
     res.json(rows[0]);
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('Error al actualizar usuario:', err);
     res.status(500).json({ error: 'Error al actualizar usuario' });
-  } finally {
-    client.release();
   }
 });
 
