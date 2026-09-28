@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { ExpressPeerServer } from 'peer';
+import { WebSocketServer } from 'ws';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -85,8 +86,23 @@ const io = new Server(server, {
 
 setupSockets(io);
 
+// Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
+// servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
+// Socket.io: la respuesta se mezcla con la de Socket.io, el navegador ve una
+// trama corrupta ("RSV1 must be clear") y cae en silencio a long-polling.
+// Se crea sin servidor y se le entregan sólo los upgrades de su ruta.
+let wssPeer: WebSocketServer | null = null;
+server.on('upgrade', (req, socket, head) => {
+  if (!wssPeer || !wssPeer.shouldHandle(req)) return;
+  wssPeer.handleUpgrade(req, socket, head, (ws) => wssPeer!.emit('connection', ws, req));
+});
+
 const peerServer = ExpressPeerServer(server, {
   path: '/',
+  createWebSocketServer: ({ path }: { path?: string }) => {
+    wssPeer = new WebSocketServer({ path, noServer: true });
+    return wssPeer;
+  },
   allow_discovery: true,
   // Detras de nginx / cloudflared la IP real llega en X-Forwarded-For.
   proxied: true,
