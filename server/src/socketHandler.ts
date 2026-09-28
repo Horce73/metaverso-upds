@@ -323,6 +323,19 @@ export function setupSockets(io: Server) {
       });
     });
 
+    // "Silenciar a todos" del docente (VOZ-04): pide a cada alumno del aula
+    // que apague su micrófono. Cada uno puede volver a activarlo; no es un
+    // bloqueo, es la forma de cortar el ruido de fondo al empezar la clase.
+    on('silenciar_todos', 'silenciar_todos', () => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      activeUsers.forEach((otro, sid) => {
+        if (sid !== socket.id && otro.espacioId === user.espacioId && !esDocenteOAdmin(otro.roles)) {
+          io.to(sid).emit('silenciado_por_docente', { por: identidad.nombre });
+        }
+      });
+    });
+
     // Respuesta del docente a la solicitud de acceso
     on('responder_solicitud_acceso', 'responder_solicitud_acceso', (data: {
       estudianteSocketId: string;

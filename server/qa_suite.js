@@ -455,6 +455,26 @@ async function runTests() {
     return (await recibido) !== null;
   });
 
+  // VOZ-04: "silenciar a todos" sólo lo pide un docente, y sólo a los alumnos de su aula
+  await entrar(sMaria, aulaId);
+
+  await caso('Un estudiante no puede silenciar a todos', async () => {
+    const recibido = esperarEvento(sMaria, 'silenciado_por_docente', 800);
+    sAna.emit('silenciar_todos');
+    return (await recibido) === null;
+  });
+
+  await caso('El docente silencia a los alumnos de su aula, no a sí mismo', async () => {
+    const [ana, maria, propio] = [
+      esperarEvento(sAna, 'silenciado_por_docente', 1500),
+      esperarEvento(sMaria, 'silenciado_por_docente', 1500),
+      esperarEvento(sDocente, 'silenciado_por_docente', 800),
+    ];
+    sDocente.emit('silenciar_todos');
+    const [a, m, p] = await Promise.all([ana, maria, propio]);
+    return typeof a?.por === 'string' && a.por.length > 0 && m !== null && p === null;
+  });
+
   // ---------------------------------------------------------------------------
   // Pilar 6: Roles y sesiones de clase (SEC-06)
   // ---------------------------------------------------------------------------
