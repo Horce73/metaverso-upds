@@ -105,6 +105,19 @@ function App() {
   const [customizingAvatar, setCustomizingAvatar] = useState(false);
   const [pizarraAbierta, setPizarraAbierta] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
+  // Pulsar para hablar (VOZ-04): con el modo activo, el micrófono sólo se abre
+  // mientras se mantiene V (o el botón en pantalla). Se recuerda entre sesiones.
+  const [pulsarParaHablar, setPulsarParaHablar] = useState(() => {
+    try {
+      return localStorage.getItem('pulsarParaHablar') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [pulsando, setPulsando] = useState(false);
+  // peerIds que este usuario silenció para sí en el espacio actual
+  const [silenciadosLocal, setSilenciadosLocal] = useState<Set<string>>(new Set());
+  const [avisoVoz, setAvisoVoz] = useState('');
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
 
@@ -307,6 +320,7 @@ function App() {
       setAudioClient(null);
     }
     setRemoteUsers({});
+    setSilenciadosLocal(new Set());
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -407,6 +421,11 @@ function App() {
     activeSocket.off('join_aceptado');
     activeSocket.on('join_aceptado', (data: { roles: string[] }) => {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
+    });
+    activeSocket.off('silenciado_por_docente');
+    activeSocket.on('silenciado_por_docente', (data: { por: string }) => {
+      setMicMuted(true);
+      setAvisoVoz(`🤫 ${data.por} silenció a la clase. Puedes volver a activar tu micrófono.`);
     });
     activeSocket.on('space_users', handleInitialUsers);
     activeSocket.on('current_users', handleInitialUsers);
@@ -595,12 +614,67 @@ function App() {
   };
 
   // Alternar Micrófono
-  const toggleMic = () => {
-    if (audioClient) {
-      const newMuted = !micMuted;
-      audioClient.setMute(newMuted);
-      setMicMuted(newMuted);
+  const toggleMic = () => setMicMuted((m) => !m);
+
+  // Estado efectivo del micrófono. Se reaplica también al cambiar de espacio:
+  // cada espacio crea un AudioClient nuevo, que arranca con el micrófono abierto.
+  useEffect(() => {
+    audioClient?.setMute(micMuted || (pulsarParaHablar && !pulsando));
+  }, [audioClient, micMuted, pulsarParaHablar, pulsando]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pulsarParaHablar', pulsarParaHablar ? '1' : '0');
+    } catch {
+      /* sin almacenamiento: dura esta sesión */
     }
+  }, [pulsarParaHablar]);
+
+  // Tecla V mientras el modo está activo (fuera de campos de texto)
+  useEffect(() => {
+    if (!pulsarParaHablar) return;
+    const escribiendo = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+    const abajo = (e: KeyboardEvent) => {
+      if (e.code === 'KeyV' && !e.repeat && !escribiendo(e)) setPulsando(true);
+    };
+    const arriba = (e: KeyboardEvent) => {
+      if (e.code === 'KeyV') setPulsando(false);
+    };
+    const soltar = () => setPulsando(false);
+    window.addEventListener('keydown', abajo);
+    window.addEventListener('keyup', arriba);
+    window.addEventListener('blur', soltar);
+    return () => {
+      window.removeEventListener('keydown', abajo);
+      window.removeEventListener('keyup', arriba);
+      window.removeEventListener('blur', soltar);
+      setPulsando(false);
+    };
+  }, [pulsarParaHablar]);
+
+  useEffect(() => {
+    if (!avisoVoz) return;
+    const id = setTimeout(() => setAvisoVoz(''), 6000);
+    return () => clearTimeout(id);
+  }, [avisoVoz]);
+
+  const alternarSilencioLocal = (peerId: string) => {
+    setSilenciadosLocal((prev) => {
+      const siguiente = new Set(prev);
+      const silenciar = !siguiente.has(peerId);
+      if (silenciar) siguiente.add(peerId);
+      else siguiente.delete(peerId);
+      audioClient?.silenciarParticipante(peerId, silenciar);
+      return siguiente;
+    });
+  };
+
+  const silenciarATodos = () => {
+    socketRef.current?.emit('silenciar_todos');
+    setAvisoVoz('🤫 Pediste silencio a la clase.');
   };
 
   // Adónde volver al cerrar Panel Admin / Mis Clases (llegados ahí desde el menú
@@ -1119,6 +1193,21 @@ function App() {
             {Object.keys(remoteUsers).map((socketId) => (
               <div key={socketId} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
+                {remoteUsers[socketId].peerId && (
+                  <button
+                    type="button"
+                    className="boton-silenciar-usuario"
+                    onClick={() => alternarSilencioLocal(remoteUsers[socketId].peerId)}
+                    aria-pressed={silenciadosLocal.has(remoteUsers[socketId].peerId)}
+                    title={
+                      silenciadosLocal.has(remoteUsers[socketId].peerId)
+                        ? `Volver a oír a ${remoteUsers[socketId].nombreVisible}`
+                        : `Silenciar a ${remoteUsers[socketId].nombreVisible} sólo para ti`
+                    }
+                  >
+                    {silenciadosLocal.has(remoteUsers[socketId].peerId) ? '🔇' : '🔈'}
+                  </button>
+                )}
                 <span>
                   {remoteUsers[socketId].nombreVisible} (
                   {!remoteUsers[socketId].peerId
@@ -1189,6 +1278,12 @@ function App() {
           </form>
         </div>
 
+        {avisoVoz && (
+          <div className="aviso-voz" role="status">
+            {avisoVoz}
+          </div>
+        )}
+
         {/* Controles de HUD Inferiores */}
         <div className="hud-bottom-controls">
           <button
@@ -1198,6 +1293,34 @@ function App() {
           >
             {micMuted ? '🔇' : '🎙️'}
           </button>
+
+          <button
+            className={`control-btn ${pulsarParaHablar ? 'active' : ''}`}
+            onClick={() => setPulsarParaHablar((v) => !v)}
+            aria-pressed={pulsarParaHablar}
+            title={pulsarParaHablar ? 'Desactivar pulsar para hablar' : 'Pulsar para hablar (tecla V)'}
+          >
+            PTT
+          </button>
+
+          {pulsarParaHablar && !micMuted && (
+            <button
+              className={`boton-pulsar-hablar ${pulsando ? 'hablando' : ''}`}
+              onPointerDown={() => setPulsando(true)}
+              onPointerUp={() => setPulsando(false)}
+              onPointerLeave={() => setPulsando(false)}
+              onPointerCancel={() => setPulsando(false)}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              {pulsando ? '🔴 Hablando…' : 'Mantén V para hablar'}
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
+            <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes">
+              🤫
+            </button>
+          )}
 
           {espacioActivo.tipo === 'aula' && (
             <button

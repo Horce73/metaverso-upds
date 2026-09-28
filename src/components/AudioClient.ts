@@ -103,6 +103,8 @@ export class AudioClient {
   private soyDifusor = false;
   private participantes = new Map<string, boolean>(); // peerId -> difunde
   private ultimaVozDifusor = 0;
+  // Participantes que este usuario silenció para sí (VOZ-04)
+  private silenciados = new Set<string>();
   private onCallConnectedCallback: ((peerId: string) => void) | null = null;
 
   private posicionListener: [number, number, number] = [0, 0, 0];
@@ -402,6 +404,7 @@ export class AudioClient {
       audio.autoplay = true;
       (audio as any).playsInline = true;
       audio.volume = this.usarAudioEspacial ? 0 : 1;
+      audio.muted = !this.usarAudioEspacial && this.silenciados.has(remotePeerId);
       audio.play().catch(e => console.warn('Error autoplay audio:', e));
       this.audioElements.set(remotePeerId, audio);
 
@@ -426,6 +429,7 @@ export class AudioClient {
         panner.positionZ.value = 0;
 
         const ganancia = this.audioCtx.createGain();
+        ganancia.gain.value = this.gananciaObjetivo(remotePeerId, false);
         source.connect(panner);
         panner.connect(ganancia);
         ganancia.connect(this.mezcla ?? this.audioCtx.destination);
@@ -540,6 +544,7 @@ export class AudioClient {
     this.participantes.delete(remotePeerId);
     this.posicionesPendientes.delete(remotePeerId);
     this.intentosFallidos.delete(remotePeerId);
+    this.silenciados.delete(remotePeerId);
     this.removeUserAudio(remotePeerId);
   }
 
@@ -612,14 +617,34 @@ export class AudioClient {
     for (const [peerId, difunde] of this.participantes) {
       if (difunde && this.nivelDe(peerId) > UMBRAL_HABLA) this.ultimaVozDifusor = ahora;
     }
-    const clase = ahora - this.ultimaVozDifusor < RETENCION_ATENUACION_MS;
+    this.aplicarGanancias(ahora - this.ultimaVozDifusor < RETENCION_ATENUACION_MS);
+  }
+
+  // Volumen final de cada voz: 0 si este usuario la silenció, ATENUACION_LATERAL
+  // si es de proximidad y está hablando quien difunde, 1 en otro caso.
+  private gananciaObjetivo(remotePeerId: string, clase: boolean): number {
+    if (this.silenciados.has(remotePeerId)) return 0;
+    return clase && this.perfilDe(remotePeerId) === 'proximidad' ? ATENUACION_LATERAL : 1;
+  }
+
+  private aplicarGanancias(clase = performance.now() - this.ultimaVozDifusor < RETENCION_ATENUACION_MS) {
+    if (!this.audioCtx) return;
     const t = this.audioCtx.currentTime;
     this.ganancias.forEach((ganancia, peerId) => {
-      const objetivo = clase && this.perfilDe(peerId) === 'proximidad' ? ATENUACION_LATERAL : 1;
+      const objetivo = this.gananciaObjetivo(peerId, clase);
       if (Math.abs(ganancia.gain.value - objetivo) < 0.01) return;
       // Baja rápido cuando empieza la clase, vuelve despacio cuando termina la frase
       ganancia.gain.setTargetAtTime(objetivo, t, objetivo < 1 ? 0.05 : 0.3);
     });
+  }
+
+  /** Deja de oír (o vuelve a oír) a un participante, sólo para este usuario (VOZ-04). */
+  public silenciarParticipante(remotePeerId: string, silenciado: boolean) {
+    if (silenciado) this.silenciados.add(remotePeerId);
+    else this.silenciados.delete(remotePeerId);
+    const audio = this.audioElements.get(remotePeerId);
+    if (audio && !this.usarAudioEspacial) audio.muted = silenciado;
+    this.aplicarGanancias();
   }
 
   // Actualizar la posición 3D del emisor de voz de otro avatar
@@ -837,6 +862,7 @@ export class AudioClient {
     this.ganancias.forEach((ganancia) => ganancia.disconnect());
     this.ganancias.clear();
     this.participantes.clear();
+    this.silenciados.clear();
     this.analizadores.forEach((analizador) => analizador.disconnect());
     this.analizadores.clear();
     this.analizadorLocal = null;
