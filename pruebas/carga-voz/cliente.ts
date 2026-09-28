@@ -38,6 +38,23 @@ if (paneoForzado) {
   });
 }
 
+// ?dtx=1 pide Opus con DTX (usedtx=1) en cada oferta y respuesta: con el
+// micrófono deshabilitado el codificador sigue enviando silencio a cada par,
+// y DTX lo reduce a un paquete de ruido de confort cada ~400 ms.
+if (params.get('dtx') === '1') {
+  const conDtx = (d: RTCSessionDescriptionInit): RTCSessionDescriptionInit => ({
+    type: d.type,
+    sdp: d.sdp?.replace(/(a=fmtp:\d+ [^\r\n]*useinbandfec=1)(?![^\r\n]*usedtx)/g, '$1;usedtx=1'),
+  });
+  const { createOffer, createAnswer } = RTCPeerConnection.prototype;
+  RTCPeerConnection.prototype.createOffer = async function (this: RTCPeerConnection, ...a: unknown[]) {
+    return conDtx(await (createOffer as (...x: unknown[]) => Promise<RTCSessionDescriptionInit>).apply(this, a));
+  } as typeof createOffer;
+  RTCPeerConnection.prototype.createAnswer = async function (this: RTCPeerConnection, ...a: unknown[]) {
+    return conDtx(await (createAnswer as (...x: unknown[]) => Promise<RTCSessionDescriptionInit>).apply(this, a));
+  } as typeof createAnswer;
+}
+
 const socket = io({ auth: { token }, transports: ['websocket'] });
 const peerIdsPorSocket = new Map<string, string>();
 let unido = false;

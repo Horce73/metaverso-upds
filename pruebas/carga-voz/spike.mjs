@@ -12,6 +12,8 @@
 //   --repeticiones 3 --pausa 20   mide cada tamaño 3 veces con 20 s de reposo
 //                                 entre medidas y reporta la mediana
 //   --paneo equalpower            fuerza ese modelo de paneo en vez de HRTF
+//   --dtx                         negocia Opus con DTX: en silencio casi no se
+//                                 envían paquetes
 //
 // Todos los participantes corren en esta máquina, así que el coste total
 // crece como N². Cuando el host pasa de ~50 % (hyperthreading, frecuencia que
@@ -37,7 +39,8 @@ const VENTANA_S = Number(arg('ventana', '20'));
 const REPETICIONES = Number(arg('repeticiones', '1'));
 const PAUSA_S = Number(arg('pausa', '3'));
 const PANEO = arg('paneo', '');
-const SALIDA = arg('salida', `resultados-${ESCENARIO}${PANEO ? `-${PANEO}` : ''}.json`);
+const DTX = process.argv.includes('--dtx');
+const SALIDA = arg('salida', `resultados-${ESCENARIO}${PANEO ? `-${PANEO}` : ''}${DTX ? '-dtx' : ''}.json`);
 const HOST_SATURADO_PCT = 50;
 
 // Criterios de "audio aceptable", fijados antes de medir. Se exigen en el
@@ -152,7 +155,7 @@ async function medirTamano(browser, pidChrome, n, espacioId) {
   const inicio = Date.now();
   await Promise.all(
     paginas.map((p, i) =>
-      p.goto(`${APP_URL}/pruebas/carga-voz/cliente.html?token=${tokens[i]}&espacio=${espacioId}${PANEO ? `&paneo=${PANEO}` : ''}`)
+      p.goto(`${APP_URL}/pruebas/carga-voz/cliente.html?token=${tokens[i]}&espacio=${espacioId}${PANEO ? `&paneo=${PANEO}` : ''}${DTX ? '&dtx=1' : ''}`)
     )
   );
 
@@ -241,7 +244,7 @@ const browser = await chromium.connect(servidor.wsEndpoint());
 
 const espacioId = await idCampus(await tokenInvitado());
 console.log(
-  `Escenario "${ESCENARIO}", paneo ${PANEO || 'HRTF'}, ventana ${VENTANA_S} s, ${REPETICIONES} repetición(es), ` +
+  `Escenario "${ESCENARIO}", paneo ${PANEO || 'HRTF'}, DTX ${DTX ? 'sí' : 'no'}, ventana ${VENTANA_S} s, ${REPETICIONES} repetición(es), ` +
   `audio: ${voz ? 'voz sintetizada' : 'pitido de Chrome'}, espacio ${espacioId}`
 );
 console.log('   N  malla s  pares %  ↑ kbps  ↓ kbps  oculto % (p95)  jitter p95  CPU/part.  host %  ¿acept.?');
@@ -279,7 +282,7 @@ for (const n of TAMANOS) {
 
 writeFileSync(
   SALIDA,
-  JSON.stringify({ escenario: ESCENARIO, paneo: PANEO || 'HRTF', repeticiones: REPETICIONES, ventanaS: VENTANA_S, audio: voz ? 'voz' : 'pitido', criterios: CRITERIOS, resultados }, null, 2)
+  JSON.stringify({ escenario: ESCENARIO, paneo: PANEO || 'HRTF', dtx: DTX, repeticiones: REPETICIONES, ventanaS: VENTANA_S, audio: voz ? 'voz' : 'pitido', criterios: CRITERIOS, resultados }, null, 2)
 );
 console.log(`\nResultados en ${SALIDA}`);
 await browser.close();
