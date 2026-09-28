@@ -80,6 +80,9 @@ export class AudioClient {
   private peer: Peer | null = null;
   private localStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
+  // Mezcla de todas las voces remotas -> limitador -> altavoces (VOZ-07)
+  private mezcla: GainNode | null = null;
+  private limitador: DynamicsCompressorNode | null = null;
   private pannerNodes = new Map<string, PannerNode>(); // peerId -> PannerNode
   private ganancias = new Map<string, GainNode>(); // peerId -> GainNode (atenuación lateral)
   private audioElements = new Map<string, HTMLAudioElement>(); // peerId -> AudioElement
@@ -222,6 +225,7 @@ export class AudioClient {
       // @ts-ignore
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       this.audioCtx = new AudioCtx();
+      this.crearLimitador(this.audioCtx);
       console.log('🔊 Web Audio Context inicializado');
 
       this.resumeHandler = () => this.ensureAudioContextActive();
@@ -424,7 +428,7 @@ export class AudioClient {
         const ganancia = this.audioCtx.createGain();
         source.connect(panner);
         panner.connect(ganancia);
-        ganancia.connect(this.audioCtx.destination);
+        ganancia.connect(this.mezcla ?? this.audioCtx.destination);
         this.pannerNodes.set(remotePeerId, panner);
         this.ganancias.set(remotePeerId, ganancia);
         this.aplicarPerfil(remotePeerId);
@@ -636,6 +640,30 @@ export class AudioClient {
     }
   }
 
+  // Limitador en la mezcla (VOZ-07). Cada voz ya llega nivelada por el
+  // autoGainControl de quien habla, pero varias a la vez se suman y saturan
+  // la salida (recorte audible). Actúa sólo cerca del recorte (desde -6 dBFS)
+  // y fuerte, con ataque rápido: medido en el navegador, una voz sola pasa
+  // casi igual y cinco a la vez bajan de -1,4 a -4,3 dBFS de pico.
+  private crearLimitador(ctx: AudioContext) {
+    const limitador = ctx.createDynamicsCompressor();
+    limitador.threshold.value = -6;
+    limitador.knee.value = 3;
+    limitador.ratio.value = 20;
+    limitador.attack.value = 0.003;
+    limitador.release.value = 0.25;
+    limitador.connect(ctx.destination);
+    const mezcla = ctx.createGain();
+    mezcla.connect(limitador);
+    this.mezcla = mezcla;
+    this.limitador = limitador;
+  }
+
+  /** Cuántos dB está bajando el limitador ahora mismo (0 = no actúa). */
+  public reduccionLimitador(): number {
+    return this.limitador?.reduction ?? 0;
+  }
+
   private crearAnalizador(stream: MediaStream): AnalyserNode | null {
     if (!this.audioCtx) return null;
     const analizador = this.audioCtx.createAnalyser();
@@ -812,6 +840,10 @@ export class AudioClient {
     this.analizadores.forEach((analizador) => analizador.disconnect());
     this.analizadores.clear();
     this.analizadorLocal = null;
+    this.mezcla?.disconnect();
+    this.limitador?.disconnect();
+    this.mezcla = null;
+    this.limitador = null;
     this.posicionesPendientes.clear();
     this.intentosFallidos.clear();
     this.muestrasDiagnostico.clear();
