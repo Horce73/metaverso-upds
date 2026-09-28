@@ -7,6 +7,14 @@ import {
   type MuestraPrevia,
 } from './diagnosticoVoz.js';
 import { activarDtx } from './sdpVoz.js';
+import {
+  parametrosPanner,
+  perfilAudicion,
+  gananciaPorDistancia,
+  planificarConexiones,
+  type PerfilAudicion,
+  type TipoEspacio,
+} from './zonasVoz.js';
 
 export type EstadoVoz = 'iniciando' | 'sin-microfono' | 'conectado' | 'reconectando' | 'error';
 
@@ -47,6 +55,16 @@ export function guardarMicrofonoPreferido(deviceId: string) {
   }
 }
 
+// Mientras habla quien difunde, las voces de proximidad bajan a este volumen
+// para que una conversación lateral no tape la clase (VOZ-03).
+const ATENUACION_LATERAL = 0.35;
+// Mismo umbral de RMS que el anillo de "está hablando" (VOZ-02).
+const UMBRAL_HABLA = 0.02;
+// Sin esto la atenuación sube y baja entre palabra y palabra.
+const RETENCION_ATENUACION_MS = 800;
+const INTERVALO_ZONAS_MS = 400;
+const INTERVALO_ATENUACION_MS = 100;
+
 const RESTRICCIONES_VOZ = {
   echoCancellation: true,
   noiseSuppression: true,
@@ -63,6 +81,7 @@ export class AudioClient {
   private localStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private pannerNodes = new Map<string, PannerNode>(); // peerId -> PannerNode
+  private ganancias = new Map<string, GainNode>(); // peerId -> GainNode (atenuación lateral)
   private audioElements = new Map<string, HTMLAudioElement>(); // peerId -> AudioElement
   private activeCalls = new Map<string, any>(); // peerId -> Call
   private posicionesPendientes = new Map<string, [number, number, number]>();
@@ -74,6 +93,13 @@ export class AudioClient {
   private analizadorLocal: AnalyserNode | null = null;
   private bufferNivel = new Float32Array(256);
   private temporizadores = new Set<ReturnType<typeof setTimeout>>();
+  private intervalos = new Set<ReturnType<typeof setInterval>>();
+  // Zonas de audio (VOZ-03). Con zona null la malla es completa y las llamadas
+  // las decide quien usa la clase (así la mide la prueba de carga).
+  private zona: TipoEspacio | null = null;
+  private soyDifusor = false;
+  private participantes = new Map<string, boolean>(); // peerId -> difunde
+  private ultimaVozDifusor = 0;
   private onCallConnectedCallback: ((peerId: string) => void) | null = null;
 
   private posicionListener: [number, number, number] = [0, 0, 0];
@@ -298,6 +324,7 @@ export class AudioClient {
   public callUser(remotePeerId: string, retries = 2) {
     if (this.destruido || !remotePeerId) return;
     if (!this.peer || !this.localStream || this.activeCalls.has(remotePeerId)) return;
+    if (!this.permiteLlamar(remotePeerId)) return;
     if ((this.intentosFallidos.get(remotePeerId) || 0) >= 4) {
       console.warn(`⛔ Demasiados intentos fallidos con ${remotePeerId}, se deja de reintentar`);
       return;
@@ -387,10 +414,6 @@ export class AudioClient {
 
         const panner = this.audioCtx.createPanner();
         panner.panningModel = 'HRTF';
-        panner.distanceModel = 'inverse';
-        panner.refDistance = 6;
-        panner.maxDistance = 10000;
-        panner.rolloffFactor = 0.3;
         panner.coneInnerAngle = 360;
         panner.coneOuterAngle = 360;
 
@@ -398,9 +421,13 @@ export class AudioClient {
         panner.positionY.value = 0;
         panner.positionZ.value = 0;
 
+        const ganancia = this.audioCtx.createGain();
         source.connect(panner);
-        panner.connect(this.audioCtx.destination);
+        panner.connect(ganancia);
+        ganancia.connect(this.audioCtx.destination);
         this.pannerNodes.set(remotePeerId, panner);
+        this.ganancias.set(remotePeerId, ganancia);
+        this.aplicarPerfil(remotePeerId);
       }
 
       // Aplicar la última posición conocida: si el avatar remoto está quieto,
@@ -413,13 +440,15 @@ export class AudioClient {
       }
     });
 
+    // Sólo si sigue siendo la llamada vigente: con las zonas una llamada vieja
+    // puede terminar de cerrarse cuando ya se abrió otra con el mismo par.
     call.on('close', () => {
-      this.removeUserAudio(remotePeerId);
+      if (this.activeCalls.get(remotePeerId) === call) this.removeUserAudio(remotePeerId);
     });
 
     call.on('error', (err: any) => {
       console.error(`Error en llamada con ${remotePeerId}:`, err);
-      this.removeUserAudio(remotePeerId);
+      if (this.activeCalls.get(remotePeerId) === call) this.removeUserAudio(remotePeerId);
     });
   }
 
@@ -465,8 +494,8 @@ export class AudioClient {
     }
   }
 
-  // Respaldo para navegadores sin audio espacial remoto: misma curva
-  // "inverse" que el PannerNode, aplicada al volumen del <audio>.
+  // Respaldo para navegadores sin audio espacial remoto: la misma curva que
+  // el PannerNode de ese perfil, aplicada al volumen del <audio>.
   private aplicarVolumenPorDistancia(remotePeerId: string, position: [number, number, number]) {
     const audio = this.audioElements.get(remotePeerId);
     if (!audio) return;
@@ -474,10 +503,119 @@ export class AudioClient {
     const dy = position[1] - this.posicionListener[1];
     const dz = position[2] - this.posicionListener[2];
     const distancia = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const refDistance = 6;
-    const rolloff = 0.3;
-    const ganancia = refDistance / (refDistance + rolloff * Math.max(0, distancia - refDistance));
+    const ganancia = gananciaPorDistancia(distancia, this.perfilDe(remotePeerId), this.zona ?? 'campus');
     audio.volume = Math.min(1, Math.max(0, ganancia));
+  }
+
+  // --- Zonas de audio (VOZ-03) ---------------------------------------------
+
+  /**
+   * Activa las zonas: desde ahora las llamadas se abren y cuelgan solas según
+   * la distancia y quién difunde. Los participantes se dan de alta con
+   * registrarParticipante y sus posiciones llegan por updateSourcePosition.
+   */
+  public configurarZonas(tipo: TipoEspacio, soyDifusor: boolean) {
+    this.zona = tipo;
+    this.soyDifusor = soyDifusor;
+    this.pannerNodes.forEach((_, peerId) => this.aplicarPerfil(peerId));
+    if (this.intervalos.size === 0) {
+      this.intervalos.add(setInterval(() => this.sincronizarZonas(), INTERVALO_ZONAS_MS));
+      this.intervalos.add(setInterval(() => this.actualizarAtenuacionLateral(), INTERVALO_ATENUACION_MS));
+    }
+  }
+
+  public registrarParticipante(remotePeerId: string, difunde: boolean) {
+    if (!remotePeerId || this.destruido) return;
+    this.participantes.set(remotePeerId, difunde);
+    this.aplicarPerfil(remotePeerId);
+    this.sincronizarZonas();
+  }
+
+  /** Quien salió del espacio: se cuelga y se olvida todo lo suyo. */
+  public olvidarParticipante(remotePeerId: string) {
+    this.participantes.delete(remotePeerId);
+    this.posicionesPendientes.delete(remotePeerId);
+    this.intentosFallidos.delete(remotePeerId);
+    this.removeUserAudio(remotePeerId);
+  }
+
+  /** Si hay una llamada abierta con ese participante (está en alcance de voz). */
+  public estaConectadoCon(remotePeerId: string): boolean {
+    return this.activeCalls.has(remotePeerId);
+  }
+
+  private miPeerId(): string {
+    return this.peer?.id ?? this.userId;
+  }
+
+  private participanteVoz(remotePeerId: string) {
+    return {
+      posicion: this.posicionesPendientes.get(remotePeerId) ?? null,
+      difusor: this.participantes.get(remotePeerId) ?? false,
+    };
+  }
+
+  // Con zonas sólo llama el de peerId menor y sólo si están en alcance;
+  // también frena los reintentos tras un fallo de ICE cuando ya se alejaron.
+  private permiteLlamar(remotePeerId: string): boolean {
+    if (!this.zona || !this.participantes.has(remotePeerId)) return true;
+    const { llamar } = planificarConexiones(
+      this.miPeerId(),
+      { posicion: this.posicionListener, difusor: this.soyDifusor },
+      new Map([[remotePeerId, this.participanteVoz(remotePeerId)]]),
+      new Set(),
+      this.zona
+    );
+    return llamar.length === 1;
+  }
+
+  private sincronizarZonas() {
+    if (!this.zona || !this.peer || this.peer.disconnected || this.destruido) return;
+    const otros = new Map([...this.participantes.keys()].map((id) => [id, this.participanteVoz(id)]));
+    const { llamar, colgar } = planificarConexiones(
+      this.miPeerId(),
+      { posicion: this.posicionListener, difusor: this.soyDifusor },
+      otros,
+      new Set(this.activeCalls.keys()),
+      this.zona
+    );
+    colgar.forEach((peerId) => {
+      console.log(`📴 ${peerId} salió del alcance de voz`);
+      this.removeUserAudio(peerId);
+    });
+    llamar.forEach((peerId) => this.callUser(peerId));
+  }
+
+  private perfilDe(remotePeerId: string): PerfilAudicion {
+    // Sin zonas se conserva la curva suave de siempre
+    if (!this.zona) return 'sala';
+    return perfilAudicion(this.soyDifusor, this.participantes.get(remotePeerId) ?? false);
+  }
+
+  private aplicarPerfil(remotePeerId: string) {
+    const panner = this.pannerNodes.get(remotePeerId);
+    if (panner) Object.assign(panner, parametrosPanner(this.perfilDe(remotePeerId), this.zona ?? 'campus'));
+    const pos = this.posicionesPendientes.get(remotePeerId);
+    if (!this.usarAudioEspacial && pos) this.aplicarVolumenPorDistancia(remotePeerId, pos);
+  }
+
+  // Mientras alguien que difunde está hablando, las voces de proximidad bajan
+  // a ATENUACION_LATERAL. Sólo con Web Audio: en el respaldo de iOS/Safari no
+  // hay analizadores de las voces remotas.
+  private actualizarAtenuacionLateral() {
+    if (!this.audioCtx || this.zona !== 'aula') return;
+    const ahora = performance.now();
+    for (const [peerId, difunde] of this.participantes) {
+      if (difunde && this.nivelDe(peerId) > UMBRAL_HABLA) this.ultimaVozDifusor = ahora;
+    }
+    const clase = ahora - this.ultimaVozDifusor < RETENCION_ATENUACION_MS;
+    const t = this.audioCtx.currentTime;
+    this.ganancias.forEach((ganancia, peerId) => {
+      const objetivo = clase && this.perfilDe(peerId) === 'proximidad' ? ATENUACION_LATERAL : 1;
+      if (Math.abs(ganancia.gain.value - objetivo) < 0.01) return;
+      // Baja rápido cuando empieza la clase, vuelve despacio cuando termina la frase
+      ganancia.gain.setTargetAtTime(objetivo, t, objetivo < 1 ? 0.05 : 0.3);
+    });
   }
 
   // Actualizar la posición 3D del emisor de voz de otro avatar
@@ -581,6 +719,8 @@ export class AudioClient {
       panner.disconnect();
       this.pannerNodes.delete(remotePeerId);
     }
+    this.ganancias.get(remotePeerId)?.disconnect();
+    this.ganancias.delete(remotePeerId);
 
     this.analizadores.get(remotePeerId)?.disconnect();
     this.analizadores.delete(remotePeerId);
@@ -645,6 +785,8 @@ export class AudioClient {
 
     this.temporizadores.forEach((id) => clearTimeout(id));
     this.temporizadores.clear();
+    this.intervalos.forEach((id) => clearInterval(id));
+    this.intervalos.clear();
 
     // Sin esto se acumula un listener por cada entrada a un espacio,
     // cada uno reteniendo un AudioContext ya cerrado.
@@ -664,6 +806,9 @@ export class AudioClient {
     this.audioElements.clear();
     this.pannerNodes.forEach((panner) => panner.disconnect());
     this.pannerNodes.clear();
+    this.ganancias.forEach((ganancia) => ganancia.disconnect());
+    this.ganancias.clear();
+    this.participantes.clear();
     this.analizadores.forEach((analizador) => analizador.disconnect());
     this.analizadores.clear();
     this.analizadorLocal = null;

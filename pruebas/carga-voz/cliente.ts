@@ -6,12 +6,14 @@
 import { io } from 'socket.io-client';
 import { AudioClient, type EstadoVoz } from '../../src/components/AudioClient.js';
 import type { DiagnosticoVoz, MuestraPrevia } from '../../src/components/diagnosticoVoz.js';
+import { esDifusor } from '../../src/components/zonasVoz.js';
 
 interface ControlCarga {
   unido: () => boolean;
   estadoVoz: () => EstadoVoz;
   medir: () => Promise<DiagnosticoVoz>;
   silenciar: (silenciado: boolean) => void;
+  ganancias: () => Record<string, number>;
 }
 
 declare global {
@@ -52,6 +54,11 @@ const posicionDe = (id: string): [number, number, number] => {
   return [((h % 1000) / 1000) * 20 - 10, 0, ((Math.floor(h / 1000) % 1000) / 1000) * 20 - 10];
 };
 
+// ?zonas=1&x=..&z=.. entra al aula con las zonas de audio (VOZ-03) como la
+// app: posición fija dada por la prueba y anunciada con 'move', y las
+// llamadas las abre y cuelga AudioClient según distancia y rol.
+const conZonas = params.get('zonas') === '1';
+
 const unirse = (peerId: string) => {
   socket.emit('join_space', { espacioId, user: { peerId } });
   unido = true;
@@ -72,28 +79,54 @@ const cliente = new AudioClient(
   { dtx: params.get('dtx') !== '0' }
 );
 
-cliente.updateListenerPosition(posicionDe(miPeerId), [0, 0, 0]);
+const miPosicion: [number, number, number] = conZonas
+  ? [Number(params.get('x')), 0, Number(params.get('z'))]
+  : posicionDe(miPeerId);
+cliente.updateListenerPosition(miPosicion, [0, 0, 0]);
+if (conZonas) cliente.configurarZonas('aula', false);
 
-// Igual que App.tsx: quien llega llama a los que ya estaban; los que ya
-// estaban no llaman al recién llegado (evita llamadas cruzadas).
-const alRecibirUsuarios = (usuarios: Record<string, { peerId?: string }>) => {
+interface UsuarioRemoto {
+  peerId?: string;
+  roles?: string[];
+  position?: [number, number, number];
+}
+
+// Sin zonas, malla completa como en la Fase 2: quien llega llama a los que ya
+// estaban y los que ya estaban no llaman al recién llegado. Con zonas, igual
+// que App.tsx: se registra a cada uno y AudioClient decide.
+const alRecibirUsuarios = (usuarios: Record<string, UsuarioRemoto>) => {
   Object.entries(usuarios).forEach(([socketId, u]) => {
     if (!u.peerId) return;
     peerIdsPorSocket.set(socketId, u.peerId);
-    cliente.updateSourcePosition(u.peerId, posicionDe(u.peerId));
-    cliente.callUser(u.peerId);
+    if (conZonas) {
+      if (u.position) cliente.updateSourcePosition(u.peerId, u.position);
+      cliente.registrarParticipante(u.peerId, esDifusor(u.roles ?? [], 'aula'));
+    } else {
+      cliente.updateSourcePosition(u.peerId, posicionDe(u.peerId));
+      cliente.callUser(u.peerId);
+    }
   });
 };
+socket.on('join_aceptado', (data: { roles: string[] }) => {
+  if (!conZonas) return;
+  cliente.configurarZonas('aula', esDifusor(data.roles, 'aula'));
+  socket.emit('move', { position: miPosicion, rotation: [0, 0, 0], estaSentado: false });
+});
 socket.on('space_users', alRecibirUsuarios);
 socket.on('current_users', alRecibirUsuarios);
-socket.on('user_joined', (data: { socketId: string; user: { peerId?: string } }) => {
+socket.on('user_joined', (data: { socketId: string; user: UsuarioRemoto }) => {
   if (!data.user.peerId) return;
   peerIdsPorSocket.set(data.socketId, data.user.peerId);
-  cliente.updateSourcePosition(data.user.peerId, posicionDe(data.user.peerId));
+  if (conZonas) cliente.registrarParticipante(data.user.peerId, esDifusor(data.user.roles ?? [], 'aula'));
+  else cliente.updateSourcePosition(data.user.peerId, posicionDe(data.user.peerId));
+});
+socket.on('user_moved', (data: { socketId: string; position: [number, number, number] }) => {
+  const peerId = peerIdsPorSocket.get(data.socketId);
+  if (conZonas && peerId) cliente.updateSourcePosition(peerId, data.position);
 });
 socket.on('user_left', (data: { socketId: string }) => {
   const peerId = peerIdsPorSocket.get(data.socketId);
-  if (peerId) cliente.removeUserAudio(peerId);
+  if (peerId) cliente.olvidarParticipante(peerId);
   peerIdsPorSocket.delete(data.socketId);
 });
 socket.on('join_rechazado', (data: { motivo: string }) => {
@@ -106,4 +139,10 @@ window.carga = {
   estadoVoz: () => estadoVoz,
   medir: () => cliente.obtenerDiagnostico(muestras),
   silenciar: (silenciado) => cliente.setMute(silenciado),
+  // Volumen de la atenuación lateral de cada voz recibida (VOZ-03), para
+  // comprobar que baja mientras habla el docente. Lee un campo privado.
+  ganancias: () =>
+    Object.fromEntries(
+      [...((cliente as unknown as { ganancias: Map<string, GainNode> }).ganancias)].map(([id, g]) => [id, g.gain.value])
+    ),
 };
