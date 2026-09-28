@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "carga:voz": "node pruebas/carga-voz/spike.mjs"
+    "carga:voz": "node pruebas/carga-voz/spike.mjs",
+    "test:unidad": "node --test 'pruebas/unidad/*.test.mjs'"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

@@ -12,8 +12,8 @@
 //   --repeticiones 3 --pausa 20   mide cada tamaño 3 veces con 20 s de reposo
 //                                 entre medidas y reporta la mediana
 //   --paneo equalpower            fuerza ese modelo de paneo en vez de HRTF
-//   --dtx                         negocia Opus con DTX: en silencio casi no se
-//                                 envían paquetes
+//   --sin-dtx                     negocia Opus sin DTX, como antes de la
+//                                 decisión 0001 (en silencio se sigue enviando)
 //
 // Todos los participantes corren en esta máquina, así que el coste total
 // crece como N². Cuando el host pasa de ~50 % (hyperthreading, frecuencia que
@@ -39,8 +39,8 @@ const VENTANA_S = Number(arg('ventana', '20'));
 const REPETICIONES = Number(arg('repeticiones', '1'));
 const PAUSA_S = Number(arg('pausa', '3'));
 const PANEO = arg('paneo', '');
-const DTX = process.argv.includes('--dtx');
-const SALIDA = arg('salida', `resultados-${ESCENARIO}${PANEO ? `-${PANEO}` : ''}${DTX ? '-dtx' : ''}.json`);
+const DTX = !process.argv.includes('--sin-dtx');
+const SALIDA = arg('salida', `resultados-${ESCENARIO}${PANEO ? `-${PANEO}` : ''}${DTX ? '' : '-sin-dtx'}.json`);
 const HOST_SATURADO_PCT = 50;
 
 // Criterios de "audio aceptable", fijados antes de medir. Se exigen en el
@@ -155,7 +155,7 @@ async function medirTamano(browser, pidChrome, n, espacioId) {
   const inicio = Date.now();
   await Promise.all(
     paginas.map((p, i) =>
-      p.goto(`${APP_URL}/pruebas/carga-voz/cliente.html?token=${tokens[i]}&espacio=${espacioId}${PANEO ? `&paneo=${PANEO}` : ''}${DTX ? '&dtx=1' : ''}`)
+      p.goto(`${APP_URL}/pruebas/carga-voz/cliente.html?token=${tokens[i]}&espacio=${espacioId}${PANEO ? `&paneo=${PANEO}` : ''}${DTX ? '' : '&dtx=0'}`)
     )
   );
 

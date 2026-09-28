@@ -6,6 +6,7 @@ import {
   type DiagnosticoVoz,
   type MuestraPrevia,
 } from './diagnosticoVoz.js';
+import { activarDtx } from './sdpVoz.js';
 
 export type EstadoVoz = 'iniciando' | 'sin-microfono' | 'conectado' | 'reconectando' | 'error';
 
@@ -52,6 +53,11 @@ const RESTRICCIONES_VOZ = {
   autoGainControl: true,
 };
 
+export interface OpcionesAudioClient {
+  /** Opus DTX (decisión 0001). Sólo la prueba de carga lo apaga, para comparar. */
+  dtx?: boolean;
+}
+
 export class AudioClient {
   private peer: Peer | null = null;
   private localStream: MediaStream | null = null;
@@ -81,14 +87,17 @@ export class AudioClient {
   private onPeerIdReady: (peerId: string) => void;
   private onError: (err: any) => void;
   private onEstado: (estado: EstadoVoz, detalle?: string) => void;
+  private opcionesLlamada: { sdpTransform?: (sdp: string) => string };
 
   constructor(
     userId: string,
     onPeerIdReady: (peerId: string) => void,
     onError: (err: any) => void,
-    onEstado?: (estado: EstadoVoz, detalle?: string) => void
+    onEstado?: (estado: EstadoVoz, detalle?: string) => void,
+    { dtx = true }: OpcionesAudioClient = {}
   ) {
     this.userId = userId;
+    this.opcionesLlamada = dtx ? { sdpTransform: activarDtx } : {};
     this.onPeerIdReady = onPeerIdReady;
     this.onError = onError;
     this.onEstado = onEstado || (() => {});
@@ -274,7 +283,7 @@ export class AudioClient {
           console.log(`⚠️ Ignorando llamada entrante duplicada de: ${call.peer}`);
           return;
         }
-        call.answer(this.localStream || undefined);
+        call.answer(this.localStream || undefined, this.opcionesLlamada);
         this.handleIncomingStream(call);
       });
 
@@ -296,7 +305,7 @@ export class AudioClient {
 
     console.log(`📞 Llamando a: ${remotePeerId}...`);
     try {
-      const call = this.peer.call(remotePeerId, this.localStream);
+      const call = this.peer.call(remotePeerId, this.localStream, this.opcionesLlamada);
       if (!call) {
         if (retries > 0) this.programar(() => this.callUser(remotePeerId, retries - 1), 1500);
         return;

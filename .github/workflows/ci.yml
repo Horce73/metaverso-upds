@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - name: Lint
         run: npx oxlint
+      - name: Pruebas unitarias
+        run: npm run test:unidad
       - name: Tipos y build
         run: npm run build
 
