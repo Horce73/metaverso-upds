@@ -25,18 +25,41 @@ const token = params.get('token') ?? '';
 const espacioId = Number(params.get('espacio'));
 const salida = document.getElementById('estado')!;
 
+// ?paneo=equalpower fuerza ese modelo en todos los PannerNode del AudioClient,
+// para separar cuánto de la CPU se va en el audio espacial HRTF.
+const paneoForzado = params.get('paneo') as PanningModelType | null;
+if (paneoForzado) {
+  const descriptor = Object.getOwnPropertyDescriptor(PannerNode.prototype, 'panningModel')!;
+  Object.defineProperty(PannerNode.prototype, 'panningModel', {
+    ...descriptor,
+    set(this: PannerNode) {
+      descriptor.set!.call(this, paneoForzado);
+    },
+  });
+}
+
 const socket = io({ auth: { token }, transports: ['websocket'] });
 const peerIdsPorSocket = new Map<string, string>();
 let unido = false;
 let estadoVoz: EstadoVoz = 'iniciando';
+
+// Cada participante ocupa un lugar fijo, derivado de su peerId, dentro de un
+// aula de 20 × 20 m. Con todos en el origen, cada fuente HRTF queda encima del
+// oyente: un caso que la app nunca produce y que dispara la CPU del panner.
+const posicionDe = (id: string): [number, number, number] => {
+  let h = 0;
+  for (const c of id) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
+  return [((h % 1000) / 1000) * 20 - 10, 0, ((Math.floor(h / 1000) % 1000) / 1000) * 20 - 10];
+};
 
 const unirse = (peerId: string) => {
   socket.emit('join_space', { espacioId, user: { peerId } });
   unido = true;
 };
 
+const miPeerId = `carga_${Math.random().toString(36).slice(2, 10)}`;
 const cliente = new AudioClient(
-  `carga_${Math.random().toString(36).slice(2, 10)}`,
+  miPeerId,
   unirse,
   (err) => {
     salida.textContent = `error de voz: ${err?.message ?? err}`;
@@ -47,19 +70,24 @@ const cliente = new AudioClient(
   }
 );
 
+cliente.updateListenerPosition(posicionDe(miPeerId), [0, 0, 0]);
+
 // Igual que App.tsx: quien llega llama a los que ya estaban; los que ya
 // estaban no llaman al recién llegado (evita llamadas cruzadas).
 const alRecibirUsuarios = (usuarios: Record<string, { peerId?: string }>) => {
   Object.entries(usuarios).forEach(([socketId, u]) => {
     if (!u.peerId) return;
     peerIdsPorSocket.set(socketId, u.peerId);
+    cliente.updateSourcePosition(u.peerId, posicionDe(u.peerId));
     cliente.callUser(u.peerId);
   });
 };
 socket.on('space_users', alRecibirUsuarios);
 socket.on('current_users', alRecibirUsuarios);
 socket.on('user_joined', (data: { socketId: string; user: { peerId?: string } }) => {
-  if (data.user.peerId) peerIdsPorSocket.set(data.socketId, data.user.peerId);
+  if (!data.user.peerId) return;
+  peerIdsPorSocket.set(data.socketId, data.user.peerId);
+  cliente.updateSourcePosition(data.user.peerId, posicionDe(data.user.peerId));
 });
 socket.on('user_left', (data: { socketId: string }) => {
   const peerId = peerIdsPorSocket.get(data.socketId);
