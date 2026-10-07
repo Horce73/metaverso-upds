@@ -68,5 +68,6 @@ export const CUPOS_SOCKET: Record<string, [max: number, ventanaMs: number]> = {
   clase_iniciada: [5, 60_000],
   clase_finalizada: [5, 60_000],
   silenciar_todos: [5, 60_000],
+  preguntas: [30, 60_000],
   chat: [10, 10_000]
 };

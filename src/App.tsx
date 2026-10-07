@@ -16,6 +16,8 @@ import { SelectorMicrofono } from './components/SelectorMicrofono.js';
 import { PanelMateriales } from './components/PanelMateriales.js';
 import { VisorMaterial } from './components/VisorMaterial.js';
 import type { Material } from './components/materiales.js';
+import { ColaPreguntas } from './components/ColaPreguntas.js';
+import { SIN_PREGUNTAS, type EstadoPreguntas } from './components/preguntas.js';
 
 interface User {
   id: string;
@@ -124,6 +126,8 @@ function App() {
   // Materiales del aula (AULA-06)
   const [materialesAbierto, setMaterialesAbierto] = useState(false);
   const [materialAbierto, setMaterialAbierto] = useState<{ material: Material; aviso?: string } | null>(null);
+  // Levantar la mano y palabra (AULA-03), tal como lo publica el servidor
+  const [preguntas, setPreguntas] = useState<EstadoPreguntas>(SIN_PREGUNTAS);
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
 
@@ -329,6 +333,7 @@ function App() {
     setSilenciadosLocal(new Set());
     setMaterialesAbierto(false);
     setMaterialAbierto(null);
+    setPreguntas(SIN_PREGUNTAS);
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -429,6 +434,18 @@ function App() {
     activeSocket.off('join_aceptado');
     activeSocket.on('join_aceptado', (data: { roles: string[] }) => {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
+    });
+    activeSocket.off('estado_preguntas');
+    activeSocket.on('estado_preguntas', (estado: EstadoPreguntas) => {
+      setPreguntas((previo) => {
+        const mio = activeSocket.id;
+        if (estado.palabra?.socketId === mio && previo.palabra?.socketId !== mio) {
+          setAvisoVoz('🎤 Tienes la palabra: toda el aula te escucha. Activa tu micrófono si está apagado.');
+        }
+        const nuevas = estado.cola.filter((c) => !previo.cola.some((p) => p.socketId === c.socketId));
+        if (nuevas.length > 0 && esDocente) setAvisoVoz(`✋ ${nuevas.map((c) => c.nombre).join(', ')} levantó la mano`);
+        return estado;
+      });
     });
     activeSocket.off('material_mostrado');
     activeSocket.on('material_mostrado', (data: { material: Material; por: string }) => {
@@ -634,6 +651,11 @@ function App() {
     audioClient?.setMute(micMuted || (pulsarParaHablar && !pulsando));
   }, [audioClient, micMuted, pulsarParaHablar, pulsando]);
 
+  // Quien tiene la palabra difunde su voz a toda el aula (AULA-03)
+  useEffect(() => {
+    audioClient?.fijarPalabra(preguntas.palabra?.peerId || null, preguntas.palabra?.socketId === socketRef.current?.id);
+  }, [audioClient, preguntas.palabra]);
+
   useEffect(() => {
     try {
       localStorage.setItem('pulsarParaHablar', pulsarParaHablar ? '1' : '0');
@@ -775,6 +797,17 @@ function App() {
     user?.rol === 'docente' ||
     (Array.isArray((user as any)?.roles) && (user as any).roles.includes('docente'));
 
+  // AULA-03: mi lugar en la cola y si tengo la palabra
+  const miSocketId = socketRef.current?.id;
+  const posicionEnCola = preguntas.cola.findIndex((c) => c.socketId === miSocketId) + 1;
+  const manoLevantada = posicionEnCola > 0;
+  const tengoLaPalabra = !!miSocketId && preguntas.palabra?.socketId === miSocketId;
+  // Marca sobre el nombre de cada avatar: ✋ en la cola, 🎤 con la palabra
+  const marcasAula: Record<string, string> = Object.fromEntries([
+    ...preguntas.cola.map((c) => [c.socketId, '✋']),
+    ...(preguntas.palabra ? [[preguntas.palabra.socketId, '🎤']] : []),
+  ]);
+
   // 3. Ruta /admin (Panel de Administración)
   if (route === '/admin') {
     if (!isAdmin) {
@@ -809,6 +842,8 @@ function App() {
           espacios={espacios}
           spawnPosicion={spawnPosicion}
           onPositionChange={handleAvatarPositionChange}
+          marcas={marcasAula}
+          marcaLocal={miSocketId ? marcasAula[miSocketId] : undefined}
           onInteractuarAula={(espacioSeleccionado) => setSolicitudAulaModal(espacioSeleccionado)}
           onUpdateAvatarPersonalization={(nuevaApariencia) => {
             setAvatar((prev) => {
@@ -1307,6 +1342,14 @@ function App() {
           </form>
         </div>
 
+        {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
+          <ColaPreguntas
+            estado={preguntas}
+            onCeder={(socketId) => socketRef.current?.emit('ceder_palabra', { socketId })}
+            onQuitar={() => socketRef.current?.emit('quitar_palabra')}
+          />
+        )}
+
         {avisoVoz && (
           <div className="aviso-voz" role="status">
             {avisoVoz}
@@ -1348,6 +1391,23 @@ function App() {
           {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
             <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes">
               🤫
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && !(isDocente || isAdmin) && !tengoLaPalabra && (
+            <button
+              className={`control-btn ${manoLevantada ? 'active' : ''}`}
+              onClick={() => socketRef.current?.emit(manoLevantada ? 'bajar_mano' : 'levantar_mano')}
+              aria-pressed={manoLevantada}
+              title={manoLevantada ? `Bajar la mano (turno ${posicionEnCola} de ${preguntas.cola.length})` : 'Levantar la mano'}
+            >
+              ✋
+            </button>
+          )}
+
+          {tengoLaPalabra && (
+            <button className="boton-pulsar-hablar hablando" onClick={() => socketRef.current?.emit('quitar_palabra')}>
+              🎤 Tienes la palabra · Terminar
             </button>
           )}
 

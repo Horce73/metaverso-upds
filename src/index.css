@@ -3049,6 +3049,78 @@ main>h2:first-child {
   color: inherit;
 }
 
+/* ===== COLA DE PREGUNTAS (AULA-03) ===== */
+.cola-preguntas {
+  position: fixed;
+  /* Debajo del encabezado del aula, que tiene los botones del docente */
+  top: 170px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 650;
+  width: min(420px, calc(100vw - 32px));
+  max-height: 40vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.cola-preguntas .btn-primary,
+.cola-preguntas .btn-secondary {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.cola-preguntas__palabra {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.cola-preguntas__titulo {
+  font-weight: 600;
+}
+
+.cola-preguntas__lista {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.cola-preguntas__lista li {
+  padding: 4px 0;
+}
+
+.cola-preguntas__lista li > * {
+  vertical-align: middle;
+}
+
+.cola-preguntas__nombre {
+  display: inline-block;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cola-preguntas__espera {
+  margin: 0 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.cola-preguntas__lista .btn-primary {
+  float: right;
+}
+
 /* ===== SELECTOR DE MICRÓFONO (VOZ-08) ===== */
 .selector-microfono {
   display: flex;

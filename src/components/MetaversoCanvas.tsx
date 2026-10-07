@@ -46,6 +46,9 @@ interface MetaversoCanvasProps {
   onInteractuarAula?: (espacio: any) => void;
   onUpdateAvatarPersonalization?: (nueva: PersonalizacionAvatar) => void;
   onPositionChange?: (pos: [number, number, number], rot: [number, number, number]) => void;
+  /** socketId -> marca que se antepone al nombre (✋ mano levantada, 🎤 con la palabra). */
+  marcas?: Record<string, string>;
+  marcaLocal?: string;
 }
 
 // Subcomponente de Controles de Movimiento y Cámara del Jugador Local
@@ -53,6 +56,7 @@ const LocalPlayerController: React.FC<{
   socket: Socket;
   audioClient: AudioClient | null;
   localAvatar: any;
+  marca?: string;
   personalizacion: PersonalizacionAvatar;
   avatarEstadoRef: React.MutableRefObject<AvatarEstadoRef>;
   isAula: boolean;
@@ -66,6 +70,7 @@ const LocalPlayerController: React.FC<{
   socket,
   audioClient,
   localAvatar,
+  marca,
   personalizacion,
   avatarEstadoRef,
   isAula,
@@ -115,7 +120,7 @@ const LocalPlayerController: React.FC<{
 
   return (
     <AvatarModel
-      nombre={localAvatar?.nombre_visible || 'Tú'}
+      nombre={`${marca ? `${marca} ` : ''}${localAvatar?.nombre_visible || 'Tú'}`}
       personalizacion={personalizacion}
       position={initialPos}
       rotation={initialRot}
@@ -379,6 +384,8 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   onInteractuarAula,
   onUpdateAvatarPersonalization,
   onPositionChange,
+  marcas,
+  marcaLocal,
 }) => {
   const aulas = React.useMemo<AulaCampus[]>(
     () =>
@@ -658,6 +665,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           socket={socket}
           audioClient={audioClient}
           localAvatar={localAvatar}
+          marca={marcaLocal}
           personalizacion={personalizacion}
           avatarEstadoRef={avatarEstadoRef}
           isAula={isAula}
@@ -692,7 +700,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
             return (
               <AvatarModel
                 key={socketId}
-                nombre={u.nombreVisible || 'Estudiante'}
+                nombre={`${marcas?.[socketId] ? `${marcas[socketId]} ` : ''}${u.nombreVisible || 'Estudiante'}`}
                 personalizacion={aparienciaRemota}
                 position={u.position || [0, 0, 0]}
                 rotation={u.rotation || [0, 0, 0]}

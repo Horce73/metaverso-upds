@@ -113,6 +113,10 @@ socket.on('join_aceptado', (data: { roles: string[] }) => {
   cliente.configurarZonas('aula', esDifusor(data.roles, 'aula'));
   socket.emit('move', { position: miPosicion, rotation: [0, 0, 0], estaSentado: false });
 });
+// Igual que App.tsx: quien tiene la palabra (AULA-03) difunde a toda el aula
+socket.on('estado_preguntas', (estado: { palabra: { socketId: string; peerId: string } | null }) => {
+  cliente.fijarPalabra(estado.palabra?.peerId || null, estado.palabra?.socketId === socket.id);
+});
 socket.on('space_users', alRecibirUsuarios);
 socket.on('current_users', alRecibirUsuarios);
 socket.on('user_joined', (data: { socketId: string; user: UsuarioRemoto }) => {
