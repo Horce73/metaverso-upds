@@ -1,5 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Socket } from 'socket.io-client';
+import { dibujarTramo, redibujarTodo, nuevoIdTrazo, suscribirPizarra, type Punto, type Trazo } from './pizarra.js';
 
 interface Pizarra2DProps {
   socket: Socket;
@@ -12,24 +13,22 @@ interface Pizarra2DProps {
   onClose: () => void;
 }
 
-interface Stroke {
-  // Coordenadas y grosor normalizados como fracción (0..1) del tamaño lógico
-  // del canvas emisor, para que cualquier superficie que reciba el trazo
-  // (el panel 2D de otro tamaño, o la textura del pizarrón 3D del aula) lo
-  // pueda redibujar proporcionalmente sin importar su resolución.
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-  color: string;
-  width: number;
-  /** Id del socket emisor, agregado por el servidor al retransmitir. */
-  senderSocketId?: string;
-}
+const COLORES = ['#ffffff', '#ff4c8b', '#3b82f6', '#10b981', '#f59e0b'];
+// Los puntos que se dibujan se envían en lotes, no uno por movimiento del mouse
+const INTERVALO_LOTE_MS = 50;
+// Distancia mínima (fracción del ancho) entre puntos consecutivos de un trazo
+const DISTANCIA_MINIMA = 0.0015;
+// Resolución del canvas respecto a su tamaño en pantalla
+const ESCALA = 2;
 
+type ApiPizarra = ReturnType<typeof suscribirPizarra>;
+
+// Pizarra por operaciones (AULA-02): cada trazo, de que se apoya el lápiz a
+// que se levanta, es una operación con id. Se envía por lotes mientras se
+// dibuja, el servidor la guarda, y cada uno puede deshacer las suyas.
+// Funciona con mouse, pantalla táctil y lápiz (eventos de puntero).
 export const Pizarra2D: React.FC<Pizarra2DProps> = ({
   socket,
-  espacioId,
   sesionId,
   puedeDibujar,
   puedeAdministrar,
@@ -37,55 +36,47 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
+  const pizarraRef = useRef<ApiPizarra | null>(null);
+  const enCursoRef = useRef<{ trazo: Trazo; pendientes: Punto[] } | null>(null);
+  // Ids de mis trazos terminados, para deshacer en orden inverso
+  const propiosRef = useRef<string[]>([]);
   const [color, setColor] = useState('#ffffff');
   const [lineWidth, setLineWidth] = useState(4);
-  const [strokesHistory, setStrokesHistory] = useState<Stroke[]>([]);
+  const [hayPropios, setHayPropios] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // Ajustar dimensiones del Canvas. Corre una sola vez al montar: antes esto
-  // dependía de `strokesHistory.length` y por lo tanto re-dimensionaba (lo
-  // que limpia el canvas) y redibujaba TODO el historial en cada trazo nuevo
-  // (incluso en cada movimiento del mouse mientras se dibuja), degradando el
-  // rendimiento a medida que crecía el historial.
+  const tamano = () => {
+    const canvas = canvasRef.current!;
+    return { w: canvas.width / ESCALA, h: canvas.height / ESCALA };
+  };
+
+  // Tamaño del canvas al montar, y suscripción a la pizarra del aula
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
-    // Obtener las dimensiones del contenedor padre
     const rect = canvas.parentElement?.getBoundingClientRect();
-    canvas.width = (rect?.width || 800) * 2; // Alta resolución (Retina)
-    canvas.height = (rect?.height || 500) * 2;
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
-
+    canvas.width = (rect?.width || 800) * ESCALA;
+    canvas.height = (rect?.height || 500) * ESCALA;
     const context = canvas.getContext('2d');
     if (!context) return;
-    context.scale(2, 2);
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.strokeStyle = color;
-    context.lineWidth = lineWidth;
+    context.scale(ESCALA, ESCALA);
     contextRef.current = context;
-  }, []);
 
-  // Escuchar trazos, borrado y estado inicial del pizarrón. El servidor
-  // difunde también al propio emisor (para que el pizarrón 3D del aula se
-  // sincronice sin depender de que el panel esté abierto), así que acá hay
-  // que ignorar el eco de los trazos que este mismo cliente ya dibujó.
-  // Se usan handlers con nombre (y `.off(evento, handler)` puntual) porque
-  // este mismo socket también es escuchado por el pizarrón 3D del aula:
-  // un `.off(evento)` a secas borraría también ese listener al cerrar el panel.
-  useEffect(() => {
-    const handleStroke = (stroke: Stroke) => {
-      if (stroke.senderSocketId === socket.id) return;
-      drawStrokeOnCanvas(stroke);
-      setStrokesHistory((prev) => [...prev, stroke]);
-    };
-
-    const handleBoardCleared = () => {
-      clearLocalCanvas();
-    };
+    const pizarra = suscribirPizarra(socket, {
+      ignorarPropios: true,
+      onTramo: (trazo, desde) => {
+        const { w, h } = tamano();
+        dibujarTramo(context, w, h, trazo, desde);
+      },
+      onRedibujar: (trazos) => {
+        const { w, h } = tamano();
+        redibujarTodo(context, w, h, trazos, null);
+        // Lo que ya no está (deshecho o borrado) deja de poder deshacerse
+        propiosRef.current = propiosRef.current.filter((id) => pizarra.trazos.has(id));
+        setHayPropios(propiosRef.current.length > 0);
+      },
+    });
+    pizarraRef.current = pizarra;
 
     const handleSavedStatus = (data: { success: boolean }) => {
       if (data.success) {
@@ -95,131 +86,104 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
         setSaveStatus('error');
       }
     };
-
-    // Estado actual del pizarrón: si el docente ya venía escribiendo antes
-    // de que este panel se abriera, acá se recibe y redibuja lo ya trazado
-    // en vez de arrancar con un pizarrón en blanco.
-    const handlePizarraState = (data: { trazos: Stroke[] }) => {
-      const canvas = canvasRef.current;
-      const context = contextRef.current;
-      if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
-      data.trazos.forEach((stroke) => drawStrokeOnCanvas(stroke));
-      setStrokesHistory(data.trazos);
-    };
-
-    socket.on('stroke_received', handleStroke);
-    socket.on('board_cleared', handleBoardCleared);
     socket.on('pizarra_saved_status', handleSavedStatus);
-    socket.on('pizarra_state', handlePizarraState);
-    socket.emit('get_pizarra_state', { espacioId });
 
     return () => {
-      socket.off('stroke_received', handleStroke);
-      socket.off('board_cleared', handleBoardCleared);
+      pizarra.dejar();
       socket.off('pizarra_saved_status', handleSavedStatus);
-      socket.off('pizarra_state', handlePizarraState);
     };
-  }, [socket, espacioId]);
+  }, [socket]);
 
-  // Dibujar un trazo en el Canvas. Las coordenadas del trazo vienen
-  // normalizadas (0..1); se escalan al tamaño lógico actual de este canvas.
-  const drawStrokeOnCanvas = (stroke: Stroke) => {
-    const context = contextRef.current;
-    const canvas = canvasRef.current;
-    if (!context || !canvas) return;
+  const enviar = useCallback(
+    (fin: boolean) => {
+      const enCurso = enCursoRef.current;
+      if (!enCurso || (!fin && enCurso.pendientes.length === 0)) return;
+      const { trazo } = enCurso;
+      const puntos = enCurso.pendientes.splice(0);
+      socket.emit('pizarra_trazo', { id: trazo.id, color: trazo.color, grosor: trazo.grosor, puntos, fin });
+    },
+    [socket]
+  );
 
-    const w = canvas.width / 2;
-    const h = canvas.height / 2;
+  // Lotes periódicos mientras se dibuja
+  useEffect(() => {
+    const id = setInterval(() => enviar(false), INTERVALO_LOTE_MS);
+    return () => clearInterval(id);
+  }, [enviar]);
 
-    context.beginPath();
-    context.strokeStyle = stroke.color;
-    context.lineWidth = stroke.width * w;
-    context.moveTo(stroke.x0 * w, stroke.y0 * h);
-    context.lineTo(stroke.x1 * w, stroke.y1 * h);
-    context.stroke();
-    context.closePath();
+  const puntoDe = (e: React.PointerEvent<HTMLCanvasElement>): Punto => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const redondear = (v: number) => Math.round(v * 10000) / 10000;
+    return [redondear((e.clientX - rect.left) / rect.width), redondear((e.clientY - rect.top) / rect.height)];
   };
 
-  // Limpiar el Canvas localmente
-  const clearLocalCanvas = () => {
-    const canvas = canvasRef.current;
+  const agregarPunto = (p: Punto) => {
+    const enCurso = enCursoRef.current;
     const context = contextRef.current;
-    if (!canvas || !context) return;
-
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    setStrokesHistory([]);
+    if (!enCurso || !context) return;
+    const { trazo } = enCurso;
+    const ultimo = trazo.puntos[trazo.puntos.length - 1];
+    if (ultimo && Math.hypot(p[0] - ultimo[0], p[1] - ultimo[1]) < DISTANCIA_MINIMA) return;
+    trazo.puntos.push(p);
+    enCurso.pendientes.push(p);
+    const { w, h } = tamano();
+    dibujarTramo(context, w, h, trazo, trazo.puntos.length - 1);
   };
+
+  const empezar = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!puedeDibujar || enCursoRef.current) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const { w } = tamano();
+    const trazo: Trazo = { id: nuevoIdTrazo(), color, grosor: lineWidth / w, puntos: [] };
+    pizarraRef.current?.trazos.set(trazo.id, trazo);
+    enCursoRef.current = { trazo, pendientes: [] };
+    agregarPunto(puntoDe(e));
+  };
+
+  const mover = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!enCursoRef.current) return;
+    // Con lápiz o táctil el navegador agrupa movimientos: se usan todos
+    const eventos = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
+    if (eventos.length > 1) {
+      const rect = canvasRef.current!.getBoundingClientRect();
+      eventos.forEach((ev) => agregarPunto([(ev.clientX - rect.left) / rect.width, (ev.clientY - rect.top) / rect.height]));
+    } else {
+      agregarPunto(puntoDe(e));
+    }
+  };
+
+  const terminar = () => {
+    const enCurso = enCursoRef.current;
+    if (!enCurso) return;
+    enviar(true);
+    enCursoRef.current = null;
+    propiosRef.current.push(enCurso.trazo.id);
+    setHayPropios(true);
+  };
+
+  // Deshacer mi último trazo: el servidor lo marca y avisa a toda el aula
+  const deshacer = useCallback(() => {
+    const id = propiosRef.current.pop();
+    setHayPropios(propiosRef.current.length > 0);
+    if (id) socket.emit('pizarra_deshacer', { id });
+  }, [socket]);
+
+  useEffect(() => {
+    if (!puedeDibujar) return;
+    const alPulsar = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        deshacer();
+      }
+    };
+    window.addEventListener('keydown', alPulsar);
+    return () => window.removeEventListener('keydown', alPulsar);
+  }, [puedeDibujar, deshacer]);
 
   // Enviar evento de limpiar pizarra a todos (solo docente/admin)
   const handleClearBoard = () => {
     if (!puedeAdministrar) return;
-    clearLocalCanvas();
-    socket.emit('clear_board', { espacioId });
-  };
-
-  // Iniciar trazo (mouse o táctil)
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!puedeDibujar) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setIsDrawing(true);
-    
-    // Guardar posición inicial del trazo temporalmente en el ref
-    // @ts-ignore
-    canvas.lastX = x;
-    // @ts-ignore
-    canvas.lastY = y;
-  };
-
-  // Dibujar mientras se mueve el mouse
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    const context = contextRef.current;
-    if (!canvas || !context) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // @ts-ignore
-    const x0 = canvas.lastX;
-    // @ts-ignore
-    const y0 = canvas.lastY;
-
-    const w = canvas.width / 2;
-    const h = canvas.height / 2;
-    const stroke: Stroke = {
-      x0: x0 / w,
-      y0: y0 / h,
-      x1: x / w,
-      y1: y / h,
-      color,
-      width: lineWidth / w
-    };
-
-    // Dibujar localmente
-    drawStrokeOnCanvas(stroke);
-    setStrokesHistory((prev) => [...prev, stroke]);
-
-    // Emitir por sockets al servidor
-    socket.emit('draw_stroke', { espacioId, stroke });
-
-    // Actualizar posición anterior
-    // @ts-ignore
-    canvas.lastX = x;
-    // @ts-ignore
-    canvas.lastY = y;
-  };
-
-  // Detener trazo
-  const stopDrawing = () => {
-    setIsDrawing(false);
+    socket.emit('clear_board');
   };
 
   // Guardar Pizarra en DB (RF-04) — solo docente/admin
@@ -228,7 +192,7 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
     setSaveStatus('saving');
     socket.emit('save_pizarra', {
       sesionId,
-      trazos: strokesHistory
+      trazos: [...(pizarraRef.current?.trazos.values() ?? [])]
     });
   };
 
@@ -243,31 +207,16 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
           {/* Herramientas de Dibujo: cualquiera con permiso de escritura elige su color/grosor */}
           {puedeDibujar && (
             <>
-              <button
-                className="color-dot active"
-                style={{ backgroundColor: '#ffffff' }}
-                onClick={() => setColor('#ffffff')}
-              />
-              <button
-                className="color-dot"
-                style={{ backgroundColor: '#ff4c8b' }}
-                onClick={() => setColor('#ff4c8b')}
-              />
-              <button
-                className="color-dot"
-                style={{ backgroundColor: '#3b82f6' }}
-                onClick={() => setColor('#3b82f6')}
-              />
-              <button
-                className="color-dot"
-                style={{ backgroundColor: '#10b981' }}
-                onClick={() => setColor('#10b981')}
-              />
-              <button
-                className="color-dot"
-                style={{ backgroundColor: '#f59e0b' }}
-                onClick={() => setColor('#f59e0b')}
-              />
+              {COLORES.map((c) => (
+                <button
+                  key={c}
+                  className={`color-dot ${color === c ? 'active' : ''}`}
+                  style={{ backgroundColor: c }}
+                  onClick={() => setColor(c)}
+                  aria-label={`Color ${c}`}
+                  aria-pressed={color === c}
+                />
+              ))}
 
               <select
                 value={lineWidth}
@@ -278,6 +227,16 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
                 <option value={4}>Medio</option>
                 <option value={8}>Grueso</option>
               </select>
+
+              <button
+                className="btn-secondary"
+                style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                onClick={deshacer}
+                disabled={!hayPropios}
+                title="Deshacer mi último trazo (Ctrl+Z)"
+              >
+                ↶ Deshacer
+              </button>
             </>
           )}
 
@@ -309,10 +268,11 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
         <canvas
           ref={canvasRef}
           className="pizarra-canvas"
-          onMouseDown={puedeDibujar ? startDrawing : undefined}
-          onMouseMove={puedeDibujar ? draw : undefined}
-          onMouseUp={puedeDibujar ? stopDrawing : undefined}
-          onMouseLeave={puedeDibujar ? stopDrawing : undefined}
+          style={{ width: '100%', height: '100%', touchAction: puedeDibujar ? 'none' : 'auto' }}
+          onPointerDown={puedeDibujar ? empezar : undefined}
+          onPointerMove={puedeDibujar ? mover : undefined}
+          onPointerUp={puedeDibujar ? terminar : undefined}
+          onPointerCancel={puedeDibujar ? terminar : undefined}
         />
       </div>
     </div>

@@ -13,6 +13,7 @@ import {
   quitarPalabra,
   salirDelAula,
 } from './preguntas.js';
+import { validarLote, agregarLote, cerrarTrazo, cerrarTrazosDe, trazosVisibles, deshacerTrazo, borrarTodo } from './pizarra.js';
 import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detenerPantalla, pantallaDe } from './pantalla.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
@@ -39,13 +40,6 @@ interface UserState {
 
 const activeUsers = new Map<string, UserState>();
 
-// Estado en memoria del contenido actual del pizarrón por espacio, para que
-// quien entra al aula DESPUÉS de que ya se dibujó algo (el caso más común en
-// una clase real) reciba lo ya dibujado en vez de ver el pizarrón en blanco.
-// Es un buffer efímero (se pierde al reiniciar el servidor); la persistencia
-// real a largo plazo sigue siendo 'save_pizarra' -> tabla pizarra_snapshots.
-const pizarronState = new Map<string, any[]>();
-const MAX_TRAZOS_POR_ESPACIO = 4000;
 
 async function obtenerRoles(userId: number): Promise<string[]> {
   if (!userId) return [];
@@ -192,6 +186,7 @@ export function setupSockets(io: Server) {
       if (prevUser && prevUser.espacioId !== nuevoEspacioId) {
         socket.leave(String(prevUser.espacioId));
         dejarAula(prevUser.espacioId, socket.id);
+        await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
         socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
         if (prevUser.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(prevUser.userId, prevUser.position, prevUser.rotation);
@@ -267,37 +262,58 @@ export function setupSockets(io: Server) {
       }
     });
 
-    // Los eventos de sala actuan siempre sobre el espacio al que el socket se
-    // unio; el espacioId del payload se ignora para no escribir en aulas ajenas.
-    on('draw_stroke', 'draw_stroke', (data: { stroke: any }) => {
+    // Pizarra por operaciones (AULA-02). Los eventos actúan siempre sobre el
+    // aula a la que el socket se unió; el espacioId del payload se ignora.
+    // Los lotes se difunden a TODA la sala (incluido el emisor) para que su
+    // propio pizarrón 3D quede al día; su panel 2D, que ya los dibujó, los
+    // reconoce por autorSocketId y no los repite.
+    on('pizarra_trazo', 'pizarra', async (data: unknown) => {
       const user = activeUsers.get(socket.id);
-      if (!user || !puedeDibujar(user.roles)) return;
-      // Se difunde a TODA la sala (incluido el emisor) para que el pizarrón
-      // 3D del aula quede sincronizado incluso para quien no tiene el panel
-      // 2D abierto. El emisor se marca para que su propio panel 2D (que ya
-      // dibujó el trazo localmente) no lo vuelva a dibujar por duplicado.
-      const key = String(user.espacioId);
-      const trazoConId = { ...data.stroke, senderSocketId: socket.id };
-      const trazos = pizarronState.get(key) || [];
-      trazos.push(trazoConId);
-      if (trazos.length > MAX_TRAZOS_POR_ESPACIO) trazos.shift();
-      pizarronState.set(key, trazos);
-      io.to(key).emit('stroke_received', trazoConId);
+      if (!user || user.espacioTipo !== 'aula' || !puedeDibujar(user.roles)) return;
+      const lote = validarLote(data);
+      if (!lote) return;
+      const reenviar = agregarLote(lote, user.espacioId, user.userId, socket.id);
+      if (!reenviar) return;
+      io.to(String(user.espacioId)).emit('pizarra_trazo', { ...reenviar, autorSocketId: socket.id });
+      if (reenviar.fin) {
+        await cerrarTrazo(reenviar.id).catch((err) => console.error('Error al guardar trazo:', err));
+      }
     });
 
-    on('clear_board', 'clear_board', () => {
+    // Deshacer un trazo: el autor el suyo; docente o admin, cualquiera
+    on('pizarra_deshacer', 'pizarra', async (data: { id?: unknown }) => {
       const user = activeUsers.get(socket.id);
-      if (!user || !esDocenteOAdmin(user.roles)) return;
-      pizarronState.set(String(user.espacioId), []);
-      io.to(String(user.espacioId)).emit('board_cleared');
+      if (!user || user.espacioTipo !== 'aula') return;
+      try {
+        if (await deshacerTrazo(String(data?.id ?? ''), user.espacioId, user.userId, esDocenteOAdmin(user.roles))) {
+          io.to(String(user.espacioId)).emit('pizarra_borrado', { ids: [String(data?.id)] });
+        }
+      } catch (err) {
+        console.error('Error al deshacer trazo:', err);
+      }
     });
 
-    // Estado actual del pizarrón, para quien recién abre el panel 2D o entra
-    // a la escena 3D del aula y necesita ver lo que ya se dibujó antes.
-    on('get_pizarra_state', 'get_pizarra_state', () => {
+    on('clear_board', 'clear_board', async () => {
       const user = activeUsers.get(socket.id);
-      if (!user) return;
-      socket.emit('pizarra_state', { trazos: pizarronState.get(String(user.espacioId)) || [] });
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(user.roles)) return;
+      try {
+        await borrarTodo(user.espacioId);
+        io.to(String(user.espacioId)).emit('board_cleared');
+      } catch (err) {
+        console.error('Error al borrar la pizarra:', err);
+      }
+    });
+
+    // Estado actual de la pizarra, para quien abre el panel 2D o entra a la
+    // escena 3D del aula: lo guardado más lo que se está dibujando.
+    on('get_pizarra_state', 'get_pizarra_state', async () => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula') return;
+      try {
+        socket.emit('pizarra_state', { trazos: await trazosVisibles(user.espacioId) });
+      } catch (err) {
+        console.error('Error al leer la pizarra:', err);
+      }
     });
 
     on('save_pizarra', 'save_pizarra', async (data: {
@@ -483,6 +499,8 @@ export function setupSockets(io: Server) {
         socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
         dejarAula(user.espacioId, socket.id);
+        // Un trazo a medias se guarda con lo que alcanzó a dibujar
+        await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
         await registrarSalida(user.userId, user.espacioId);
         if (user.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(user.userId, user.position, user.rotation);

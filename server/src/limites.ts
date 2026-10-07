@@ -54,12 +54,13 @@ export function limitador(max: number, ventanaMs: number): () => boolean {
   };
 }
 
-// Cupos por evento de socket. `draw_stroke` se emite por cada movimiento del
-// mouse y `move` a 25 por segundo, de ahi su holgura.
+// Cupos por evento de socket. `move` se emite a 25 por segundo y los lotes de
+// la pizarra cada ~50 ms mientras se dibuja, de ahi su holgura.
 export const CUPOS_SOCKET: Record<string, [max: number, ventanaMs: number]> = {
   join_space: [10, 60_000],
   move: [40, 1_000],
-  draw_stroke: [150, 1_000],
+  // Lotes de puntos de la pizarra (uno cada ~50 ms mientras se dibuja) y deshacer
+  pizarra: [60, 1_000],
   clear_board: [10, 10_000],
   get_pizarra_state: [20, 10_000],
   save_pizarra: [5, 60_000],

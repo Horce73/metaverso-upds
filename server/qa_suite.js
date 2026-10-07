@@ -438,12 +438,88 @@ async function runTests() {
     return msg?.text === 'hola QA' && msg.sender !== 'Ing. Mendoza';
   });
 
+  // AULA-02: pizarra por operaciones (un trazo = una operación con id)
+  const idTrazo = () => `qa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const lote = (id, extra = {}) => ({ id, color: '#3b82f6', grosor: 0.004, puntos: [[0.1, 0.1], [0.2, 0.25]], fin: false, ...extra });
+  const trazoDeAna = idTrazo();
+
   await caso('Un trazo dirigido a otra aula queda en la sala del emisor', async () => {
-    const enOtra = esperarEvento(sMaria, 'stroke_received', 800);
-    const enPropia = esperarEvento(sDocente, 'stroke_received', 800);
-    sAna.emit('draw_stroke', { espacioId: otraAulaId, stroke: { puntos: [[0, 0]], qa: true } });
+    const enOtra = esperarEvento(sMaria, 'pizarra_trazo', 800);
+    const enPropia = esperarEvento(sDocente, 'pizarra_trazo', 800, (d) => d?.id === trazoDeAna);
+    sAna.emit('pizarra_trazo', { ...lote(trazoDeAna), espacioId: otraAulaId });
     const [otra, propia] = await Promise.all([enOtra, enPropia]);
-    return otra === null && propia?.qa === true;
+    return otra === null && propia?.autorSocketId === sAna.id && propia.puntos.length === 2;
+  });
+
+  await caso('Un lote mal formado no se difunde (color, coordenadas, id, tamaño)', async () => {
+    const recibido = esperarEvento(sDocente, 'pizarra_trazo', 1000, (d) => d?.id?.startsWith('qa-malo'));
+    sAna.emit('pizarra_trazo', lote('qa-malo-1-xxxx', { color: 'red;background:url(x)' }));
+    sAna.emit('pizarra_trazo', lote('qa-malo-2-xxxx', { puntos: [[0.1, 99]] }));
+    sAna.emit('pizarra_trazo', lote('../../etc/passwd'));
+    sAna.emit('pizarra_trazo', lote('qa-malo-3-xxxx', { puntos: Array.from({ length: 201 }, () => [0.5, 0.5]) }));
+    return (await recibido) === null;
+  });
+
+  await caso('Otro socket no puede continuar un trazo ajeno en curso', async () => {
+    const recibido = esperarEvento(sAna, 'pizarra_trazo', 800, (d) => d?.id === trazoDeAna && d.autorSocketId === sDocente.id);
+    sDocente.emit('pizarra_trazo', lote(trazoDeAna, { puntos: [[0.9, 0.9]] }));
+    return (await recibido) === null;
+  });
+
+  await caso('Al terminar, el trazo se guarda con sus puntos y la clase en curso', async () => {
+    sAna.emit('pizarra_trazo', lote(trazoDeAna, { puntos: [[0.3, 0.3]], fin: true }));
+    const filas = await esperarFila(
+      `SELECT jsonb_array_length(t.puntos) AS n, t.sesion_id, t.usuario_id FROM pizarra_trazos t WHERE t.id = $1`, [trazoDeAna]
+    );
+    const { rows: sesion } = await pool.query(
+      "SELECT id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso'", [aulaId]
+    );
+    return filas[0]?.n === 3 && filas[0].usuario_id === ana.id && filas[0].sesion_id === sesion[0]?.id;
+  });
+
+  await caso('Quien abre la pizarra recibe los trazos guardados', async () => {
+    const estado = esperarEvento(sDocente, 'pizarra_state', 1500);
+    sDocente.emit('get_pizarra_state');
+    const { trazos } = (await estado) || { trazos: [] };
+    return trazos.some((t) => t.id === trazoDeAna && t.puntos.length === 3);
+  });
+
+  await caso('Otro alumno no puede deshacer un trazo ajeno; el autor sí, y el aula se entera', async () => {
+    // María entra al aula para probar como "otro alumno"
+    await entrar(sMaria, aulaId);
+    const ajeno = esperarEvento(sDocente, 'pizarra_borrado', 800);
+    sMaria.emit('pizarra_deshacer', { id: trazoDeAna });
+    if ((await ajeno) !== null) return false;
+    const borrado = esperarEvento(sDocente, 'pizarra_borrado', 1500, (d) => d?.ids?.includes(trazoDeAna));
+    sAna.emit('pizarra_deshacer', { id: trazoDeAna });
+    if ((await borrado) === null) return false;
+    const estado = esperarEvento(sDocente, 'pizarra_state', 1500);
+    sDocente.emit('get_pizarra_state');
+    const { trazos } = (await estado) || { trazos: [] };
+    await entrar(sMaria, otraAulaId);
+    return !trazos.some((t) => t.id === trazoDeAna);
+  });
+
+  await caso('Deshacer justo al terminar un trazo funciona (espera a que se guarde)', async () => {
+    const id = idTrazo();
+    const borrado = esperarEvento(sDocente, 'pizarra_borrado', 2000, (d) => d?.ids?.includes(id));
+    sAna.emit('pizarra_trazo', lote(id, { fin: true }));
+    sAna.emit('pizarra_deshacer', { id });
+    return (await borrado) !== null;
+  });
+
+  await caso('Un estudiante no puede borrar toda la pizarra; el docente sí', async () => {
+    const id = idTrazo();
+    sAna.emit('pizarra_trazo', lote(id, { fin: true }));
+    await esperarFila('SELECT 1 FROM pizarra_trazos WHERE id = $1', [id]);
+    const porAlumno = esperarEvento(sDocente, 'board_cleared', 800);
+    sAna.emit('clear_board');
+    if ((await porAlumno) !== null) return false;
+    const porDocente = esperarEvento(sAna, 'board_cleared', 1500);
+    sDocente.emit('clear_board');
+    if ((await porDocente) === null) return false;
+    const { rows } = await pool.query('SELECT borrado_en FROM pizarra_trazos WHERE id = $1', [id]);
+    return rows[0]?.borrado_en !== null;
   });
 
   await caso('Un estudiante no puede anunciar el inicio de una clase', async () => {
