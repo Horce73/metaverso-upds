@@ -113,6 +113,8 @@ socket.on('join_aceptado', (data: { roles: string[] }) => {
   cliente.configurarZonas('aula', esDifusor(data.roles, 'aula'));
   socket.emit('move', { position: miPosicion, rotation: [0, 0, 0], estaSentado: false });
 });
+// Igual que App.tsx: con el trabajo en grupos (AULA-07) la voz queda en la mesa
+socket.on('modo_grupos', (data: { activo: boolean }) => cliente.fijarModoGrupos(data.activo));
 // Igual que App.tsx: quien tiene la palabra (AULA-03) difunde a toda el aula
 socket.on('estado_preguntas', (estado: { palabra: { socketId: string; peerId: string } | null }) => {
   cliente.fijarPalabra(estado.palabra?.peerId || null, estado.palabra?.socketId === socket.id);

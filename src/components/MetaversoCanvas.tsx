@@ -21,6 +21,7 @@ import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { Pupitre, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { crearTexturaTexto } from './mundo3d/texto3d.js';
 import { suscribirPizarra, dibujarTramo, redibujarTodo } from './pizarra.js';
+import { MESAS_AULA } from './zonasVoz.js';
 
 export interface AsientoInteractive {
   x: number;
@@ -52,6 +53,8 @@ interface MetaversoCanvasProps {
   marcaLocal?: string;
   /** Última imagen de la pantalla compartida en el aula (AULA-01), como blob URL. */
   pantallaUrl?: string | null;
+  /** Trabajo en grupos (AULA-07): se marcan las mesas en el piso. */
+  modoGrupos?: boolean;
 }
 
 // Subcomponente de Controles de Movimiento y Cámara del Jugador Local
@@ -225,7 +228,46 @@ const PantallaProyector: React.FC<{ url: string }> = ({ url }) => {
   );
 };
 
-const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null }> = ({ socket, pantallaUrl }) => {
+// Mesas de trabajo (AULA-07): mientras el trabajo en grupos está activo, cada
+// mesa se ve como una alfombra numerada; dentro, la voz queda en la mesa.
+const COLORES_MESA = ['#2563eb', '#059669', '#d97706', '#db2777', '#7c3aed', '#0891b2'];
+
+const MesasDeTrabajo: React.FC = () => (
+  <group>
+    {MESAS_AULA.map((m, i) => {
+      const ancho = m.x1 - m.x0;
+      const fondo = m.z1 - m.z0;
+      const color = COLORES_MESA[i % COLORES_MESA.length];
+      return (
+        <group key={m.id} position={[(m.x0 + m.x1) / 2, 0, (m.z0 + m.z1) / 2]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+            <planeGeometry args={[ancho, fondo]} />
+            <meshStandardMaterial color={color} transparent opacity={0.28} />
+          </mesh>
+          <sprite position={[m.x0 < 0 ? -ancho / 2 + 1.2 : ancho / 2 - 1.2, 2.6, 0]} scale={[2.2, 0.6, 1]}>
+            <spriteMaterial
+              attach="material"
+              map={crearTexturaTexto(`👥 Mesa ${m.id}`, {
+                ancho: 360,
+                alto: 100,
+                fondo: color,
+                color: '#ffffff',
+                fuente: 'bold 44px sans-serif',
+              })}
+              transparent
+            />
+          </sprite>
+        </group>
+      );
+    })}
+  </group>
+);
+
+const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; modoGrupos?: boolean }> = ({
+  socket,
+  pantallaUrl,
+  modoGrupos,
+}) => {
   return (
     <group>
       <ambientLight intensity={0.95} color="#ffffff" />
@@ -311,6 +353,8 @@ const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null }> =
       <Estanteria position={[-18, 0, -10]} rotation={[0, Math.PI / 2, 0]} />
       <Estanteria position={[18, 0, -10]} rotation={[0, -Math.PI / 2, 0]} />
 
+      {modoGrupos && <MesasDeTrabajo />}
+
       <mesh position={[0, 4, -20]} receiveShadow userData={{ esPared: true }}>
         <boxGeometry args={[40, 8, 0.5]} />
         <meshStandardMaterial color="#f1f5f9" roughness={0.6} />
@@ -380,6 +424,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   marcas,
   marcaLocal,
   pantallaUrl,
+  modoGrupos,
 }) => {
   const aulas = React.useMemo<AulaCampus[]>(
     () =>
@@ -632,7 +677,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         />
 
         {isAula ? (
-          <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} />
+          <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} modoGrupos={modoGrupos} />
         ) : (
           <group>
             <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />

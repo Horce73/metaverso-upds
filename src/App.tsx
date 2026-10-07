@@ -135,6 +135,8 @@ function App() {
   const [pantallaUrl, setPantallaUrl] = useState<string | null>(null);
   const [pantallaGrande, setPantallaGrande] = useState(false);
   const [compartiendo, setCompartiendo] = useState(false);
+  // Trabajo en grupos del aula (AULA-07)
+  const [modoGrupos, setModoGrupos] = useState(false);
   const capturaRef = useRef<CapturaPantalla | null>(null);
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -348,6 +350,7 @@ function App() {
     setPantalla({ activa: false });
     setPantallaUrl(null);
     setPantallaGrande(false);
+    setModoGrupos(false);
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -448,6 +451,17 @@ function App() {
     activeSocket.off('join_aceptado');
     activeSocket.on('join_aceptado', (data: { roles: string[] }) => {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
+    });
+    activeSocket.off('modo_grupos');
+    activeSocket.on('modo_grupos', (data: { activo: boolean; por?: string }) => {
+      setModoGrupos(data.activo);
+      if (data.por) {
+        setAvisoVoz(
+          data.activo
+            ? `👥 ${data.por} activó el trabajo en grupos: en una mesa, tu voz sólo se oye en tu mesa`
+            : `👥 ${data.por} terminó el trabajo en grupos`
+        );
+      }
     });
     activeSocket.off('pantalla_estado');
     activeSocket.on('pantalla_estado', (estado: { activa: boolean; por?: string; socketId?: string }) => {
@@ -684,6 +698,11 @@ function App() {
     audioClient?.setMute(micMuted || (pulsarParaHablar && !pulsando));
   }, [audioClient, micMuted, pulsarParaHablar, pulsando]);
 
+  // Trabajo en grupos (AULA-07): la voz de cada mesa queda en la mesa
+  useEffect(() => {
+    audioClient?.fijarModoGrupos(modoGrupos);
+  }, [audioClient, modoGrupos]);
+
   // Quien tiene la palabra difunde su voz a toda el aula (AULA-03)
   useEffect(() => {
     audioClient?.fijarPalabra(preguntas.palabra?.peerId || null, preguntas.palabra?.socketId === socketRef.current?.id);
@@ -916,6 +935,7 @@ function App() {
           marcas={marcasAula}
           marcaLocal={miSocketId ? marcasAula[miSocketId] : undefined}
           pantallaUrl={pantalla.activa ? pantallaUrl : null}
+          modoGrupos={modoGrupos}
           onInteractuarAula={(espacioSeleccionado) => setSolicitudAulaModal(espacioSeleccionado)}
           onUpdateAvatarPersonalization={(nuevaApariencia) => {
             setAvatar((prev) => {
@@ -1499,6 +1519,17 @@ function App() {
           {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
             <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes">
               🤫
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
+            <button
+              className={`control-btn ${modoGrupos ? 'active' : ''}`}
+              onClick={() => socketRef.current?.emit('modo_grupos', { activo: !modoGrupos })}
+              aria-pressed={modoGrupos}
+              title={modoGrupos ? 'Terminar el trabajo en grupos' : 'Trabajo en grupos: la voz de cada mesa queda en la mesa'}
+            >
+              👥
             </button>
           )}
 

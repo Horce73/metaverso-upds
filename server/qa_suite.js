@@ -662,6 +662,31 @@ async function runTests() {
     return (await alDesconectar) !== null;
   });
 
+  // AULA-07: trabajo en grupos (la voz de cada mesa queda en la mesa)
+  await caso('Un estudiante no puede activar el trabajo en grupos', async () => {
+    const recibido = esperarEvento(sDocente, 'modo_grupos', 800, (d) => d?.activo === true);
+    sAna.emit('modo_grupos', { activo: true });
+    return (await recibido) === null;
+  });
+
+  await caso('El docente activa el trabajo en grupos y el aula se entera', async () => {
+    const recibido = esperarEvento(sAna, 'modo_grupos', 1500, (d) => d?.activo === true);
+    sDocente.emit('modo_grupos', { activo: true });
+    const estado = await recibido;
+    return typeof estado?.por === 'string' && estado.por.length > 0;
+  });
+
+  await caso('Quien entra con los grupos activos lo sabe; al desactivarlos, todos', async () => {
+    // La otra aula no tiene grupos: su aviso (inactivo) puede llegar después de entrar
+    await entrar(sMaria, otraAulaId);
+    const alEntrar = esperarEvento(sMaria, 'modo_grupos', 3000, (d) => d?.activo === true);
+    await entrar(sMaria, aulaId);
+    if ((await alEntrar) === null) return false;
+    const desactivado = esperarEvento(sMaria, 'modo_grupos', 1500, (d) => d?.activo === false);
+    sDocente.emit('modo_grupos', { activo: false });
+    return (await desactivado) !== null;
+  });
+
   // ---------------------------------------------------------------------------
   // Pilar 6: Roles y sesiones de clase (SEC-06)
   // ---------------------------------------------------------------------------
