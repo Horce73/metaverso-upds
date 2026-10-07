@@ -4,6 +4,15 @@ import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from '
 import { verificarToken } from './middleware/auth.js';
 import { CUPOS_SOCKET, limitador } from './limites.js';
 import { sanearTextoChat } from './chat.js';
+import {
+  estadoPublico,
+  levantarMano,
+  bajarMano,
+  cederPalabra,
+  quienTienePalabra,
+  quitarPalabra,
+  salirDelAula,
+} from './preguntas.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -108,6 +117,12 @@ export function setupSockets(io: Server) {
     }
   });
 
+  // Cola de preguntas de un aula (AULA-03), para todos los que están en ella
+  const emitirPreguntas = (espacioId: number) => io.to(String(espacioId)).emit('estado_preguntas', estadoPublico(espacioId));
+  const dejarAula = (espacioId: number, socketId: string) => {
+    if (salirDelAula(espacioId, socketId)) emitirPreguntas(espacioId);
+  };
+
   io.on('connection', (socket: Socket) => {
     const identidad: Identidad = socket.data.identidad;
 
@@ -163,6 +178,7 @@ export function setupSockets(io: Server) {
             oldSocket.disconnect(true);
           }
           activeUsers.delete(sid);
+          dejarAula(user.espacioId, sid);
         }
       });
 
@@ -172,6 +188,7 @@ export function setupSockets(io: Server) {
       const prevUser = activeUsers.get(socket.id);
       if (prevUser && prevUser.espacioId !== nuevoEspacioId) {
         socket.leave(String(prevUser.espacioId));
+        dejarAula(prevUser.espacioId, socket.id);
         socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
         if (prevUser.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(prevUser.userId, prevUser.position, prevUser.rotation);
@@ -208,6 +225,7 @@ export function setupSockets(io: Server) {
       socket.emit('join_aceptado', { espacioId: nuevoEspacioId, espacioTipo, roles });
       socket.emit('space_users', usersInSpace);
       socket.emit('current_users', usersInSpace);
+      if (espacioTipo === 'aula') socket.emit('estado_preguntas', estadoPublico(nuevoEspacioId));
 
       socket.to(String(espacioId)).emit('user_joined', {
         socketId: socket.id,
@@ -336,6 +354,45 @@ export function setupSockets(io: Server) {
       });
     });
 
+    // Levantar la mano y ceder la palabra (AULA-03). Los alumnos piden turno;
+    // el docente (o admin) cede la palabra, y quien la tiene difunde su voz a
+    // toda el aula hasta que la devuelve o el docente se la quita.
+    on('levantar_mano', 'preguntas', () => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || esDocenteOAdmin(identidad.roles)) return;
+      const nuevo = { socketId: socket.id, userId: user.userId, nombre: user.nombreVisible, desde: Date.now() };
+      if (levantarMano(user.espacioId, nuevo)) emitirPreguntas(user.espacioId);
+    });
+
+    on('bajar_mano', 'preguntas', () => {
+      const user = activeUsers.get(socket.id);
+      if (user && bajarMano(user.espacioId, socket.id)) emitirPreguntas(user.espacioId);
+    });
+
+    on('ceder_palabra', 'preguntas', (data: { socketId?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      const destinoId = String(data?.socketId ?? '');
+      const destino = activeUsers.get(destinoId);
+      if (!destino || destino.espacioId !== user.espacioId) return;
+      cederPalabra(user.espacioId, {
+        socketId: destinoId,
+        userId: destino.userId,
+        nombre: destino.nombreVisible,
+        peerId: destino.peerId || '',
+      });
+      emitirPreguntas(user.espacioId);
+    });
+
+    // La devuelve quien la tiene, o se la quita el docente
+    on('quitar_palabra', 'preguntas', () => {
+      const user = activeUsers.get(socket.id);
+      if (!user) return;
+      const actual = quienTienePalabra(user.espacioId);
+      if (!actual || (actual.socketId !== socket.id && !esDocenteOAdmin(identidad.roles))) return;
+      if (quitarPalabra(user.espacioId)) emitirPreguntas(user.espacioId);
+    });
+
     // Respuesta del docente a la solicitud de acceso
     on('responder_solicitud_acceso', 'responder_solicitud_acceso', (data: {
       estudianteSocketId: string;
@@ -388,6 +445,7 @@ export function setupSockets(io: Server) {
         console.log(`🔌 Cliente desconectado: ${user.nombreVisible} (${socket.id})`);
         socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
+        dejarAula(user.espacioId, socket.id);
         await registrarSalida(user.userId, user.espacioId);
         if (user.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(user.userId, user.position, user.rotation);

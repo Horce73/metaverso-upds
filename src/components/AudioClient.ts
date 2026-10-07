@@ -101,7 +101,10 @@ export class AudioClient {
   // las decide quien usa la clase (así la mide la prueba de carga).
   private zona: TipoEspacio | null = null;
   private soyDifusor = false;
-  private participantes = new Map<string, boolean>(); // peerId -> difunde
+  private participantes = new Map<string, boolean>(); // peerId -> difunde por su rol
+  // A quién le cedió la palabra el docente (AULA-03): difunde mientras la tenga
+  private peerConPalabra: string | null = null;
+  private tengoPalabra = false;
   private ultimaVozDifusor = 0;
   // Participantes que este usuario silenció para sí (VOZ-04)
   private silenciados = new Set<string>();
@@ -553,6 +556,26 @@ export class AudioClient {
     return this.activeCalls.has(remotePeerId);
   }
 
+  /**
+   * Quién tiene la palabra en el aula (AULA-03), según el servidor. Mientras
+   * la tenga difunde: todos abren llamada con esa persona y la oyen igual
+   * desde cualquier punto. null cuando nadie la tiene.
+   */
+  public fijarPalabra(peerId: string | null, esMia: boolean) {
+    this.peerConPalabra = esMia ? null : peerId;
+    this.tengoPalabra = esMia;
+    this.pannerNodes.forEach((_, id) => this.aplicarPerfil(id));
+    this.sincronizarZonas();
+  }
+
+  private difunde(remotePeerId: string): boolean {
+    return (this.participantes.get(remotePeerId) ?? false) || remotePeerId === this.peerConPalabra;
+  }
+
+  private yoDifundo(): boolean {
+    return this.soyDifusor || this.tengoPalabra;
+  }
+
   private miPeerId(): string {
     return this.peer?.id ?? this.userId;
   }
@@ -560,7 +583,7 @@ export class AudioClient {
   private participanteVoz(remotePeerId: string) {
     return {
       posicion: this.posicionesPendientes.get(remotePeerId) ?? null,
-      difusor: this.participantes.get(remotePeerId) ?? false,
+      difusor: this.difunde(remotePeerId),
     };
   }
 
@@ -570,7 +593,7 @@ export class AudioClient {
     if (!this.zona || !this.participantes.has(remotePeerId)) return true;
     const { llamar } = planificarConexiones(
       this.miPeerId(),
-      { posicion: this.posicionListener, difusor: this.soyDifusor },
+      { posicion: this.posicionListener, difusor: this.yoDifundo() },
       new Map([[remotePeerId, this.participanteVoz(remotePeerId)]]),
       new Set(),
       this.zona
@@ -583,7 +606,7 @@ export class AudioClient {
     const otros = new Map([...this.participantes.keys()].map((id) => [id, this.participanteVoz(id)]));
     const { llamar, colgar } = planificarConexiones(
       this.miPeerId(),
-      { posicion: this.posicionListener, difusor: this.soyDifusor },
+      { posicion: this.posicionListener, difusor: this.yoDifundo() },
       otros,
       new Set(this.activeCalls.keys()),
       this.zona
@@ -598,7 +621,7 @@ export class AudioClient {
   private perfilDe(remotePeerId: string): PerfilAudicion {
     // Sin zonas se conserva la curva suave de siempre
     if (!this.zona) return 'sala';
-    return perfilAudicion(this.soyDifusor, this.participantes.get(remotePeerId) ?? false);
+    return perfilAudicion(this.yoDifundo(), this.difunde(remotePeerId));
   }
 
   private aplicarPerfil(remotePeerId: string) {
@@ -614,8 +637,8 @@ export class AudioClient {
   private actualizarAtenuacionLateral() {
     if (!this.audioCtx || this.zona !== 'aula') return;
     const ahora = performance.now();
-    for (const [peerId, difunde] of this.participantes) {
-      if (difunde && this.nivelDe(peerId) > UMBRAL_HABLA) this.ultimaVozDifusor = ahora;
+    for (const peerId of this.participantes.keys()) {
+      if (this.difunde(peerId) && this.nivelDe(peerId) > UMBRAL_HABLA) this.ultimaVozDifusor = ahora;
     }
     this.aplicarGanancias(ahora - this.ultimaVozDifusor < RETENCION_ATENUACION_MS);
   }

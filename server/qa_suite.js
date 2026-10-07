@@ -478,6 +478,55 @@ async function runTests() {
     return typeof a?.por === 'string' && a.por.length > 0 && m !== null && p === null;
   });
 
+  // AULA-03: levantar la mano y ceder la palabra
+  const conAna = (d) => d?.cola?.some((c) => c.socketId === sAna.id);
+
+  await caso('Un alumno levanta la mano y el docente lo ve en la cola', async () => {
+    const visto = esperarEvento(sDocente, 'estado_preguntas', 1500, conAna);
+    sAna.emit('levantar_mano');
+    const estado = await visto;
+    return estado !== null && !('userId' in estado.cola[0]);
+  });
+
+  await caso('Levantar la mano dos veces no duplica el turno', async () => {
+    const visto = esperarEvento(sDocente, 'estado_preguntas', 1500, (d) => d?.cola?.some((c) => c.socketId === sMaria.id));
+    sAna.emit('levantar_mano');
+    sMaria.emit('levantar_mano');
+    const estado = await visto;
+    return estado?.cola.filter((c) => c.socketId === sAna.id).length === 1 && estado.cola[0].socketId === sAna.id;
+  });
+
+  await caso('Un estudiante no puede ceder la palabra', async () => {
+    const recibido = esperarEvento(sAna, 'estado_preguntas', 800, (d) => d?.palabra);
+    sMaria.emit('ceder_palabra', { socketId: sMaria.id });
+    return (await recibido) === null;
+  });
+
+  await caso('El docente cede la palabra: todos lo saben y el alumno sale de la cola', async () => {
+    const [enAna, enMaria] = [
+      esperarEvento(sAna, 'estado_preguntas', 1500, (d) => d?.palabra?.socketId === sAna.id),
+      esperarEvento(sMaria, 'estado_preguntas', 1500, (d) => d?.palabra?.socketId === sAna.id),
+    ];
+    sDocente.emit('ceder_palabra', { socketId: sAna.id });
+    const [a, m] = await Promise.all([enAna, enMaria]);
+    return a !== null && m !== null && !conAna(a) && typeof a.palabra.peerId === 'string';
+  });
+
+  await caso('Otro alumno no puede quitarle la palabra; quien la tiene sí puede devolverla', async () => {
+    const quitadaPorOtro = esperarEvento(sDocente, 'estado_preguntas', 800, (d) => d && !d.palabra);
+    sMaria.emit('quitar_palabra');
+    if ((await quitadaPorOtro) !== null) return false;
+    const devuelta = esperarEvento(sDocente, 'estado_preguntas', 1500, (d) => d && !d.palabra);
+    sAna.emit('quitar_palabra');
+    return (await devuelta) !== null;
+  });
+
+  await caso('Al salir del aula, el alumno deja la cola', async () => {
+    const sinMaria = esperarEvento(sDocente, 'estado_preguntas', 2000, (d) => d && !d.cola.some((c) => c.socketId === sMaria.id));
+    await entrar(sMaria, otraAulaId);
+    return (await sinMaria) !== null;
+  });
+
   // ---------------------------------------------------------------------------
   // Pilar 6: Roles y sesiones de clase (SEC-06)
   // ---------------------------------------------------------------------------
