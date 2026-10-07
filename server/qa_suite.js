@@ -701,6 +701,113 @@ async function runTests() {
     return recibido !== null && Object.keys(recibido).sort().join(',') === 'enviadoEn,sender,text';
   });
 
+  // ---------------------------------------------------------------------------
+  // Pilar 10: Materiales del aula (AULA-06)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== PILAR 10: Materiales del aula ===');
+
+  const IP_MATERIALES = ipAleatoria();
+  const PDF_MINIMO = Buffer.from('%PDF-1.4\n%QA\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+  const subir = (token, { titulo = 'Material QA', nombre = 'qa.pdf', datos = PDF_MINIMO, espacio = aulaId } = {}) =>
+    fetch(`${BACKEND_URL}/api/aulas/${espacio}/materiales?titulo=${encodeURIComponent(titulo)}&nombre=${encodeURIComponent(nombre)}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream', 'X-Forwarded-For': IP_MATERIALES },
+      body: datos,
+    });
+  const pedirMat = (path, token, opciones = {}) =>
+    fetch(`${BACKEND_URL}${path}`, { ...opciones, headers: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': IP_MATERIALES, ...(opciones.headers || {}) } });
+  const { token: tokenInvitado } = await (await api('/api/auth/guest', { method: 'POST', ip: IP_MATERIALES })).json();
+
+  let materialPdf = null;
+  await caso('El docente titular sube un PDF al aula (201, sin exponer la ruta en disco)', async () => {
+    const res = await subir(docente.token);
+    materialPdf = await res.json();
+    return res.status === 201 && materialPdf.tipo === 'pdf' && materialPdf.extension === 'pdf' && !('archivo_url' in materialPdf);
+  });
+
+  await caso('Un estudiante no puede subir materiales (403)', async () => {
+    return (await subir(ana.token)).status === 403;
+  });
+
+  await caso('Se rechazan extensiones no admitidas, como SVG o EXE (400)', async () => {
+    const [svg, exe] = await Promise.all([
+      subir(docente.token, { nombre: 'x.svg', datos: Buffer.from('<svg onload="alert(1)"/>') }),
+      subir(docente.token, { nombre: 'x.exe', datos: Buffer.from('MZ') }),
+    ]);
+    return svg.status === 400 && exe.status === 400;
+  });
+
+  await caso('Un archivo de más de 20 MB se rechaza con 413', async () => {
+    return (await subir(docente.token, { datos: Buffer.alloc(20 * 1024 * 1024 + 1, 0x41) })).status === 413;
+  });
+
+  await caso('El estudiante inscrito ve el material en la lista del aula, sin permiso de gestión', async () => {
+    const res = await pedirMat(`/api/aulas/${aulaId}/materiales`, ana.token);
+    const data = await res.json();
+    return res.status === 200 && data.puedeGestionar === false && data.materiales.some((m) => m.id === materialPdf?.id);
+  });
+
+  await caso('El estudiante inscrito descarga el PDF: se sirve en línea, con nosniff, y llega íntegro', async () => {
+    const res = await pedirMat(`/api/materiales/${materialPdf.id}/archivo`, ana.token);
+    const cuerpo = Buffer.from(await res.arrayBuffer());
+    return (
+      res.status === 200 &&
+      res.headers.get('content-type') === 'application/pdf' &&
+      res.headers.get('x-content-type-options') === 'nosniff' &&
+      res.headers.get('content-disposition').startsWith('inline') &&
+      cuerpo.equals(PDF_MINIMO)
+    );
+  });
+
+  await caso('Un ".pdf" que no es un PDF se sirve como descarga, no en línea', async () => {
+    const subido = await (await subir(docente.token, { titulo: 'Falso PDF', datos: Buffer.from('<html><script>alert(1)</script>') })).json();
+    const res = await pedirMat(`/api/materiales/${subido.id}/archivo`, ana.token);
+    await pedirMat(`/api/materiales/${subido.id}`, docente.token, { method: 'DELETE' });
+    return res.headers.get('content-type') === 'application/octet-stream' && res.headers.get('content-disposition').startsWith('attachment');
+  });
+
+  await caso('Un invitado no puede listar ni descargar materiales (403)', async () => {
+    const [lista, archivo] = await Promise.all([
+      pedirMat(`/api/aulas/${aulaId}/materiales`, tokenInvitado),
+      pedirMat(`/api/materiales/${materialPdf.id}/archivo`, tokenInvitado),
+    ]);
+    return lista.status === 403 && archivo.status === 403;
+  });
+
+  await caso('Otro docente, que no es titular ni está inscrito, no puede verlo ni borrarlo (403)', async () => {
+    const [archivo, borrar] = await Promise.all([
+      pedirMat(`/api/materiales/${materialPdf.id}/archivo`, docente2.token),
+      pedirMat(`/api/materiales/${materialPdf.id}`, docente2.token, { method: 'DELETE' }),
+    ]);
+    return archivo.status === 403 && borrar.status === 403;
+  });
+
+  await caso('Un estudiante no puede mostrar un material a la clase (403)', async () => {
+    const res = await pedirMat(`/api/materiales/${materialPdf.id}/mostrar`, ana.token, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ espacioId: aulaId }),
+    });
+    return res.status === 403;
+  });
+
+  await caso('El docente muestra el material: llega a los alumnos del aula y queda en la sesión en curso', async () => {
+    const recibido = esperarEvento(sAna, 'material_mostrado', 2000);
+    const res = await pedirMat(`/api/materiales/${materialPdf.id}/mostrar`, docente.token, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ espacioId: aulaId }),
+    });
+    const { registradoEnSesion } = await res.json();
+    const evento = await recibido;
+    const { rows } = await pool.query(
+      'SELECT 1 FROM sesion_materiales WHERE sesion_id = $1 AND material_id = $2', [registradoEnSesion, materialPdf.id]
+    );
+    return res.status === 200 && evento?.material?.id === materialPdf.id && rows.length === 1;
+  });
+
+  await caso('El docente borra el material y deja de poder descargarse (204, luego 404)', async () => {
+    const borrar = await pedirMat(`/api/materiales/${materialPdf.id}`, docente.token, { method: 'DELETE' });
+    const despues = await pedirMat(`/api/materiales/${materialPdf.id}/archivo`, ana.token);
+    return borrar.status === 204 && despues.status === 404;
+  });
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');

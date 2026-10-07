@@ -1,5 +1,17 @@
 import { pool } from './db.js';
 
+// Registrar evento en la bitácora. Nunca hace fallar la petición que lo llama.
+export async function bitacora(usuarioId: number | null, evento: string, detalle = '', ip = '') {
+  try {
+    await pool.query(
+      'INSERT INTO bitacora (usuario_id, evento, detalle, ip) VALUES ($1, $2, $3, $4)',
+      [usuarioId, evento, detalle, ip]
+    );
+  } catch (err) {
+    console.error('Error al registrar bitacora:', err);
+  }
+}
+
 export async function registrarAsistencia(userId: number, espacioId: number) {
   try {
     const res = await pool.query(
