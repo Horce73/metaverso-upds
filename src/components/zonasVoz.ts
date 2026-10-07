@@ -28,6 +28,57 @@ export const RADIOS: Record<TipoEspacio, { audible: number; conectar: number; de
 /** Distancia hasta la que una voz de proximidad suena a volumen completo. */
 export const DISTANCIA_REFERENCIA = 1.5;
 
+// Mesas de trabajo del aula (AULA-07). Con el modo grupos activo, la voz de
+// quien está en una mesa sólo llega a su mesa. Cada mesa abarca dos pupitres
+// de una fila (los pupitres están en x = ±3, ±8.5 y z = -5, 0, 5).
+export interface Mesa {
+  id: number;
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+export const MESAS_AULA: Mesa[] = [-5, 0, 5].flatMap((z, fila) =>
+  [
+    [-11.25, -0.75],
+    [0.75, 11.25],
+  ].map(([x0, x1], lado) => ({ id: fila * 2 + lado + 1, x0, x1, z0: z - 2.4, z1: z + 2.4 }))
+);
+
+/** Margen para seguir "en la mesa" una llamada ya abierta: evita cortes en el borde. */
+export const MARGEN_MESA = 0.75;
+
+export interface OpcionesZonas {
+  /** Modo de trabajo en grupos del aula, activado por el docente. */
+  grupos?: boolean;
+}
+
+/** Mesa en la que está una posición (la más cercana si el margen alcanza a dos), o null. */
+export function mesaDe(pos: Vector3 | null, margen = 0): number | null {
+  if (!pos) return null;
+  let mejor: number | null = null;
+  let distanciaMejor = Infinity;
+  for (const m of MESAS_AULA) {
+    if (pos[0] < m.x0 - margen || pos[0] > m.x1 + margen || pos[2] < m.z0 - margen || pos[2] > m.z1 + margen) continue;
+    const d = Math.hypot(pos[0] - (m.x0 + m.x1) / 2, pos[2] - (m.z0 + m.z1) / 2);
+    if (d < distanciaMejor) {
+      distanciaMejor = d;
+      mejor = m.id;
+    }
+  }
+  return mejor;
+}
+
+/**
+ * Si difunde ahora mismo. En modo grupos, quien difunde sólo lo hace fuera de
+ * las mesas: el docente que se acerca a una mesa pasa a ser parte del grupo.
+ */
+export function difundeAhora(p: ParticipanteVoz, tipo: TipoEspacio, opciones: OpcionesZonas = {}): boolean {
+  if (tipo !== 'aula' || !p.difusor) return false;
+  return !(opciones.grupos && mesaDe(p.posicion) !== null);
+}
+
 export function esDifusor(roles: readonly string[], tipo: TipoEspacio): boolean {
   return tipo === 'aula' && (roles.includes('docente') || roles.includes('administrador'));
 }
@@ -41,10 +92,18 @@ export function debeEstarConectado(
   yo: ParticipanteVoz,
   otro: ParticipanteVoz,
   tipo: TipoEspacio,
-  yaConectado: boolean
+  yaConectado: boolean,
+  opciones: OpcionesZonas = {}
 ): boolean {
-  if (tipo === 'aula' && (yo.difusor || otro.difusor)) return true;
+  if (difundeAhora(yo, tipo, opciones) || difundeAhora(otro, tipo, opciones)) return true;
   if (!yo.posicion || !otro.posicion) return yaConectado;
+  if (tipo === 'aula' && opciones.grupos) {
+    // Si alguno está en una mesa, sólo se oyen si es la misma
+    const margen = yaConectado ? MARGEN_MESA : 0;
+    const mesaYo = mesaDe(yo.posicion, margen);
+    const mesaOtro = mesaDe(otro.posicion, margen);
+    if (mesaYo !== null || mesaOtro !== null) return mesaYo !== null && mesaYo === mesaOtro;
+  }
   const { conectar, desconectar } = RADIOS[tipo];
   return distancia(yo.posicion, otro.posicion) < (yaConectado ? desconectar : conectar);
 }
@@ -59,15 +118,16 @@ export function planificarConexiones(
   yo: ParticipanteVoz,
   otros: ReadonlyMap<string, ParticipanteVoz>,
   conectados: ReadonlySet<string>,
-  tipo: TipoEspacio
+  tipo: TipoEspacio,
+  opciones: OpcionesZonas = {}
 ): { llamar: string[]; colgar: string[] } {
   const llamar: string[] = [];
   const colgar: string[] = [];
   for (const [peerId, otro] of otros) {
     if (peerId === miPeerId) continue;
-    if (!otro.posicion && !(tipo === 'aula' && (yo.difusor || otro.difusor))) continue;
+    if (!otro.posicion && !difundeAhora(yo, tipo, opciones) && !difundeAhora(otro, tipo, opciones)) continue;
     const conectado = conectados.has(peerId);
-    const debe = debeEstarConectado(yo, otro, tipo, conectado);
+    const debe = debeEstarConectado(yo, otro, tipo, conectado, opciones);
     if (debe && !conectado && miPeerId < peerId) llamar.push(peerId);
     if (!debe && conectado) colgar.push(peerId);
   }
@@ -85,6 +145,21 @@ export function perfilAudicion(yoDifundo: boolean, otroDifunde: boolean): Perfil
   if (otroDifunde) return 'constante';
   if (yoDifundo) return 'sala';
   return 'proximidad';
+}
+
+/** Cómo oigo a otro, según quién difunde y, en modo grupos, si compartimos mesa. */
+export function perfilEntre(
+  yo: ParticipanteVoz,
+  otro: ParticipanteVoz,
+  tipo: TipoEspacio,
+  opciones: OpcionesZonas = {}
+): PerfilAudicion {
+  if (tipo === 'aula' && opciones.grupos) {
+    const mesa = mesaDe(yo.posicion);
+    // La mesa se oye pareja, como alrededor de una mesa real
+    if (mesa !== null && mesa === mesaDe(otro.posicion)) return 'constante';
+  }
+  return perfilAudicion(difundeAhora(yo, tipo, opciones), difundeAhora(otro, tipo, opciones));
 }
 
 // Parámetros de PannerNode para cada perfil. El respaldo sin Web Audio

@@ -9,7 +9,7 @@ import {
 import { activarDtx } from './sdpVoz.js';
 import {
   parametrosPanner,
-  perfilAudicion,
+  perfilEntre,
   gananciaPorDistancia,
   planificarConexiones,
   type PerfilAudicion,
@@ -105,6 +105,10 @@ export class AudioClient {
   // A quién le cedió la palabra el docente (AULA-03): difunde mientras la tenga
   private peerConPalabra: string | null = null;
   private tengoPalabra = false;
+  // Trabajo en grupos (AULA-07): la voz de cada mesa queda en la mesa
+  private modoGrupos = false;
+  // Perfil aplicado a cada voz: con mesas depende de dónde está cada uno
+  private perfilesAplicados = new Map<string, PerfilAudicion>();
   private ultimaVozDifusor = 0;
   // Participantes que este usuario silenció para sí (VOZ-04)
   private silenciados = new Set<string>();
@@ -596,7 +600,8 @@ export class AudioClient {
       { posicion: this.posicionListener, difusor: this.yoDifundo() },
       new Map([[remotePeerId, this.participanteVoz(remotePeerId)]]),
       new Set(),
-      this.zona
+      this.zona,
+      { grupos: this.modoGrupos }
     );
     return llamar.length === 1;
   }
@@ -609,24 +614,44 @@ export class AudioClient {
       { posicion: this.posicionListener, difusor: this.yoDifundo() },
       otros,
       new Set(this.activeCalls.keys()),
-      this.zona
+      this.zona,
+      { grupos: this.modoGrupos }
     );
     colgar.forEach((peerId) => {
       console.log(`📴 ${peerId} salió del alcance de voz`);
       this.removeUserAudio(peerId);
     });
     llamar.forEach((peerId) => this.callUser(peerId));
+    // Con mesas, el perfil de cada voz cambia al entrar o salir de una
+    if (this.modoGrupos) this.pannerNodes.forEach((_, peerId) => this.aplicarPerfil(peerId));
+  }
+
+  /** Trabajo en grupos del aula (AULA-07), según lo anuncia el servidor. */
+  public fijarModoGrupos(activo: boolean) {
+    if (this.modoGrupos === activo) return;
+    this.modoGrupos = activo;
+    this.pannerNodes.forEach((_, peerId) => this.aplicarPerfil(peerId));
+    this.sincronizarZonas();
   }
 
   private perfilDe(remotePeerId: string): PerfilAudicion {
     // Sin zonas se conserva la curva suave de siempre
     if (!this.zona) return 'sala';
-    return perfilAudicion(this.yoDifundo(), this.difunde(remotePeerId));
+    return perfilEntre(
+      { posicion: this.posicionListener, difusor: this.yoDifundo() },
+      this.participanteVoz(remotePeerId),
+      this.zona,
+      { grupos: this.modoGrupos }
+    );
   }
 
   private aplicarPerfil(remotePeerId: string) {
     const panner = this.pannerNodes.get(remotePeerId);
-    if (panner) Object.assign(panner, parametrosPanner(this.perfilDe(remotePeerId), this.zona ?? 'campus'));
+    const perfil = this.perfilDe(remotePeerId);
+    if (panner && this.perfilesAplicados.get(remotePeerId) !== perfil) {
+      Object.assign(panner, parametrosPanner(perfil, this.zona ?? 'campus'));
+      this.perfilesAplicados.set(remotePeerId, perfil);
+    }
     const pos = this.posicionesPendientes.get(remotePeerId);
     if (!this.usarAudioEspacial && pos) this.aplicarVolumenPorDistancia(remotePeerId, pos);
   }
@@ -797,6 +822,7 @@ export class AudioClient {
     }
     this.ganancias.get(remotePeerId)?.disconnect();
     this.ganancias.delete(remotePeerId);
+    this.perfilesAplicados.delete(remotePeerId);
 
     this.analizadores.get(remotePeerId)?.disconnect();
     this.analizadores.delete(remotePeerId);
@@ -884,6 +910,7 @@ export class AudioClient {
     this.pannerNodes.clear();
     this.ganancias.forEach((ganancia) => ganancia.disconnect());
     this.ganancias.clear();
+    this.perfilesAplicados.clear();
     this.participantes.clear();
     this.silenciados.clear();
     this.analizadores.forEach((analizador) => analizador.disconnect());

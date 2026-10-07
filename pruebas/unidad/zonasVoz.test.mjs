@@ -120,3 +120,79 @@ test('con 30 en el aula, un alumno queda con pocas llamadas', () => {
   }
   assert.ok(maximo <= 10, `un alumno quedó con ${maximo} llamadas`);
 });
+
+// AULA-07: mesas de trabajo con audio aislado
+import { MESAS_AULA, mesaDe, difundeAhora, perfilEntre } from '../../src/components/zonasVoz.ts';
+
+const GRUPOS = { grupos: true };
+const centro = (m) => [(m.x0 + m.x1) / 2, (m.z0 + m.z1) / 2];
+const enMesa = (i, dx = 0, dz = 0, difusor = false) => {
+  const [x, z] = centro(MESAS_AULA[i]);
+  return en(x + dx, z + dz, difusor);
+};
+
+test('cada pupitre del aula cae dentro de una mesa, y las mesas no se pisan', () => {
+  for (const x of [-8.5, -3, 3, 8.5]) for (const z of [-5, 0, 5]) assert.notEqual(mesaDe([x, 0, z + 0.62]), null);
+  for (const a of MESAS_AULA) for (const b of MESAS_AULA) {
+    if (a === b) continue;
+    const solapan = a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1;
+    assert.equal(solapan, false, `mesas ${a.id} y ${b.id} se pisan`);
+  }
+  assert.equal(mesaDe([0, 0, -14]), null); // el frente (docente) no es una mesa
+});
+
+test('en modo grupos, dos de la misma mesa se oyen aunque estén en extremos opuestos', () => {
+  const m = MESAS_AULA[0];
+  const a = en(m.x0 + 0.3, m.z0 + 0.3);
+  const b = en(m.x1 - 0.3, m.z1 - 0.3);
+  assert.equal(debeEstarConectado(a, b, 'aula', false, GRUPOS), true);
+  assert.equal(perfilEntre(a, b, 'aula', GRUPOS), 'constante');
+});
+
+test('en modo grupos, la voz no sale de la mesa: ni a la de al lado ni a quien está cerca afuera', () => {
+  const vecinas = [enMesa(0), enMesa(1)];
+  assert.equal(debeEstarConectado(vecinas[0], vecinas[1], 'aula', false, GRUPOS), false);
+  const m = MESAS_AULA[0];
+  const afuera = en(m.x0 - 0.5, (m.z0 + m.z1) / 2); // a medio metro del borde
+  const adentro = en(m.x0 + 0.5, (m.z0 + m.z1) / 2);
+  assert.equal(debeEstarConectado(adentro, afuera, 'aula', false, GRUPOS), false);
+  assert.equal(debeEstarConectado(adentro, afuera, 'aula', false, {}), true); // sin grupos sí
+});
+
+test('el docente desde el frente sigue llegando a todas las mesas', () => {
+  const docente = en(0, -14, true);
+  assert.equal(difundeAhora(docente, 'aula', GRUPOS), true);
+  for (let i = 0; i < MESAS_AULA.length; i++) assert.equal(debeEstarConectado(enMesa(i), docente, 'aula', false, GRUPOS), true);
+});
+
+test('el docente que se acerca a una mesa pasa a ser parte de ese grupo', () => {
+  const docente = enMesa(2, 0.5, 0, true);
+  assert.equal(difundeAhora(docente, 'aula', GRUPOS), false);
+  assert.equal(debeEstarConectado(docente, enMesa(2), 'aula', false, GRUPOS), true);
+  assert.equal(debeEstarConectado(docente, enMesa(3), 'aula', false, GRUPOS), false);
+  assert.equal(perfilEntre(enMesa(2), docente, 'aula', GRUPOS), 'constante');
+});
+
+test('fuera de las mesas, en modo grupos, sigue la proximidad', () => {
+  const a = en(-15, 12);
+  const b = en(-14, 12);
+  assert.equal(debeEstarConectado(a, b, 'aula', false, GRUPOS), true);
+  assert.equal(perfilEntre(a, b, 'aula', GRUPOS), 'proximidad');
+});
+
+test('histéresis en el borde: salir apenas de la mesa no corta la llamada abierta', () => {
+  const m = MESAS_AULA[0];
+  const a = enMesa(0);
+  const bordeAfuera = en(m.x0 - 0.3, (m.z0 + m.z1) / 2);
+  assert.equal(debeEstarConectado(a, bordeAfuera, 'aula', false, GRUPOS), false);
+  assert.equal(debeEstarConectado(a, bordeAfuera, 'aula', true, GRUPOS), true);
+});
+
+test('planificarConexiones respeta el modo grupos', () => {
+  const otros = new Map([
+    ['peer_z', enMesa(0, 1, 0)],
+    ['peer_y', enMesa(1)],
+  ]);
+  const plan = planificarConexiones('peer_a', enMesa(0), otros, new Set(['peer_y']), 'aula', GRUPOS);
+  assert.deepEqual(plan, { llamar: ['peer_z'], colgar: ['peer_y'] });
+});

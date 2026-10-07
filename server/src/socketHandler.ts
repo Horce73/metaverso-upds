@@ -40,6 +40,10 @@ interface UserState {
 
 const activeUsers = new Map<string, UserState>();
 
+// Aulas con el trabajo en grupos activo (AULA-07): la voz de cada mesa queda
+// en la mesa. Lo activa y desactiva el docente; quien entra recibe el estado.
+const aulasEnGrupos = new Set<number>();
+
 
 async function obtenerRoles(userId: number): Promise<string[]> {
   if (!userId) return [];
@@ -228,6 +232,7 @@ export function setupSockets(io: Server) {
         // Quien entra tarde ve la pantalla compartida desde la última imagen
         const pantalla = pantallaDe(nuevoEspacioId);
         socket.emit('pantalla_estado', estadoPantalla(nuevoEspacioId));
+        socket.emit('modo_grupos', { activo: aulasEnGrupos.has(nuevoEspacioId) });
         if (pantalla?.ultimoCuadro) socket.emit('pantalla_cuadro', pantalla.ultimoCuadro);
       }
 
@@ -416,6 +421,16 @@ export function setupSockets(io: Server) {
       const actual = quienTienePalabra(user.espacioId);
       if (!actual || (actual.socketId !== socket.id && !esDocenteOAdmin(identidad.roles))) return;
       if (quitarPalabra(user.espacioId)) emitirPreguntas(user.espacioId);
+    });
+
+    // Trabajo en grupos (AULA-07): sólo docente o admin, sólo en un aula
+    on('modo_grupos', 'preguntas', (data: { activo?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      const activo = data?.activo === true;
+      if (activo) aulasEnGrupos.add(user.espacioId);
+      else aulasEnGrupos.delete(user.espacioId);
+      io.to(String(user.espacioId)).emit('modo_grupos', { activo, por: user.nombreVisible });
     });
 
     // Compartir pantalla (AULA-01, decisión 0002): el docente sube una imagen
