@@ -20,6 +20,7 @@ import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } 
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { Pupitre, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { crearTexturaTexto } from './mundo3d/texto3d.js';
+import { suscribirPizarra, dibujarTramo, redibujarTodo } from './pizarra.js';
 
 export interface AsientoInteractive {
   x: number;
@@ -139,92 +140,40 @@ const LocalPlayerController: React.FC<{
 };
 
 // Elementos del Aula Virtual
-// Pizarrón 3D del aula: pinta en vivo, sobre una textura de canvas, lo que
-// el docente (o cualquiera con permiso) dibuja en el panel 2D (Pizarra2D),
-// para que sea visible dentro de la escena del aula sin necesidad de abrir
-// ese panel. Usa los mismos eventos 'stroke_received' / 'board_cleared'
-// que ya llegan filtrados por rol desde el servidor.
+// Pizarrón 3D del aula: pinta en vivo, sobre una textura de canvas, la
+// pizarra por operaciones (AULA-02) que se dibuja desde el panel 2D, para
+// verla dentro de la escena sin abrir ese panel. Incluye los trazos propios
+// (el servidor los devuelve a todo el aula) y redibuja al deshacer o borrar.
 const ANCHO_TEXTURA_PIZARRON = 1024;
 const ALTO_TEXTURA_PIZARRON = 384;
 const COLOR_FONDO_PIZARRON = '#0f172a';
 
-const PizarronAula: React.FC<{ socket: Socket; espacioId?: string | number }> = ({ socket, espacioId }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
-
-  const textura = React.useMemo(() => {
+const PizarronAula: React.FC<{ socket: Socket }> = ({ socket }) => {
+  const { textura, ctx } = React.useMemo(() => {
     const canvas = document.createElement('canvas');
     canvas.width = ANCHO_TEXTURA_PIZARRON;
     canvas.height = ALTO_TEXTURA_PIZARRON;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = COLOR_FONDO_PIZARRON;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-    }
-    canvasRef.current = canvas;
-    contextRef.current = ctx;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = COLOR_FONDO_PIZARRON;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
+    return { textura: tex, ctx };
   }, []);
 
   useEffect(() => {
-    const handleStroke = (stroke: { x0: number; y0: number; x1: number; y1: number; color: string; width: number }) => {
-      const ctx = contextRef.current;
-      const canvas = canvasRef.current;
-      if (!ctx || !canvas) return;
-      ctx.beginPath();
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = Math.max(1, stroke.width * canvas.width);
-      ctx.moveTo(stroke.x0 * canvas.width, stroke.y0 * canvas.height);
-      ctx.lineTo(stroke.x1 * canvas.width, stroke.y1 * canvas.height);
-      ctx.stroke();
-      ctx.closePath();
-      textura.needsUpdate = true;
-    };
-
-    const handleClear = () => {
-      const ctx = contextRef.current;
-      const canvas = canvasRef.current;
-      if (!ctx || !canvas) return;
-      ctx.fillStyle = COLOR_FONDO_PIZARRON;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      textura.needsUpdate = true;
-    };
-
-    // Estado actual del pizarrón al entrar al aula: sin esto, quien entra
-    // después de que el docente ya escribió vería el pizarrón 3D en blanco
-    // hasta el próximo trazo nuevo.
-    const handleState = (data: { trazos: Array<{ x0: number; y0: number; x1: number; y1: number; color: string; width: number }> }) => {
-      const ctx = contextRef.current;
-      const canvas = canvasRef.current;
-      if (!ctx || !canvas) return;
-      ctx.fillStyle = COLOR_FONDO_PIZARRON;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      data.trazos.forEach((stroke) => {
-        ctx.beginPath();
-        ctx.strokeStyle = stroke.color;
-        ctx.lineWidth = Math.max(1, stroke.width * canvas.width);
-        ctx.moveTo(stroke.x0 * canvas.width, stroke.y0 * canvas.height);
-        ctx.lineTo(stroke.x1 * canvas.width, stroke.y1 * canvas.height);
-        ctx.stroke();
-        ctx.closePath();
-      });
-      textura.needsUpdate = true;
-    };
-
-    socket.on('stroke_received', handleStroke);
-    socket.on('board_cleared', handleClear);
-    socket.on('pizarra_state', handleState);
-    socket.emit('get_pizarra_state', { espacioId });
-    return () => {
-      socket.off('stroke_received', handleStroke);
-      socket.off('board_cleared', handleClear);
-      socket.off('pizarra_state', handleState);
-    };
-  }, [socket, textura, espacioId]);
+    const pizarra = suscribirPizarra(socket, {
+      onTramo: (trazo, desde) => {
+        dibujarTramo(ctx, ANCHO_TEXTURA_PIZARRON, ALTO_TEXTURA_PIZARRON, trazo, desde);
+        textura.needsUpdate = true;
+      },
+      onRedibujar: (trazos) => {
+        redibujarTodo(ctx, ANCHO_TEXTURA_PIZARRON, ALTO_TEXTURA_PIZARRON, trazos, COLOR_FONDO_PIZARRON);
+        textura.needsUpdate = true;
+      },
+    });
+    return pizarra.dejar;
+  }, [socket, textura, ctx]);
 
   return (
     <mesh position={[0, 0, 0.16]}>
@@ -276,11 +225,7 @@ const PantallaProyector: React.FC<{ url: string }> = ({ url }) => {
   );
 };
 
-const EscenarioAula: React.FC<{ socket: Socket; espacioId?: string | number; pantallaUrl?: string | null }> = ({
-  socket,
-  espacioId,
-  pantallaUrl,
-}) => {
+const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null }> = ({ socket, pantallaUrl }) => {
   return (
     <group>
       <ambientLight intensity={0.95} color="#ffffff" />
@@ -312,7 +257,7 @@ const EscenarioAula: React.FC<{ socket: Socket; espacioId?: string | number; pan
           <boxGeometry args={[16.4, 6.4, 0.3]} />
           <meshStandardMaterial color="#3b2417" roughness={0.5} />
         </mesh>
-        <PizarronAula socket={socket} espacioId={espacioId} />
+        <PizarronAula socket={socket} />
         {pantallaUrl && <PantallaProyector url={pantallaUrl} />}
         <sprite position={[0, 3.7, 0.3]} scale={[6.5, 1.2, 1]}>
           <spriteMaterial
@@ -425,7 +370,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   socket,
   audioClient,
   isAula,
-  espacioId,
   localAvatar,
   remoteUsers,
   espacios,
@@ -688,7 +632,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         />
 
         {isAula ? (
-          <EscenarioAula socket={socket} espacioId={espacioId} pantallaUrl={pantallaUrl} />
+          <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} />
         ) : (
           <group>
             <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />

@@ -35,8 +35,10 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
+      // Sólo el canvas de la escena: el de la pizarra 2D también es un
+      // <canvas>, y dibujar en ella no debe girar la cámara
       const target = e.target as HTMLElement;
-      if (!target || target.tagName !== 'CANVAS') return;
+      if (!target || target.tagName !== 'CANVAS' || !target.closest('.canvas-container')) return;
 
       isDragging = true;
       prevX = e.clientX;
