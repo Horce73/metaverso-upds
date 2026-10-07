@@ -162,3 +162,14 @@ entra VOZ-06 si ocurre cualquiera de estas cosas:
 - AULA-01 (compartir pantalla) en malla significa que el docente sube el vídeo
   una vez por alumno. Es el caso que más empuja hacia un SFU y se vuelve a
   medir al llegar a la Fase 4.
+
+## Seguimiento
+
+- **Fase 3 (2026-10-06):** la sesión de cierre con 30 personas no se hizo: no
+  había esa cantidad de participantes disponibles. La fase se cerró con la
+  medición de la prueba de carga con zonas (12 participantes, sección de
+  resultados de VOZ-03). Las condiciones para pasar a SFU siguen vigentes y se
+  comprueban en la primera clase real con un aula grande, con el panel VOZ-05
+  abierto en el equipo del docente.
+- **Fase 4:** compartir pantalla se midió y se resolvió sin video por la malla;
+  ver [0002 · Cómo compartir pantalla en el aula](0002-compartir-pantalla.md).

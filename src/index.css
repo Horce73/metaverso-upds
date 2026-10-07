@@ -3121,6 +3121,32 @@ main>h2:first-child {
   float: right;
 }
 
+/* ===== PANTALLA COMPARTIDA (AULA-01) ===== */
+.aviso-pantalla {
+  position: fixed;
+  /* Encima del aviso de voz y de los controles inferiores */
+  bottom: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 640;
+  max-width: min(360px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.aviso-pantalla .btn-primary,
+.aviso-pantalla .btn-secondary {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
 /* ===== SELECTOR DE MICRÓFONO (VOZ-08) ===== */
 .selector-microfono {
   display: flex;

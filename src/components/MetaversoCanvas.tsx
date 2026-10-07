@@ -49,6 +49,8 @@ interface MetaversoCanvasProps {
   /** socketId -> marca que se antepone al nombre (✋ mano levantada, 🎤 con la palabra). */
   marcas?: Record<string, string>;
   marcaLocal?: string;
+  /** Última imagen de la pantalla compartida en el aula (AULA-01), como blob URL. */
+  pantallaUrl?: string | null;
 }
 
 // Subcomponente de Controles de Movimiento y Cámara del Jugador Local
@@ -232,7 +234,53 @@ const PizarronAula: React.FC<{ socket: Socket; espacioId?: string | number }> = 
   );
 };
 
-const EscenarioAula: React.FC<{ socket: Socket; espacioId?: string | number }> = ({ socket, espacioId }) => {
+// Pantalla de proyección del aula (AULA-01): baja delante de la pizarra
+// mientras alguien comparte pantalla y muestra la última imagen recibida.
+// Material sin iluminación, como una proyección.
+const ALTO_PROYECCION = 5.6;
+const ANCHO_MAX_PROYECCION = 15.6;
+
+const PantallaProyector: React.FC<{ url: string }> = ({ url }) => {
+  const textura = React.useMemo(() => {
+    const t = new THREE.Texture();
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, []);
+  const [aspecto, setAspecto] = useState(16 / 9);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      textura.image = img;
+      textura.needsUpdate = true;
+      setAspecto(img.naturalWidth / img.naturalHeight || 16 / 9);
+    };
+    img.src = url;
+  }, [url, textura]);
+
+  useEffect(() => () => textura.dispose(), [textura]);
+
+  const ancho = Math.min(ALTO_PROYECCION * aspecto, ANCHO_MAX_PROYECCION);
+  const alto = ancho / aspecto;
+  return (
+    <group position={[0, 0, 0.35]}>
+      <mesh position={[0, 0, -0.02]}>
+        <planeGeometry args={[ancho + 0.3, alto + 0.3]} />
+        <meshBasicMaterial color="#111827" />
+      </mesh>
+      <mesh>
+        <planeGeometry args={[ancho, alto]} />
+        <meshBasicMaterial map={textura} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+};
+
+const EscenarioAula: React.FC<{ socket: Socket; espacioId?: string | number; pantallaUrl?: string | null }> = ({
+  socket,
+  espacioId,
+  pantallaUrl,
+}) => {
   return (
     <group>
       <ambientLight intensity={0.95} color="#ffffff" />
@@ -265,6 +313,7 @@ const EscenarioAula: React.FC<{ socket: Socket; espacioId?: string | number }> =
           <meshStandardMaterial color="#3b2417" roughness={0.5} />
         </mesh>
         <PizarronAula socket={socket} espacioId={espacioId} />
+        {pantallaUrl && <PantallaProyector url={pantallaUrl} />}
         <sprite position={[0, 3.7, 0.3]} scale={[6.5, 1.2, 1]}>
           <spriteMaterial
             attach="material"
@@ -386,6 +435,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   onPositionChange,
   marcas,
   marcaLocal,
+  pantallaUrl,
 }) => {
   const aulas = React.useMemo<AulaCampus[]>(
     () =>
@@ -638,7 +688,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
         />
 
         {isAula ? (
-          <EscenarioAula socket={socket} espacioId={espacioId} />
+          <EscenarioAula socket={socket} espacioId={espacioId} pantallaUrl={pantallaUrl} />
         ) : (
           <group>
             <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />

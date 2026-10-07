@@ -13,6 +13,7 @@ import {
   quitarPalabra,
   salirDelAula,
 } from './preguntas.js';
+import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detenerPantalla, pantallaDe } from './pantalla.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -121,6 +122,8 @@ export function setupSockets(io: Server) {
   const emitirPreguntas = (espacioId: number) => io.to(String(espacioId)).emit('estado_preguntas', estadoPublico(espacioId));
   const dejarAula = (espacioId: number, socketId: string) => {
     if (salirDelAula(espacioId, socketId)) emitirPreguntas(espacioId);
+    // Si estaba compartiendo pantalla (AULA-01), se apaga para todos
+    if (detenerPantalla(espacioId, socketId)) io.to(String(espacioId)).emit('pantalla_estado', estadoPantalla(espacioId));
   };
 
   io.on('connection', (socket: Socket) => {
@@ -225,7 +228,13 @@ export function setupSockets(io: Server) {
       socket.emit('join_aceptado', { espacioId: nuevoEspacioId, espacioTipo, roles });
       socket.emit('space_users', usersInSpace);
       socket.emit('current_users', usersInSpace);
-      if (espacioTipo === 'aula') socket.emit('estado_preguntas', estadoPublico(nuevoEspacioId));
+      if (espacioTipo === 'aula') {
+        socket.emit('estado_preguntas', estadoPublico(nuevoEspacioId));
+        // Quien entra tarde ve la pantalla compartida desde la última imagen
+        const pantalla = pantallaDe(nuevoEspacioId);
+        socket.emit('pantalla_estado', estadoPantalla(nuevoEspacioId));
+        if (pantalla?.ultimoCuadro) socket.emit('pantalla_cuadro', pantalla.ultimoCuadro);
+      }
 
       socket.to(String(espacioId)).emit('user_joined', {
         socketId: socket.id,
@@ -391,6 +400,34 @@ export function setupSockets(io: Server) {
       const actual = quienTienePalabra(user.espacioId);
       if (!actual || (actual.socketId !== socket.id && !esDocenteOAdmin(identidad.roles))) return;
       if (quitarPalabra(user.espacioId)) emitirPreguntas(user.espacioId);
+    });
+
+    // Compartir pantalla (AULA-01, decisión 0002): el docente sube una imagen
+    // cuando su pantalla cambia y el servidor la reenvía al aula. volatile:
+    // a quien tiene la conexión saturada se le saltan cuadros, no se acumulan.
+    on('pantalla_iniciar', 'pantalla', () => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      if (!iniciarPantalla(user.espacioId, socket.id, user.nombreVisible)) {
+        socket.emit('pantalla_rechazada', { motivo: 'Otra persona ya está compartiendo su pantalla en esta aula.' });
+        return;
+      }
+      io.to(String(user.espacioId)).emit('pantalla_estado', estadoPantalla(user.espacioId));
+    });
+
+    on('pantalla_cuadro', 'pantalla_cuadro', (datos: unknown) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || !esCuadroValido(datos)) return;
+      if (guardarCuadro(user.espacioId, socket.id, datos)) {
+        socket.to(String(user.espacioId)).volatile.emit('pantalla_cuadro', datos);
+      }
+    });
+
+    on('pantalla_detener', 'pantalla', () => {
+      const user = activeUsers.get(socket.id);
+      if (user && detenerPantalla(user.espacioId, socket.id)) {
+        io.to(String(user.espacioId)).emit('pantalla_estado', estadoPantalla(user.espacioId));
+      }
     });
 
     // Respuesta del docente a la solicitud de acceso

@@ -527,6 +527,65 @@ async function runTests() {
     return (await sinMaria) !== null;
   });
 
+  // AULA-01: compartir pantalla por imágenes a través del servidor (decisión 0002)
+  const cuadroWebp = (marca) => Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 '), Buffer.from(marca)]);
+  const activa = (d) => d?.activa === true;
+
+  await caso('Un estudiante no puede compartir pantalla', async () => {
+    const recibido = esperarEvento(sDocente, 'pantalla_estado', 800, activa);
+    sAna.emit('pantalla_iniciar');
+    return (await recibido) === null;
+  });
+
+  await caso('El docente comparte pantalla y el aula lo sabe', async () => {
+    const recibido = esperarEvento(sAna, 'pantalla_estado', 1500, activa);
+    sDocente.emit('pantalla_iniciar');
+    const estado = await recibido;
+    return typeof estado?.por === 'string' && estado.socketId === sDocente.id;
+  });
+
+  await caso('Un cuadro del docente llega íntegro al aula y no vuelve al docente', async () => {
+    const cuadro = cuadroWebp('cuadro-1');
+    const enAna = esperarEvento(sAna, 'pantalla_cuadro', 1500);
+    const eco = esperarEvento(sDocente, 'pantalla_cuadro', 800);
+    sDocente.emit('pantalla_cuadro', cuadro);
+    const [recibido, devuelto] = await Promise.all([enAna, eco]);
+    return Buffer.isBuffer(recibido) && recibido.equals(cuadro) && devuelto === null;
+  });
+
+  await caso('No se reenvía lo que no es WebP o JPEG, ni lo que manda un estudiante', async () => {
+    const recibido = esperarEvento(sDocente, 'pantalla_cuadro', 1000);
+    const recibidoAna = esperarEvento(sAna, 'pantalla_cuadro', 1000);
+    sDocente.emit('pantalla_cuadro', Buffer.from('<html><script>alert(1)</script></html>'));
+    sAna.emit('pantalla_cuadro', cuadroWebp('de-ana'));
+    return (await recibido) === null && (await recibidoAna) === null;
+  });
+
+  await caso('Quien entra tarde recibe la pantalla activa y la última imagen', async () => {
+    const estado = esperarEvento(sMaria, 'pantalla_estado', 3000, activa);
+    const cuadro = esperarEvento(sMaria, 'pantalla_cuadro', 3000);
+    await entrar(sMaria, aulaId);
+    const [e, c] = await Promise.all([estado, cuadro]);
+    return e !== null && Buffer.isBuffer(c) && c.equals(cuadroWebp('cuadro-1'));
+  });
+
+  await caso('Mientras uno comparte, otro (un admin) no puede; al desconectarse, se apaga', async () => {
+    const sDocente2 = await conectar((await tokenDe(ADMIN)).token);
+    await entrar(sDocente2, aulaId);
+    const rechazo = esperarEvento(sDocente2, 'pantalla_rechazada', 1500);
+    sDocente2.emit('pantalla_iniciar');
+    if ((await rechazo) === null) return false;
+    const apagada = esperarEvento(sAna, 'pantalla_estado', 1500, (d) => d?.activa === false);
+    sDocente.emit('pantalla_detener');
+    if ((await apagada) === null) return false;
+    const deDocente2 = esperarEvento(sAna, 'pantalla_estado', 1500, (d) => d?.socketId === sDocente2.id);
+    sDocente2.emit('pantalla_iniciar');
+    if ((await deDocente2) === null) return false;
+    const alDesconectar = esperarEvento(sAna, 'pantalla_estado', 2000, (d) => d?.activa === false);
+    sDocente2.disconnect();
+    return (await alDesconectar) !== null;
+  });
+
   // ---------------------------------------------------------------------------
   // Pilar 6: Roles y sesiones de clase (SEC-06)
   // ---------------------------------------------------------------------------
