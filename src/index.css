@@ -2840,6 +2840,215 @@ main>h2:first-child {
   vertical-align: middle;
 }
 
+/* ===== MATERIALES DEL AULA (AULA-06) ===== */
+.panel-materiales {
+  position: fixed;
+  left: 16px;
+  top: 110px;
+  z-index: 700;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 260px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.panel-materiales__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.panel-materiales__cabecera h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.panel-materiales .btn-secondary,
+.panel-materiales .btn-primary {
+  margin: 0;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+}
+
+.panel-materiales__subir {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.panel-materiales__subir input[type='file'] {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.panel-materiales__subir input[type='text'] {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.panel-materiales__nota {
+  color: var(--text-secondary);
+}
+
+.panel-materiales__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  min-height: 0;
+}
+
+.panel-materiales__lista li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.panel-materiales__abrir {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.panel-materiales__abrir:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.panel-materiales__abrir > span:first-child {
+  grid-row: span 2;
+  font-size: 1.3rem;
+}
+
+.panel-materiales__titulo {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-materiales__meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.panel-materiales__gestion {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.visor-material {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.6);
+}
+
+.visor-material__marco {
+  width: min(1100px, 100%);
+  height: min(90vh, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  color: var(--text-primary);
+}
+
+.visor-material__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.visor-material__cabecera h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.visor-material__aviso {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.visor-material__acciones {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.visor-material__acciones .btn-secondary {
+  margin: 0;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.visor-material__contenido {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.visor-material__contenido iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.visor-material__contenido img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.visor-material__nota {
+  color: var(--text-secondary);
+  padding: 16px;
+  text-align: center;
+}
+
+.visor-material__nota a {
+  color: inherit;
+}
+
 /* ===== SELECTOR DE MICRÓFONO (VOZ-08) ===== */
 .selector-microfono {
   display: flex;

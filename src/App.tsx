@@ -13,6 +13,9 @@ import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
 import { CrearCursoModal } from './components/CrearCursoModal.js';
 import { PanelDiagnosticoVoz } from './components/PanelDiagnosticoVoz.js';
 import { SelectorMicrofono } from './components/SelectorMicrofono.js';
+import { PanelMateriales } from './components/PanelMateriales.js';
+import { VisorMaterial } from './components/VisorMaterial.js';
+import type { Material } from './components/materiales.js';
 
 interface User {
   id: string;
@@ -118,6 +121,9 @@ function App() {
   // peerIds que este usuario silenció para sí en el espacio actual
   const [silenciadosLocal, setSilenciadosLocal] = useState<Set<string>>(new Set());
   const [avisoVoz, setAvisoVoz] = useState('');
+  // Materiales del aula (AULA-06)
+  const [materialesAbierto, setMaterialesAbierto] = useState(false);
+  const [materialAbierto, setMaterialAbierto] = useState<{ material: Material; aviso?: string } | null>(null);
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
 
@@ -321,6 +327,8 @@ function App() {
     }
     setRemoteUsers({});
     setSilenciadosLocal(new Set());
+    setMaterialesAbierto(false);
+    setMaterialAbierto(null);
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -421,6 +429,10 @@ function App() {
     activeSocket.off('join_aceptado');
     activeSocket.on('join_aceptado', (data: { roles: string[] }) => {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
+    });
+    activeSocket.off('material_mostrado');
+    activeSocket.on('material_mostrado', (data: { material: Material; por: string }) => {
+      setMaterialAbierto({ material: data.material, aviso: `📣 ${data.por} está mostrando este material a la clase` });
     });
     activeSocket.off('silenciado_por_docente');
     activeSocket.on('silenciado_por_docente', (data: { por: string }) => {
@@ -1095,6 +1107,23 @@ function App() {
           </div>
         )}
 
+        {materialesAbierto && espacioActivo.tipo === 'aula' && (
+          <PanelMateriales
+            token={token}
+            espacioId={espacioActivo.id}
+            onAbrir={(material) => setMaterialAbierto({ material })}
+            onClose={() => setMaterialesAbierto(false)}
+          />
+        )}
+        {materialAbierto && (
+          <VisorMaterial
+            token={token}
+            material={materialAbierto.material}
+            aviso={materialAbierto.aviso}
+            onClose={() => setMaterialAbierto(null)}
+          />
+        )}
+
         {/* Pizarra Digital en Vivo (RF-04) */}
         {pizarraAbierta && (
           <Pizarra2D
@@ -1329,6 +1358,16 @@ function App() {
               title="Pizarra Compartida"
             >
               📋
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (
+            <button
+              className={`control-btn ${materialesAbierto ? 'active' : ''}`}
+              onClick={() => setMaterialesAbierto((v) => !v)}
+              title="Materiales de la clase"
+            >
+              📚
             </button>
           )}
         </div>

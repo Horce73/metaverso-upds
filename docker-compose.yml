@@ -38,6 +38,9 @@ services:
     environment:
       - PORT=3001
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/metaverso_upds
+    # Archivos de materiales del aula (AULA-06): sobreviven a reconstruir la imagen
+    volumes:
+      - materiales_data:/app/uploads/materiales
     depends_on:
       db:
         condition: service_healthy
@@ -63,3 +66,4 @@ services:
 
 volumes:
   postgres_data:
+  materiales_data:

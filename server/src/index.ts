@@ -10,8 +10,9 @@ import dotenv from 'dotenv';
 import { pool, enTransaccion } from './db.js';
 import { setupSockets } from './socketHandler.js';
 import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
-import { registrarAsistencia } from './helpers.js';
+import { registrarAsistencia, bitacora } from './helpers.js';
 import { aplicarMigraciones } from './migraciones.js';
+import { registrarRutasMateriales } from './materiales.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 
 dotenv.config();
@@ -85,6 +86,7 @@ const io = new Server(server, {
 });
 
 setupSockets(io);
+registrarRutasMateriales(app, io);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -143,18 +145,6 @@ app.get('/api/ice-servers', (_req, res) => {
 
   res.json({ iceServers });
 });
-
-// Helper: registrar evento en bitacora
-async function bitacora(usuarioId: number | null, evento: string, detalle = '', ip = '') {
-  try {
-    await pool.query(
-      'INSERT INTO bitacora (usuario_id, evento, detalle, ip) VALUES ($1, $2, $3, $4)',
-      [usuarioId, evento, detalle, ip]
-    );
-  } catch (err) {
-    console.error('Error al registrar bitacora:', err);
-  }
-}
 
 // ----------------------------------------------------------------------------
 // 1. Registro de Usuarios (RF-06, RNF-05)
