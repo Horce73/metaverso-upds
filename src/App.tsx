@@ -18,6 +18,7 @@ import { VisorMaterial } from './components/VisorMaterial.js';
 import type { Material } from './components/materiales.js';
 import { ColaPreguntas } from './components/ColaPreguntas.js';
 import { SIN_PREGUNTAS, type EstadoPreguntas } from './components/preguntas.js';
+import { iniciarCaptura, type CapturaPantalla } from './components/compartirPantalla.js';
 
 interface User {
   id: string;
@@ -128,6 +129,13 @@ function App() {
   const [materialAbierto, setMaterialAbierto] = useState<{ material: Material; aviso?: string } | null>(null);
   // Levantar la mano y palabra (AULA-03), tal como lo publica el servidor
   const [preguntas, setPreguntas] = useState<EstadoPreguntas>(SIN_PREGUNTAS);
+  // Pantalla compartida del aula (AULA-01): quién comparte, la última imagen
+  // recibida (blob URL) y, para el docente, su propia captura en curso
+  const [pantalla, setPantalla] = useState<{ activa: boolean; por?: string; socketId?: string }>({ activa: false });
+  const [pantallaUrl, setPantallaUrl] = useState<string | null>(null);
+  const [pantallaGrande, setPantallaGrande] = useState(false);
+  const [compartiendo, setCompartiendo] = useState(false);
+  const capturaRef = useRef<CapturaPantalla | null>(null);
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState('');
 
@@ -334,6 +342,12 @@ function App() {
     setMaterialesAbierto(false);
     setMaterialAbierto(null);
     setPreguntas(SIN_PREGUNTAS);
+    capturaRef.current?.detener();
+    capturaRef.current = null;
+    setCompartiendo(false);
+    setPantalla({ activa: false });
+    setPantallaUrl(null);
+    setPantallaGrande(false);
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -434,6 +448,25 @@ function App() {
     activeSocket.off('join_aceptado');
     activeSocket.on('join_aceptado', (data: { roles: string[] }) => {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
+    });
+    activeSocket.off('pantalla_estado');
+    activeSocket.on('pantalla_estado', (estado: { activa: boolean; por?: string; socketId?: string }) => {
+      setPantalla(estado);
+      if (!estado.activa) {
+        setPantallaUrl(null);
+        setPantallaGrande(false);
+      }
+    });
+    activeSocket.off('pantalla_cuadro');
+    activeSocket.on('pantalla_cuadro', (datos: ArrayBuffer) => {
+      setPantallaUrl(URL.createObjectURL(new Blob([datos])));
+    });
+    activeSocket.off('pantalla_rechazada');
+    activeSocket.on('pantalla_rechazada', (data: { motivo: string }) => {
+      capturaRef.current?.detener();
+      capturaRef.current = null;
+      setCompartiendo(false);
+      setAvisoVoz(`📽️ ${data.motivo}`);
     });
     activeSocket.off('estado_preguntas');
     activeSocket.on('estado_preguntas', (estado: EstadoPreguntas) => {
@@ -706,6 +739,44 @@ function App() {
     });
   };
 
+  // La imagen anterior de la pantalla compartida se libera al llegar la siguiente
+  useEffect(() => {
+    if (!pantallaUrl) return;
+    return () => URL.revokeObjectURL(pantallaUrl);
+  }, [pantallaUrl]);
+
+  const detenerCompartir = () => {
+    capturaRef.current?.detener();
+    capturaRef.current = null;
+    setCompartiendo(false);
+    socketRef.current?.emit('pantalla_detener');
+  };
+
+  const alternarCompartir = async () => {
+    if (compartiendo) {
+      detenerCompartir();
+      return;
+    }
+    const s = socketRef.current;
+    if (!s) return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setAvisoVoz('📽️ Este navegador no permite compartir pantalla.');
+      return;
+    }
+    // Primero se reserva la pantalla del aula; los cuadros llegan después, en orden
+    s.emit('pantalla_iniciar');
+    try {
+      capturaRef.current = await iniciarCaptura(
+        (datos) => s.emit('pantalla_cuadro', datos),
+        () => detenerCompartir()
+      );
+      setCompartiendo(true);
+    } catch {
+      // El docente cerró el selector sin elegir nada
+      s.emit('pantalla_detener');
+    }
+  };
+
   const silenciarATodos = () => {
     socketRef.current?.emit('silenciar_todos');
     setAvisoVoz('🤫 Pediste silencio a la clase.');
@@ -844,6 +915,7 @@ function App() {
           onPositionChange={handleAvatarPositionChange}
           marcas={marcasAula}
           marcaLocal={miSocketId ? marcasAula[miSocketId] : undefined}
+          pantallaUrl={pantalla.activa ? pantallaUrl : null}
           onInteractuarAula={(espacioSeleccionado) => setSolicitudAulaModal(espacioSeleccionado)}
           onUpdateAvatarPersonalization={(nuevaApariencia) => {
             setAvatar((prev) => {
@@ -1350,6 +1422,42 @@ function App() {
           />
         )}
 
+        {espacioActivo.tipo === 'aula' && pantalla.activa && !compartiendo && pantalla.socketId !== miSocketId && (
+          <div className="aviso-pantalla glass-panel" role="status">
+            <span>📽️ {pantalla.por} está compartiendo su pantalla</span>
+            {pantallaUrl && (
+              <button type="button" className="btn-primary" onClick={() => setPantallaGrande(true)}>
+                Ver en grande
+              </button>
+            )}
+          </div>
+        )}
+        {compartiendo && (
+          <div className="aviso-pantalla glass-panel" role="status">
+            <span>📽️ Estás compartiendo tu pantalla con el aula</span>
+            <button type="button" className="btn-secondary" onClick={detenerCompartir}>
+              Dejar de compartir
+            </button>
+          </div>
+        )}
+        {pantallaGrande && pantallaUrl && (
+          <div className="visor-material" role="dialog" aria-modal="true" aria-label="Pantalla compartida">
+            <div className="visor-material__marco glass-panel">
+              <div className="visor-material__cabecera">
+                <h3>📽️ Pantalla de {pantalla.por}</h3>
+                <div className="visor-material__acciones">
+                  <button className="btn-secondary" onClick={() => setPantallaGrande(false)}>
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+              <div className="visor-material__contenido">
+                <img src={pantallaUrl} alt={`Pantalla de ${pantalla.por}`} />
+              </div>
+            </div>
+          </div>
+        )}
+
         {avisoVoz && (
           <div className="aviso-voz" role="status">
             {avisoVoz}
@@ -1391,6 +1499,17 @@ function App() {
           {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
             <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes">
               🤫
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
+            <button
+              className={`control-btn ${compartiendo ? 'active' : ''}`}
+              onClick={alternarCompartir}
+              aria-pressed={compartiendo}
+              title={compartiendo ? 'Dejar de compartir pantalla' : 'Compartir pantalla en el proyector del aula'}
+            >
+              📽️
             </button>
           )}
 
