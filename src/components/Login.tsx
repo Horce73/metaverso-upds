@@ -29,8 +29,6 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
   const [bloqueado, setBloqueado] = useState(false);
   const [tiempoRestante, setTiempoRestante] = useState(0);
 
-  const API_URL = '/api';
-
   const parseJsonResponse = async (res: Response) => {
     const contentType = res.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
@@ -61,7 +59,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/guest`, {
+      const res = await fetch('/api/auth/guest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -112,7 +110,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/register`, {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -134,7 +132,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
       }
 
       // Tras registro exitoso, iniciar sesión automáticamente
-      const loginRes = await fetch(`${API_URL}/auth/login`, {
+      const loginRes = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -168,7 +166,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
