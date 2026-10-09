@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AvatarCustomizer3D } from './AvatarCustomizer3D.js';
-import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo3d/AvatarModel.js';
+import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo3d/personalizacion.js';
 
 interface CustomAvatarProps {
   currentAvatar: any;
