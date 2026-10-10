@@ -438,6 +438,19 @@ async function runTests() {
     return msg?.text === 'hola QA' && msg.sender !== 'Ing. Mendoza';
   });
 
+  await caso('El canal de chat integrado entrega el mensaje a todos en el aula', async () => {
+    const texto = 'canal integrado QA';
+    const esElMensaje = mensaje => mensaje?.text === texto;
+    const [enviado, recibido] = await Promise.all([
+      esperarEvento(sAna, 'chat_msg_received', 2000, esElMensaje),
+      esperarEvento(sDocente, 'chat_msg_received', 2000, esElMensaje),
+      Promise.resolve().then(() => sAna.emit('chat_msg_send', { message: { text: texto } })),
+    ]);
+    return enviado?.text === texto
+      && recibido?.text === texto
+      && enviado.sender === recibido.sender;
+  });
+
   // AULA-02: pizarra por operaciones (un trazo = una operación con id)
   const idTrazo = () => `qa-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const lote = (id, extra = {}) => ({ id, color: '#3b82f6', grosor: 0.004, puntos: [[0.1, 0.1], [0.2, 0.25]], fin: false, ...extra });

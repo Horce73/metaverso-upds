@@ -377,7 +377,7 @@ function App() {
     activeSocket.off('user_joined');
     activeSocket.off('user_left');
     activeSocket.off('user_moved');
-    activeSocket.off('chat_message');
+    activeSocket.off('chat_msg_received');
     activeSocket.off('pizarra_actualizada');
     activeSocket.off('clase_iniciada');
     activeSocket.off('clase_finalizada');
@@ -547,7 +547,7 @@ function App() {
       alert(`⚠️ ${data.motivo}`);
     });
 
-    activeSocket.on('chat_message', (data: any) => {
+    activeSocket.on('chat_msg_received', (data: any) => {
       setChatMessages((prev) => [...prev, data]);
     });
 
@@ -681,10 +681,9 @@ function App() {
     e.preventDefault();
     if (!chatInput.trim() || !socket || !espacioActivo) return;
 
-    const senderName = avatar?.nombre_visible || user?.nombre || 'Estudiante';
-    socket.emit('send_chat', {
+    socket.emit('chat_msg_send', {
       espacioId: espacioActivo.id,
-      message: { sender: senderName, text: chatInput },
+      message: { text: chatInput },
     });
     setChatInput('');
   };
