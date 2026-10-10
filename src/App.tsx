@@ -1,14 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
-import { CustomAvatar } from './components/CustomAvatar.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
-import { MetaversoCanvas } from './components/MetaversoCanvas.js';
 import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
-import { AdminPanel } from './components/AdminPanel.js';
-import { TeacherPanel } from './components/TeacherPanel.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
 import { CrearCursoModal } from './components/CrearCursoModal.js';
 import { PanelDiagnosticoVoz } from './components/PanelDiagnosticoVoz.js';
@@ -19,6 +15,46 @@ import type { Material } from './components/materiales.js';
 import { ColaPreguntas } from './components/ColaPreguntas.js';
 import { SIN_PREGUNTAS, type EstadoPreguntas } from './components/preguntas.js';
 import { iniciarCaptura, type CapturaPantalla } from './components/compartirPantalla.js';
+
+// 3D-01: estos cuatro arrastran three.js (MetaversoCanvas, CustomAvatar) o son
+// paneles que la mayoria de sesiones nunca abre (AdminPanel, TeacherPanel).
+// Perezosos: quien solo va a iniciar sesion no descarga ninguno de los dos.
+const CustomAvatar = lazy(() =>
+  import('./components/CustomAvatar.js').then((m) => ({ default: m.CustomAvatar }))
+);
+const MetaversoCanvas = lazy(() =>
+  import('./components/MetaversoCanvas.js').then((m) => ({ default: m.MetaversoCanvas }))
+);
+const AdminPanel = lazy(() =>
+  import('./components/AdminPanel.js').then((m) => ({ default: m.AdminPanel }))
+);
+const TeacherPanel = lazy(() =>
+  import('./components/TeacherPanel.js').then((m) => ({ default: m.TeacherPanel }))
+);
+
+function CargandoPantalla({ mensaje }: { mensaje: string }) {
+  return (
+    <div className="dashboard-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
+      <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', maxWidth: '420px' }}>
+        <span className="spinner" style={{ width: '28px', height: '28px', display: 'inline-block', marginBottom: '12px' }}></span>
+        <p style={{ color: 'var(--text-secondary)' }}>{mensaje}</p>
+      </div>
+    </div>
+  );
+}
+
+function CargandoEscena3D() {
+  return (
+    <div
+      style={{
+        width: '100vw', height: '100vh', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', background: 'var(--background)',
+      }}
+    >
+      <span className="spinner" style={{ width: '32px', height: '32px', display: 'inline-block' }}></span>
+    </div>
+  );
+}
 
 interface User {
   id: string;
@@ -903,7 +939,11 @@ function App() {
       volverDesdeGestion();
       return null;
     }
-    return <AdminPanel token={token} onClose={volverDesdeGestion} />;
+    return (
+      <Suspense fallback={<CargandoPantalla mensaje="Abriendo el panel de administración…" />}>
+        <AdminPanel token={token} onClose={volverDesdeGestion} />
+      </Suspense>
+    );
   }
 
   // 4. Ruta /docente (Panel del Docente)
@@ -912,7 +952,11 @@ function App() {
       volverDesdeGestion();
       return null;
     }
-    return <TeacherPanel token={token} user={user} onClose={volverDesdeGestion} />;
+    return (
+      <Suspense fallback={<CargandoPantalla mensaje="Abriendo el panel del docente…" />}>
+        <TeacherPanel token={token} user={user} onClose={volverDesdeGestion} />
+      </Suspense>
+    );
   }
 
   // 5. Ruta /metaverso (Escenario 3D)
@@ -920,6 +964,7 @@ function App() {
     return (
       <div className="metaverso-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative' }}>
         {/* Canvas 3D de Three.js */}
+        <Suspense fallback={<CargandoEscena3D />}>
         <MetaversoCanvas
           key={espacioActivo.id}
           socket={socket!}
@@ -944,6 +989,7 @@ function App() {
             });
           }}
         />
+        </Suspense>
 
         {/* Menú Hamburguesa */}
         <div className="hamburger-menu">
@@ -1010,15 +1056,17 @@ function App() {
         {/* Personalización de Avatar (persistida en BD) */}
         {customizingAvatar && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000 }}>
-            <CustomAvatar
-              currentAvatar={avatar}
-              token={token}
-              onSaveSuccess={(updatedAvatar) => {
-                setAvatar(updatedAvatar);
-                setCustomizingAvatar(false);
-              }}
-              onClose={() => setCustomizingAvatar(false)}
-            />
+            <Suspense fallback={<CargandoPantalla mensaje="Abriendo el personalizador de avatar…" />}>
+              <CustomAvatar
+                currentAvatar={avatar}
+                token={token}
+                onSaveSuccess={(updatedAvatar) => {
+                  setAvatar(updatedAvatar);
+                  setCustomizingAvatar(false);
+                }}
+                onClose={() => setCustomizingAvatar(false)}
+              />
+            </Suspense>
           </div>
         )}
 

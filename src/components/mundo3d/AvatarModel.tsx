@@ -3,59 +3,14 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKeyboardControls } from './useKeyboardControls.js';
 import { crearTexturaTexto } from './texto3d.js';
+import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './personalizacion.js';
+
+export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
 
 const VELOCIDAD = 4;
 const ROTACION_LERP = 10;
 const FRECUENCIA_CAMINAR = 9;
 const AMPLITUD_CAMINAR = 0.6;
-
-export interface PersonalizacionAvatar {
-  colorRopa?: string;
-  colorPiel?: string;
-  colorCabello?: string;
-  estiloCabello?: 'corto' | 'largo' | 'tupe' | 'rizado' | 'bun' | 'calvo';
-  expresionRostro?: 'alegre' | 'guiño' | 'serio' | 'sorprendido';
-  escala?: number;
-  accesorios?: {
-    sombrero?: boolean;
-    gafas?: boolean;
-    mochila?: boolean;
-  };
-  ropa?: {
-    colorPrimario: string;
-    colorSecundario: string;
-  };
-  cabello?: {
-    estilo: 'corto' | 'largo' | 'tupe' | 'rizado' | 'bun' | 'calvo';
-    color: string;
-  };
-  velloFacial?: {
-    estilo: 'ninguno' | 'barba' | 'bigote' | 'perilla' | 'candado';
-    color: string;
-  };
-}
-
-export const PERSONALIZACION_POR_DEFECTO: PersonalizacionAvatar = {
-  colorRopa: '#3498db',
-  colorPiel: '#e0ac69',
-  colorCabello: '#2c1d11',
-  estiloCabello: 'corto',
-  expresionRostro: 'alegre',
-  escala: 1,
-  accesorios: { sombrero: false, gafas: false, mochila: false },
-  ropa: {
-    colorPrimario: '#3498db',
-    colorSecundario: '#1d4ed8',
-  },
-  cabello: {
-    estilo: 'corto',
-    color: '#2c1d11',
-  },
-  velloFacial: {
-    estilo: 'ninguno',
-    color: '#2c1d11',
-  },
-};
 
 // Rectángulo de colisión (en coordenadas de mundo) que bloquea el paso del
 // avatar en el campus — un edificio de aula, por ejemplo.

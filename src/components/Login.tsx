@@ -1,6 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { AvatarCustomizer3D } from './AvatarCustomizer3D.js';
-import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo3d/AvatarModel.js';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo3d/personalizacion.js';
+
+// Perezoso: AvatarCustomizer3D arrastra three.js y @react-three/fiber, y la
+// pantalla de login/registro (paso 1) es lo primero que carga cualquier
+// visitante. Sin esto, 3D-01 no tiene efecto: el chunk principal seguiría
+// enganchado a three.js aunque MetaversoCanvas ya fuera perezoso.
+const AvatarCustomizer3D = lazy(() =>
+  import('./AvatarCustomizer3D.js').then((m) => ({ default: m.AvatarCustomizer3D }))
+);
 
 interface LoginProps {
   onLoginSuccess: (userData: any, token: string, avatarData: any) => void;
@@ -203,17 +210,25 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
   // Si está en Registro - Paso 2: Mostrar Customizador 3D Rotable con Opción de Omitir
   if (isRegister && registerStep === 2) {
     return (
-      <AvatarCustomizer3D
-        nombreVisible={nombreVisible || `${nombre} ${apellido}`}
-        aparienciaInicial={PERSONALIZACION_POR_DEFECTO}
-        title="🎉 ¡Casi listo! Personaliza tu Avatar 3D"
-        subtitle="Arrastra con el mouse para rotarlo 360° y elige tu estilo"
-        saveButtonText={loading ? 'Creando cuenta...' : '🚀 Finalizar y Entrar al Metaverso'}
-        showSkipButton={true}
-        onSave={handleFinalizeRegister}
-        onSkip={() => handleFinalizeRegister(PERSONALIZACION_POR_DEFECTO)}
-        onCancel={() => setRegisterStep(1)}
-      />
+      <Suspense
+        fallback={
+          <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--background)' }}>
+            <span className="spinner" style={{ width: '32px', height: '32px', display: 'inline-block' }}></span>
+          </div>
+        }
+      >
+        <AvatarCustomizer3D
+          nombreVisible={nombreVisible || `${nombre} ${apellido}`}
+          aparienciaInicial={PERSONALIZACION_POR_DEFECTO}
+          title="🎉 ¡Casi listo! Personaliza tu Avatar 3D"
+          subtitle="Arrastra con el mouse para rotarlo 360° y elige tu estilo"
+          saveButtonText={loading ? 'Creando cuenta...' : '🚀 Finalizar y Entrar al Metaverso'}
+          showSkipButton={true}
+          onSave={handleFinalizeRegister}
+          onSkip={() => handleFinalizeRegister(PERSONALIZACION_POR_DEFECTO)}
+          onCancel={() => setRegisterStep(1)}
+        />
+      </Suspense>
     );
   }
 
