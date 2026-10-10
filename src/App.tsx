@@ -15,6 +15,7 @@ import type { Material } from './components/materiales.js';
 import { ColaPreguntas } from './components/ColaPreguntas.js';
 import { SIN_PREGUNTAS, type EstadoPreguntas } from './components/preguntas.js';
 import { iniciarCaptura, type CapturaPantalla } from './components/compartirPantalla.js';
+import { useEsTactil } from './components/mundo3d/useEsTactil.js';
 
 // 3D-01: estos cuatro arrastran three.js (MetaversoCanvas, CustomAvatar) o son
 // paneles que la mayoria de sesiones nunca abre (AdminPanel, TeacherPanel).
@@ -111,6 +112,15 @@ const ESTADO_VOZ_UI: Record<EstadoVoz, { texto: string; color: string }> = {
 };
 
 function App() {
+  // 3D-06: la guia de teclas (WASD/E) no aplica en pantalla tactil, donde el
+  // movimiento es el joystick virtual que renderiza MetaversoCanvas.
+  const esTactil = useEsTactil();
+  // 3D-06: en pantallas <=768px el CSS vuelve la sidebar de chat/usuarios un
+  // panel de pantalla completa (@media max-width:768px en .sidebar-panel) y
+  // no tenia forma de cerrarla — en celular tapaba el mundo 3D por completo,
+  // para siempre. Arranca cerrada en tactil; en escritorio sigue como antes.
+  const [sidebarAbierta, setSidebarAbierta] = useState(!esTactil);
+
   // Enrutador basado en Hash (URL independiente y persistente)
   const [route, setRoute] = useState<string>(getHashRoute);
 
@@ -1070,26 +1080,28 @@ function App() {
           </div>
         )}
 
-        {/* Guía de Teclas */}
-        <div className="keys-guide">
-          <div className="keys-row">
-            <span className="key-cap">W</span>
-            <span className="key-cap">S</span>
-            <span>Avanzar / Retroceder</span>
+        {/* Guía de Teclas (solo con teclado; en táctil el joystick ya es autoexplicativo) */}
+        {!esTactil && (
+          <div className="keys-guide">
+            <div className="keys-row">
+              <span className="key-cap">W</span>
+              <span className="key-cap">S</span>
+              <span>Avanzar / Retroceder</span>
+            </div>
+            <div className="keys-row">
+              <span className="key-cap">A</span>
+              <span className="key-cap">D</span>
+              <span>Mover Izquierda / Derecha</span>
+            </div>
+            <div className="keys-row">
+              <span className="key-cap">E</span>
+              <span>Ingresar a Aula cercana</span>
+            </div>
+            <div className="keys-row">
+              <span>Arrastra el mouse para rotar la cámara</span>
+            </div>
           </div>
-          <div className="keys-row">
-            <span className="key-cap">A</span>
-            <span className="key-cap">D</span>
-            <span>Mover Izquierda / Derecha</span>
-          </div>
-          <div className="keys-row">
-            <span className="key-cap">E</span>
-            <span>Ingresar a Aula cercana</span>
-          </div>
-          <div className="keys-row">
-            <span>Arrastra el mouse para rotar la cámara</span>
-          </div>
-        </div>
+        )}
 
         {/* Barra superior HUD */}
         <div className="overlay-panel top-bar glass-panel">
@@ -1383,7 +1395,34 @@ function App() {
           />
         )}
 
+        {/* Boton para mostrar/ocultar la sidebar: en movil es pantalla completa
+            y tapa el mundo 3D, asi que tiene que poder cerrarse. */}
+        <button
+          type="button"
+          onClick={() => setSidebarAbierta((v) => !v)}
+          title={sidebarAbierta ? 'Ocultar panel' : 'Mostrar usuarios y chat'}
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '76px',
+            width: '46px',
+            height: '46px',
+            borderRadius: '12px',
+            background: 'var(--panel-bg)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            border: '1px solid var(--panel-border)',
+            color: 'var(--text-primary)',
+            fontSize: '1.2rem',
+            cursor: 'pointer',
+            zIndex: 180,
+          }}
+        >
+          {sidebarAbierta ? '✕' : '💬'}
+        </button>
+
         {/* Sidebar Derecha: Estudiantes activos y Chat */}
+        {sidebarAbierta && (
         <div className="overlay-panel sidebar-panel glass-panel">
           <div className="sidebar-title">Usuarios Activos</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '150px', overflowY: 'auto' }}>
@@ -1480,6 +1519,7 @@ function App() {
             </button>
           </form>
         </div>
+        )}
 
         {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
           <ColaPreguntas
