@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stars } from '@react-three/drei';
 import { Socket } from 'socket.io-client';
@@ -20,6 +20,8 @@ import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } 
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { Pupitre, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { crearTexturaTexto } from './mundo3d/texto3d.js';
+import { useEsTactil } from './mundo3d/useEsTactil.js';
+import { VirtualJoystick } from './mundo3d/VirtualJoystick.js';
 import { suscribirPizarra, dibujarTramo, redibujarTodo } from './pizarra.js';
 import { MESAS_AULA } from './zonasVoz.js';
 
@@ -426,6 +428,8 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   pantallaUrl,
   modoGrupos,
 }) => {
+  const esTactil = useEsTactil();
+
   const aulas = React.useMemo<AulaCampus[]>(
     () =>
       (espacios || [])
@@ -600,62 +604,81 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return () => clearInterval(interval);
   }, [isAula, estaSentado, ASIENTOS_AULA]);
 
+  // Lo que antes hacia solo la tecla [E]: levantarse, sentarse en un asiento
+  // cercano, o entrar al aula cercana. Extraido para que el boton tactil de
+  // interaccion (sin teclado) dispare exactamente lo mismo, en vez de
+  // simular un KeyboardEvent.
+  const interactuar = useCallback(() => {
+    if (estaSentado) {
+      setEstaSentado(false);
+      setPosicionSentadoTarget(null);
+      avatarEstadoRef.current.posicion.y = 0;
+      return;
+    }
+
+    if (isAula && asientoCercano) {
+      setEstaSentado(true);
+      setPosicionSentadoTarget(asientoCercano);
+      avatarEstadoRef.current.posicion.set(asientoCercano.x, asientoCercano.y, asientoCercano.z);
+      avatarEstadoRef.current.angulo = asientoCercano.angulo;
+      avatarEstadoRef.current.solicitarSnapCamara = true;
+      return;
+    }
+
+    if (isAula || !onInteractuarAula || aulas.length === 0) return;
+
+    const pos = avatarEstadoRef.current.posicion;
+    if (!pos) return;
+
+    let aulaCercana: AulaCampus | null = null;
+    let distMin = Infinity;
+    aulas.forEach((aula) => {
+      const posicion = posicionesAulas.get(String(aula.id));
+      if (!posicion) return;
+      const [x, , z] = posicion;
+      const d = Math.hypot(pos.x - x, pos.z - (z + ISLA_2_OFFSET_Z));
+      if (d < distMin) {
+        distMin = d;
+        aulaCercana = aula;
+      }
+    });
+
+    const MAX_DISTANCIA = 9.0;
+    if (aulaCercana && distMin < MAX_DISTANCIA) {
+      handleInteractuarAula(aulaCercana);
+    }
+  }, [isAula, estaSentado, asientoCercano, aulas, posicionesAulas, onInteractuarAula, handleInteractuarAula]);
+
   useEffect(() => {
+    const TECLAS_MOVIMIENTO = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
         return;
       }
 
-      if (estaSentado) {
-        if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyE'].includes(e.code) || e.key === 'e' || e.key === 'E') {
-          setEstaSentado(false);
-          setPosicionSentadoTarget(null);
-          avatarEstadoRef.current.posicion.y = 0;
-          return;
-        }
-      }
+      const esTeclaE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E';
 
-      if ((e.code === 'KeyE' || e.key === 'e' || e.key === 'E') && isAula && asientoCercano && !estaSentado) {
-        setEstaSentado(true);
-        setPosicionSentadoTarget(asientoCercano);
-        avatarEstadoRef.current.posicion.set(asientoCercano.x, asientoCercano.y, asientoCercano.z);
-        avatarEstadoRef.current.angulo = asientoCercano.angulo;
-        avatarEstadoRef.current.solicitarSnapCamara = true;
+      // Caminar (sin tocar E) tambien levanta de la silla; es un atajo de
+      // teclado sin equivalente tactil (el joystick no "camina" si el
+      // boton de interactuar ya cubre pararse). interactuar() se encarga
+      // de levantar cuando la tecla SI es E.
+      if (estaSentado && TECLAS_MOVIMIENTO.includes(e.code)) {
+        setEstaSentado(false);
+        setPosicionSentadoTarget(null);
+        avatarEstadoRef.current.posicion.y = 0;
         return;
       }
 
-      if (e.code === 'KeyE' || e.key === 'e' || e.key === 'E') {
-        if (isAula || !onInteractuarAula || aulas.length === 0) return;
-
-        const pos = avatarEstadoRef.current.posicion;
-        if (!pos) return;
-
-        let aulaCercana: AulaCampus | null = null;
-        let distMin = Infinity;
-        aulas.forEach((aula) => {
-          const posicion = posicionesAulas.get(String(aula.id));
-          if (!posicion) return;
-          const [x, , z] = posicion;
-          const d = Math.hypot(pos.x - x, pos.z - (z + ISLA_2_OFFSET_Z));
-          if (d < distMin) {
-            distMin = d;
-            aulaCercana = aula;
-          }
-        });
-
-        const MAX_DISTANCIA = 9.0;
-        if (aulaCercana && distMin < MAX_DISTANCIA) {
-          handleInteractuarAula(aulaCercana);
-        }
-      }
+      if (esTeclaE) interactuar();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isAula, estaSentado, asientoCercano, aulas, posicionesAulas, onInteractuarAula, handleInteractuarAula]);
+  }, [estaSentado, interactuar]);
 
   return (
     <div className="canvas-container" style={{ position: 'relative', width: '100%', height: '100vh' }}>
@@ -750,6 +773,45 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
             );
           })}
       </Canvas>
+
+      {esTactil && (
+        <>
+          <VirtualJoystick />
+          <button
+            type="button"
+            onPointerDown={(e) => { e.preventDefault(); interactuar(); }}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label={
+              estaSentado ? 'Levantarse' : isAula && asientoCercano ? 'Sentarse' : 'Ingresar al aula cercana'
+            }
+            style={{
+              // El boton "Personalizar avatar" vive en bottom:20px/right:20px
+              // con z-index 60 (CustomizadorAvatar.tsx): mas abajo aqui queda
+              // tapado y sin poder tocarse. Se apila arriba de el.
+              position: 'fixed',
+              right: '20px',
+              bottom: '84px',
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: 'rgba(15, 23, 42, 0.78)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid rgba(56, 189, 248, 0.4)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              color: '#f8fafc',
+              fontSize: '1.6rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 40,
+              touchAction: 'none',
+            }}
+          >
+            {estaSentado ? '🧍' : isAula && asientoCercano ? '🪑' : '🚪'}
+          </button>
+        </>
+      )}
 
       <CustomizadorAvatar
         personalizacion={personalizacion}

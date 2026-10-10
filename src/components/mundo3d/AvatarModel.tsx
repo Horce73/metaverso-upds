@@ -2,6 +2,7 @@ import React, { useRef, useMemo, useEffect, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKeyboardControls } from './useKeyboardControls.js';
+import { estadoJoystick } from './touchControls.js';
 import { crearTexturaTexto } from './texto3d.js';
 import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './personalizacion.js';
 
@@ -370,7 +371,12 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
 
     if (isLocal) {
       if (!estaSentado) {
-        const { adelante, atras, izquierda, derecha } = controles.current;
+        const k = controles.current;
+        const j = estadoJoystick;
+        const adelante = k.adelante || j.adelante;
+        const atras = k.atras || j.atras;
+        const izquierda = k.izquierda || j.izquierda;
+        const derecha = k.derecha || j.derecha;
         const entradaAdelante = (adelante ? 1 : 0) - (atras ? 1 : 0);
         const entradaLateral = (derecha ? 1 : 0) - (izquierda ? 1 : 0);
 
