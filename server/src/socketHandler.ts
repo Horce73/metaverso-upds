@@ -15,6 +15,7 @@ import {
 } from './preguntas.js';
 import { validarLote, agregarLote, cerrarTrazo, cerrarTrazosDe, trazosVisibles, deshacerTrazo, borrarTodo } from './pizarra.js';
 import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detenerPantalla, pantallaDe } from './pantalla.js';
+import { debeRecibirMovimiento } from './relevanciaPosicion.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -254,16 +255,28 @@ export function setupSockets(io: Server) {
       estaSentado?: boolean;
     }) => {
       const user = activeUsers.get(socket.id);
-      if (user) {
-        if (data.position) user.position = data.position;
-        if (data.rotation) user.rotation = data.rotation;
-        user.estaSentado = !!data.estaSentado;
-        socket.to(String(user.espacioId)).emit('user_moved', {
-          socketId: socket.id,
-          position: user.position,
-          rotation: user.rotation,
-          estaSentado: user.estaSentado
-        });
+      if (!user) return;
+      if (data.position) user.position = data.position;
+      if (data.rotation) user.rotation = data.rotation;
+      user.estaSentado = !!data.estaSentado;
+
+      const payload = {
+        socketId: socket.id,
+        position: user.position,
+        rotation: user.rotation,
+        estaSentado: user.estaSentado
+      };
+
+      // 3D-04: en el aula se difunde a todos (es un solo salon compacto,
+      // filtrar ahi no ahorra nada). En el campus solo a quien tiene este
+      // movimiento cerca, para que 30 alumnos repartidos entre la plaza y la
+      // isla de aulas no reciban la posicion de todo el mundo 25 veces por
+      // segundo cuando ni siquiera se ven.
+      for (const [otroSocketId, otro] of activeUsers) {
+        if (otroSocketId === socket.id) continue;
+        if (otro.espacioId !== user.espacioId) continue;
+        if (!debeRecibirMovimiento(user.espacioTipo, user.position, otro.position)) continue;
+        io.to(otroSocketId).emit('user_moved', payload);
       }
     });
 

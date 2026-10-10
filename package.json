@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "carga:voz": "node pruebas/carga-voz/spike.mjs",
+    "carga:trafico": "node pruebas/carga-trafico/medir-trafico.mjs",
     "test:unidad": "node --test 'pruebas/unidad/*.test.mjs'"
   },
   "dependencies": {

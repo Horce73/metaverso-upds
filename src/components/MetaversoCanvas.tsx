@@ -100,8 +100,13 @@ const LocalPlayerController: React.FC<{
     const distancia = ultimaPosRef.current.distanceTo(posicion);
     const cambioSentado = ultimoEstadoSentadoRef.current !== estaSentado;
 
-    // Emitir a máximo 25 FPS (cada 40ms) o de inmediato al sentarse/levantarse o empezar/detenerse
-    if (ahora - ultimoEnvioRef.current > 40 || cambioSentado || (distancia > 0.02 && ahora - ultimoEnvioRef.current > 30)) {
+    // 3D-04: solo emitir si algo cambio de verdad (se movio, o se sento/paro),
+    // nunca por el solo paso del tiempo. Antes el ">40ms" de abajo disparaba
+    // un 'move' cada 40ms SIEMPRE, incluso con el avatar completamente
+    // quieto -- que es la mayor parte de una clase. Sentarse/pararse sigue
+    // siendo inmediato; moverse sigue topado a ~33/s (cada 30ms) para no
+    // saturar en un giro brusco de camara con movimiento.
+    if (cambioSentado || (distancia > 0.02 && ahora - ultimoEnvioRef.current > 30)) {
       ultimoEnvioRef.current = ahora;
       ultimaPosRef.current.copy(posicion);
       ultimoEstadoSentadoRef.current = estaSentado;
