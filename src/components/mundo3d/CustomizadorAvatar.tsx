@@ -147,11 +147,15 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 {COLORES_CABELLO.map((c) => (
                   <button
                     key={c}
+                    type="button"
+                    aria-label={`Color de cabello ${c}`}
+                    aria-pressed={colorCabelloActual === c}
                     onClick={() => actualizarCabello('color', c)}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: colorCabelloActual === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                      // Sombra y no outline: el outline queda libre para el foco de teclado
+                      boxShadow: colorCabelloActual === c ? '0 0 0 3px #60a5fa' : '0 0 0 2px rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}
@@ -183,11 +187,15 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 {COLORES_CABELLO.map((c) => (
                   <button
                     key={c}
+                    type="button"
+                    aria-label={`Color de vello facial ${c}`}
+                    aria-pressed={colorVelloActual === c}
                     onClick={() => actualizarVello('color', c)}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: colorVelloActual === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                      // Sombra y no outline: el outline queda libre para el foco de teclado
+                      boxShadow: colorVelloActual === c ? '0 0 0 3px #60a5fa' : '0 0 0 2px rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}
@@ -224,11 +232,15 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 {COLORES_ROPA.map((c) => (
                   <button
                     key={c}
+                    type="button"
+                    aria-label={`Color de ropa (principal) ${c}`}
+                    aria-pressed={colorPrimarioActual === c}
                     onClick={() => actualizarRopa('colorPrimario', c)}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: colorPrimarioActual === c ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
+                      // Sombra y no outline: el outline queda libre para el foco de teclado
+                      boxShadow: colorPrimarioActual === c ? '0 0 0 3px #fff' : '0 0 0 2px rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}
@@ -239,11 +251,15 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 {COLORES_ROPA.map((c) => (
                   <button
                     key={`sec-${c}`}
+                    type="button"
+                    aria-label={`Color de ropa (secundario) ${c}`}
+                    aria-pressed={colorSecundarioActual === c}
                     onClick={() => actualizarRopa('colorSecundario', c)}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: colorSecundarioActual === c ? '3px solid #60a5fa' : '2px solid rgba(255,255,255,0.2)',
+                      // Sombra y no outline: el outline queda libre para el foco de teclado
+                      boxShadow: colorSecundarioActual === c ? '0 0 0 3px #60a5fa' : '0 0 0 2px rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}
@@ -259,11 +275,15 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
                 {TONOS_PIEL.map((c) => (
                   <button
                     key={c}
+                    type="button"
+                    aria-label={`Tono de piel ${c}`}
+                    aria-pressed={personalizacion.colorPiel === c}
                     onClick={() => actualizar({ colorPiel: c })}
                     style={{
                       ...estilos.swatch,
                       background: c,
-                      outline: personalizacion.colorPiel === c ? '3px solid #fff' : '2px solid rgba(255,255,255,0.2)',
+                      // Sombra y no outline: el outline queda libre para el foco de teclado
+                      boxShadow: personalizacion.colorPiel === c ? '0 0 0 3px #fff' : '0 0 0 2px rgba(255,255,255,0.2)',
                     }}
                   />
                 ))}

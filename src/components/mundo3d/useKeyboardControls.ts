@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { esTeclaDelMundo3D } from '../teclado.js';
 
 export interface KeyboardControlsState {
   adelante: boolean;
@@ -19,12 +20,6 @@ const MAPA_TECLAS: Record<string, keyof KeyboardControlsState> = {
 };
 
 const CODIGOS_MOVIMIENTO = new Set(Object.keys(MAPA_TECLAS));
-
-function estaEscribiendoEnUnInput(e: KeyboardEvent): boolean {
-  const target = e.target as HTMLElement | null;
-  const tag = target?.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-}
 
 /**
  * Devuelve una ref mutable { adelante, atras, izquierda, derecha }
@@ -47,7 +42,7 @@ export function useKeyboardControls() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (estaEscribiendoEnUnInput(e)) return;
+      if (!esTeclaDelMundo3D(e)) return;
 
       const accion = MAPA_TECLAS[e.code];
       if (!accion) return;

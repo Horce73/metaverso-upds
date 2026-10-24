@@ -3375,3 +3375,36 @@ main>h2:first-child {
   opacity: 0.85;
   font-style: italic;
 }
+
+/* ===== NAVEGACIÓN POR TECLADO (A11Y-03) ===== */
+/* Foco visible y uniforme para quien navega con teclado; con mouse no se
+   muestra (:focus-visible). :where no suma especificidad: los campos que ya
+   tienen su propio estilo de foco lo conservan. */
+:where(button, a, select, summary, [tabindex]):focus-visible {
+  outline: 3px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+:where(input, textarea):focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.saltar-al-chat {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translate(-50%, -200%);
+  z-index: 3000;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: #1d4ed8;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.saltar-al-chat:focus {
+  transform: translate(-50%, 0);
+}

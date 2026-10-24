@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useDialogo } from './useDialogo.js';
 import { Socket } from 'socket.io-client';
 import { SelectorMicrofono } from './SelectorMicrofono.js';
 
@@ -34,6 +35,9 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
   onIngresarDirecto,
   onClose,
 }) => {
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  useDialogo(dialogoRef, onClose);
+
   const [codigoInput, setCodigoInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [solicitando, setSolicitando] = useState(false);
@@ -104,18 +108,18 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
   const esDocente = usuario.rol === 'docente' || (usuario as any)?.roles?.includes('docente');
 
   return (
-    <div className="avatar-customizer-3d-wrapper" style={{ zIndex: 2000 }}>
+    <div ref={dialogoRef} className="avatar-customizer-3d-wrapper" style={{ zIndex: 2000 }} role="dialog" aria-modal="true" aria-labelledby="titulo-solicitud-acceso">
       <div className="customizer-card glass-panel" style={{ maxWidth: '520px', width: '92vw', padding: '28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
           <div>
-            <h2 className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
+            <h2 id="titulo-solicitud-acceso" className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
               🎓 {espacio.nombre}
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '4px 0 0 0' }}>
               Acceso a Aula Virtual 3D {esDocente && '• Perfil Docente'}
             </p>
           </div>
-          <button className="btn-secondary" onClick={onClose} style={{ padding: '4px 10px', fontSize: '0.9rem' }}>
+          <button className="btn-secondary" onClick={onClose} style={{ padding: '4px 10px', fontSize: '0.9rem' }} aria-label="Cerrar">
             ✕
           </button>
         </div>
@@ -197,11 +201,13 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
           <>
             {/* Método 1: Ingreso por Código de Aula / Curso */}
             <form onSubmit={handleIngresarPorCodigo} style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              <label htmlFor="codigo-aula" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
                 🔑 Ingresar con Código de Aula / Materia:
               </label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
+                  id="codigo-aula"
+                  data-foco-inicial
                   type="text"
                   className="form-input"
                   placeholder={`Ej: ${codigoRequerido}`}

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useDialogo } from './useDialogo.js';
 import { AudioClient } from './AudioClient.js';
 import { calidadPeer, type Calidad, type DiagnosticoVoz } from './diagnosticoVoz.js';
 
@@ -28,6 +29,9 @@ const num = (v: number | null, decimales = 0) => (v === null ? '—' : v.toFixed
 // ruta va el audio, latencia, jitter, pérdida y ancho de banda. Complementa a
 // /turn-test.html, que comprueba el TURN antes de entrar.
 export const PanelDiagnosticoVoz: React.FC<PanelDiagnosticoVozProps> = ({ audioClient, nombres, onClose }) => {
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  useDialogo(dialogoRef, onClose, { atraparFoco: false });
+
   const [diagnostico, setDiagnostico] = useState<DiagnosticoVoz | null>(null);
 
   useEffect(() => {
@@ -46,7 +50,7 @@ export const PanelDiagnosticoVoz: React.FC<PanelDiagnosticoVozProps> = ({ audioC
   }, [audioClient]);
 
   return (
-    <div className="panel-diagnostico-voz glass-panel" role="dialog" aria-label="Diagnóstico del canal de voz">
+    <div ref={dialogoRef} className="panel-diagnostico-voz glass-panel" role="dialog" aria-label="Diagnóstico del canal de voz">
       <div className="panel-diagnostico-voz__cabecera">
         <h3>Diagnóstico de voz</h3>
         <button className="btn-secondary" onClick={onClose} aria-label="Cerrar diagnóstico">

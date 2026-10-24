@@ -5,6 +5,8 @@ import { Login } from './components/Login.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
+import { estaEscribiendo } from './components/teclado.js';
+import { Dialogo } from './components/Dialogo.js';
 import { Subtitulos } from './components/Subtitulos.js';
 import { puedeTranscribir } from './components/transcripcion.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
@@ -813,12 +815,8 @@ function App() {
   // Tecla V mientras el modo está activo (fuera de campos de texto)
   useEffect(() => {
     if (!pulsarParaHablar) return;
-    const escribiendo = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-    };
     const abajo = (e: KeyboardEvent) => {
-      if (e.code === 'KeyV' && !e.repeat && !escribiendo(e)) setPulsando(true);
+      if (e.code === 'KeyV' && !e.repeat && !estaEscribiendo(e)) setPulsando(true);
     };
     const arriba = (e: KeyboardEvent) => {
       if (e.code === 'KeyV') setPulsando(false);
@@ -1022,6 +1020,18 @@ function App() {
   if (route === '/metaverso' && espacioActivo) {
     return (
       <div className="metaverso-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+        {/* Primer Tab de la página: sin esto, llegar al chat con teclado
+            obliga a recorrer todo el HUD. Sólo se ve con el foco. */}
+        <button
+          type="button"
+          className="saltar-al-chat"
+          onClick={() => {
+            setSidebarAbierta(true);
+            setTimeout(() => document.getElementById('entrada-chat')?.focus(), 0);
+          }}
+        >
+          Saltar al chat
+        </button>
         {/* Canvas 3D de Three.js */}
         <Suspense fallback={<CargandoEscena3D />}>
         <MetaversoCanvas
@@ -1052,11 +1062,17 @@ function App() {
 
         {/* Menú Hamburguesa */}
         <div className="hamburger-menu">
-          <button className="hamburger-btn" onClick={() => setMenuAbierto((v) => !v)} title="Menú">
+          <button
+            className="hamburger-btn"
+            onClick={() => setMenuAbierto((v) => !v)}
+            title="Menú"
+            aria-label="Menú"
+            aria-expanded={menuAbierto}
+          >
             ☰
           </button>
           {menuAbierto && (
-            <div className="hamburger-dropdown glass-panel">
+            <Dialogo className="hamburger-dropdown glass-panel" etiqueta="Menú" modal={false} onClose={() => setMenuAbierto(false)}>
               <button
                 className="hamburger-item"
                 onClick={() => {
@@ -1119,13 +1135,17 @@ function App() {
               >
                 🚪 Logout
               </button>
-            </div>
+            </Dialogo>
           )}
         </div>
 
         {/* Personalización de Avatar (persistida en BD) */}
         {customizingAvatar && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000 }}>
+          <Dialogo
+            etiqueta="Personalizar avatar"
+            onClose={() => setCustomizingAvatar(false)}
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 1000 }}
+          >
             <Suspense fallback={<CargandoPantalla mensaje="Abriendo el personalizador de avatar…" />}>
               <CustomAvatar
                 currentAvatar={avatar}
@@ -1137,7 +1157,7 @@ function App() {
                 onClose={() => setCustomizingAvatar(false)}
               />
             </Suspense>
-          </div>
+          </Dialogo>
         )}
 
         {/* Guía de Teclas (solo con teclado; en táctil el joystick ya es autoexplicativo) */}
@@ -1384,7 +1404,12 @@ function App() {
 
         {/* Reporte de asistencias modal */}
         {verReporte && (
-          <div className="customize-panel glass-panel" style={{ width: '600px', maxHeight: '80vh', overflowY: 'auto' }}>
+          <Dialogo
+            etiqueta="Reporte de asistencia"
+            onClose={() => setVerReporte(false)}
+            className="customize-panel glass-panel"
+            style={{ width: '600px', maxHeight: '80vh', overflowY: 'auto' }}
+          >
             <h3 className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 600, marginBottom: '16px' }}>
               Reporte de Asistencia Automática
             </h3>
@@ -1438,7 +1463,7 @@ function App() {
             >
               Cerrar Reporte
             </button>
-          </div>
+          </Dialogo>
         )}
 
         {/* Fuera de la sidebar: su backdrop-filter haría que position:fixed
@@ -1461,6 +1486,7 @@ function App() {
           type="button"
           onClick={() => setSidebarAbierta((v) => !v)}
           title={sidebarAbierta ? 'Ocultar panel' : 'Mostrar usuarios y chat'}
+          aria-label={sidebarAbierta ? 'Ocultar panel' : 'Mostrar usuarios y chat'}
           style={{
             position: 'fixed',
             top: '20px',
@@ -1556,7 +1582,7 @@ function App() {
 
 
           <div className="sidebar-title">Chat Público</div>
-          <div className="chat-messages">
+          <div className="chat-messages" role="log" aria-live="polite" aria-label="Mensajes del chat">
             {chatMessages.map((msg, idx) => (
               <div key={msg.id ?? `vivo-${idx}`} className="chat-bubble">
                 <span className="sender">
@@ -1575,7 +1601,9 @@ function App() {
           <form onSubmit={handleSendChat} className="chat-input-wrapper">
             <input
               type="text"
+              id="entrada-chat"
               className="chat-input"
+              aria-label="Mensaje para el chat"
               placeholder="Escribe un mensaje..."
               value={chatInput}
               maxLength={500}
@@ -1615,7 +1643,7 @@ function App() {
           </div>
         )}
         {pantallaGrande && pantallaUrl && (
-          <div className="visor-material" role="dialog" aria-modal="true" aria-label="Pantalla compartida">
+          <Dialogo className="visor-material" etiqueta="Pantalla compartida" onClose={() => setPantallaGrande(false)}>
             <div className="visor-material__marco glass-panel">
               <div className="visor-material__cabecera">
                 <h3>📽️ Pantalla de {pantalla.por}</h3>
@@ -1629,7 +1657,7 @@ function App() {
                 <img src={pantallaUrl} alt={`Pantalla de ${pantalla.por}`} />
               </div>
             </div>
-          </div>
+          </Dialogo>
         )}
 
         {socket && (
@@ -1658,6 +1686,7 @@ function App() {
             className={`control-btn ${micMuted ? 'muted' : ''}`}
             onClick={toggleMic}
             title={micMuted ? 'Activar Micrófono' : 'Silenciar Micrófono'}
+            aria-label={micMuted ? 'Activar Micrófono' : 'Silenciar Micrófono'}
           >
             {micMuted ? '🔇' : '🎙️'}
           </button>
@@ -1667,6 +1696,7 @@ function App() {
             onClick={() => setPulsarParaHablar((v) => !v)}
             aria-pressed={pulsarParaHablar}
             title={pulsarParaHablar ? 'Desactivar pulsar para hablar' : 'Pulsar para hablar (tecla V)'}
+            aria-label={pulsarParaHablar ? 'Desactivar pulsar para hablar' : 'Pulsar para hablar (tecla V)'}
           >
             PTT
           </button>
@@ -1692,12 +1722,13 @@ function App() {
             }}
             aria-pressed={verSubtitulos}
             title={verSubtitulos ? 'Ocultar subtítulos' : 'Mostrar subtítulos'}
+            aria-label={verSubtitulos ? 'Ocultar subtítulos' : 'Mostrar subtítulos'}
           >
             CC
           </button>
 
           {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
-            <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes">
+            <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes" aria-label="Silenciar a todos los estudiantes">
               🤫
             </button>
           )}
@@ -1708,6 +1739,7 @@ function App() {
               onClick={() => socketRef.current?.emit('modo_grupos', { activo: !modoGrupos })}
               aria-pressed={modoGrupos}
               title={modoGrupos ? 'Terminar el trabajo en grupos' : 'Trabajo en grupos: la voz de cada mesa queda en la mesa'}
+              aria-label={modoGrupos ? 'Terminar el trabajo en grupos' : 'Trabajo en grupos: la voz de cada mesa queda en la mesa'}
             >
               👥
             </button>
@@ -1719,6 +1751,7 @@ function App() {
               onClick={alternarCompartir}
               aria-pressed={compartiendo}
               title={compartiendo ? 'Dejar de compartir pantalla' : 'Compartir pantalla en el proyector del aula'}
+              aria-label={compartiendo ? 'Dejar de compartir pantalla' : 'Compartir pantalla en el proyector del aula'}
             >
               📽️
             </button>
@@ -1730,6 +1763,7 @@ function App() {
               onClick={() => socketRef.current?.emit(manoLevantada ? 'bajar_mano' : 'levantar_mano')}
               aria-pressed={manoLevantada}
               title={manoLevantada ? `Bajar la mano (turno ${posicionEnCola} de ${preguntas.cola.length})` : 'Levantar la mano'}
+              aria-label={manoLevantada ? `Bajar la mano (turno ${posicionEnCola} de ${preguntas.cola.length})` : 'Levantar la mano'}
             >
               ✋
             </button>
@@ -1746,6 +1780,7 @@ function App() {
               className={`control-btn ${pizarraAbierta ? 'active' : ''}`}
               onClick={() => setPizarraAbierta(!pizarraAbierta)}
               title="Pizarra Compartida"
+              aria-label="Pizarra Compartida"
             >
               📋
             </button>
@@ -1756,6 +1791,7 @@ function App() {
               className={`control-btn ${materialesAbierto ? 'active' : ''}`}
               onClick={() => setMaterialesAbierto((v) => !v)}
               title="Materiales de la clase"
+              aria-label="Materiales de la clase"
             >
               📚
             </button>

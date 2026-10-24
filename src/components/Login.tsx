@@ -304,8 +304,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
               <div className="form-section">
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Nombres</label>
+                    <label htmlFor="campo-nombres" className="form-label">Nombres</label>
                     <input
+                      id="campo-nombres"
                       type="text"
                       className="form-input"
                       placeholder="Ej. Juan Carlos"
@@ -316,8 +317,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Apellidos</label>
+                    <label htmlFor="campo-apellidos" className="form-label">Apellidos</label>
                     <input
+                      id="campo-apellidos"
                       type="text"
                       className="form-input"
                       placeholder="Ej. Pérez Rodríguez"
@@ -330,8 +332,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Código UPDS</label>
+                    <label htmlFor="campo-codigo-upds" className="form-label">Código UPDS</label>
                     <input
+                      id="campo-codigo-upds"
                       type="text"
                       className="form-input"
                       placeholder="Ej. SIS-100293"
@@ -342,8 +345,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Rol</label>
+                    <label htmlFor="campo-rol" className="form-label">Rol</label>
                     <select
+                      id="campo-rol"
                       className="form-input select-premium"
                       value={rol}
                       onChange={(e) => setRol(e.target.value as any)}
@@ -355,8 +359,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Nombre en el Metaverso</label>
+                  <label htmlFor="campo-nombre-visible" className="form-label">Nombre en el Metaverso</label>
                   <input
+                    id="campo-nombre-visible"
                     type="text"
                     className="form-input"
                     placeholder="Ej. JuanDev"
@@ -369,11 +374,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
             )}
 
             <div className="form-group">
-              <label className="form-label">
+              <label htmlFor="campo-email" className="form-label">
                 <span className="label-icon">📧</span>
                 Correo Institucional
               </label>
               <input
+                id="campo-email"
                 type="email"
                 className="form-input"
                 placeholder="tu.correo@upds.edu.bo"
@@ -384,11 +390,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
             </div>
 
             <div className="form-group">
-              <label className="form-label">
+              <label htmlFor="campo-clave" className="form-label">
                 <span className="label-icon">🔐</span>
                 Contraseña
               </label>
               <input
+                id="campo-clave"
                 type="password"
                 className="form-input"
                 placeholder="••••••••"

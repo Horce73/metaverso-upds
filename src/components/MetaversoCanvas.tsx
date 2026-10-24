@@ -21,6 +21,7 @@ import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { Pupitre, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { crearTexturaTexto } from './mundo3d/texto3d.js';
 import { useEsTactil } from './mundo3d/useEsTactil.js';
+import { esTeclaDelMundo3D } from './teclado.js';
 import { VirtualJoystick } from './mundo3d/VirtualJoystick.js';
 import { suscribirPizarra, dibujarTramo, redibujarTodo } from './pizarra.js';
 import { MESAS_AULA } from './zonasVoz.js';
@@ -660,10 +661,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     const TECLAS_MOVIMIENTO = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-        return;
-      }
+      if (!esTeclaDelMundo3D(e)) return;
 
       const esTeclaE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E';
 
