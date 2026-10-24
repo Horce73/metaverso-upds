@@ -68,6 +68,14 @@ interface User {
   isGuest?: boolean;
 }
 
+interface MensajeChat {
+  /** Lo pone el servidor al guardarlo; falta sólo si la base no respondió. */
+  id?: string;
+  sender: string;
+  text: string;
+  enviadoEn?: string;
+}
+
 interface PosicionGuardada {
   position: [number, number, number];
   rotation: [number, number, number];
@@ -184,7 +192,7 @@ function App() {
   // Trabajo en grupos del aula (AULA-07)
   const [modoGrupos, setModoGrupos] = useState(false);
   const capturaRef = useRef<CapturaPantalla | null>(null);
-  const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
+  const [chatMessages, setChatMessages] = useState<MensajeChat[]>([]);
   const [chatInput, setChatInput] = useState('');
 
   // Clases y Asistencia (Docente)
@@ -594,8 +602,18 @@ function App() {
       alert(`⚠️ ${data.motivo}`);
     });
 
-    activeSocket.on('chat_msg_received', (data: any) => {
+    activeSocket.on('chat_msg_received', (data: MensajeChat) => {
       setChatMessages((prev) => [...prev, data]);
+    });
+
+    // A11Y-02: lo que ya se dijo en el espacio antes de entrar. Llega poco
+    // después del join; un mensaje en vivo que se cuele antes ya trae su id y
+    // no se duplica.
+    activeSocket.off('chat_historial');
+    activeSocket.on('chat_historial', (data: { espacioId: number | string; mensajes: MensajeChat[] }) => {
+      if (String(data.espacioId) !== String(espacio.id)) return;
+      const ids = new Set(data.mensajes.map((m) => m.id));
+      setChatMessages((prev) => [...data.mensajes, ...prev.filter((m) => !m.id || !ids.has(m.id))]);
     });
 
     activeSocket.on('pizarra_actualizada', (_data: any) => {});
@@ -1499,8 +1517,15 @@ function App() {
           <div className="sidebar-title">Chat Público</div>
           <div className="chat-messages">
             {chatMessages.map((msg, idx) => (
-              <div key={idx} className="chat-bubble">
-                <span className="sender">{msg.sender}</span>
+              <div key={msg.id ?? `vivo-${idx}`} className="chat-bubble">
+                <span className="sender">
+                  {msg.sender}
+                  {msg.enviadoEn && (
+                    <time className="chat-hora" dateTime={msg.enviadoEn}>
+                      {new Date(msg.enviadoEn).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' })}
+                    </time>
+                  )}
+                </span>
                 <span>{msg.text}</span>
               </div>
             ))}

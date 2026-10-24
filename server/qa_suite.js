@@ -918,9 +918,9 @@ async function runTests() {
     return recibido?.text === 'hola qa';
   });
 
-  await caso('Solo se difunden sender, text y enviadoEn (sin campos extra del cliente)', async () => {
-    const [, recibido] = await chatear({ text: 'campos', html: '<img src=x onerror=alert(1)>', rol: 'administrador' });
-    return recibido !== null && Object.keys(recibido).sort().join(',') === 'enviadoEn,sender,text';
+  await caso('Solo se difunden id, sender, text y enviadoEn (sin campos extra del cliente)', async () => {
+    const [, recibido] = await chatear({ text: 'campos', html: '<img src=x onerror=alert(1)>', rol: 'administrador', id: 'falso' });
+    return recibido !== null && Object.keys(recibido).sort().join(',') === 'enviadoEn,id,sender,text' && recibido.id !== 'falso';
   });
 
   // ---------------------------------------------------------------------------
@@ -1153,6 +1153,62 @@ async function runTests() {
     );
     return res.status === 200 && rows.length === 0;
   });
+
+  // ---------------------------------------------------------------------------
+  // Chat guardado (A11Y-02)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== CHAT GUARDADO ===');
+
+  const marca = `qa-chat-${Math.random().toString(36).slice(2, 8)}`;
+  const luis = await tokenDe(ESTUDIANTE_3);
+  const sLuis = await conectar(luis.token);
+  await entrar(sLuis, campusId);
+
+  await caso('El mensaje se guarda con el remitente del token y viaja con su id', async () => {
+    const recibido = esperarEvento(sLuis, 'chat_msg_received', 3000, m => m.text === `${marca} campus`);
+    sLuis.emit('chat_msg_send', { message: { sender: 'Otro Nombre', text: `${marca} campus` } });
+    const mensaje = await recibido;
+    const { rows } = await pool.query('SELECT id, usuario_id, remitente FROM chat_mensajes WHERE texto = $1', [`${marca} campus`]);
+    return Boolean(mensaje?.id) && rows.length === 1 && String(rows[0].id) === mensaje.id
+      && rows[0].usuario_id === luis.id && rows[0].remitente !== 'Otro Nombre';
+  });
+
+  await caso('Quien entra después recibe el historial con ese mensaje', async () => {
+    const sMaria = await conectar(maria.token);
+    try {
+      const historial = esperarEvento(sMaria, 'chat_historial', 3000);
+      await entrar(sMaria, campusId);
+      const data = await historial;
+      return String(data?.espacioId) === String(campusId) && data.mensajes.some(m => m.text === `${marca} campus`);
+    } finally {
+      sMaria.disconnect();
+    }
+  });
+
+  await caso('El historial de un espacio no trae mensajes de otro', async () => {
+    const enAula = esperarEvento(sAna, 'chat_msg_received', 3000, m => m.text === `${marca} aula`);
+    sAna.emit('chat_msg_send', { message: { text: `${marca} aula` } });
+    await enAula;
+    const historial = esperarEvento(sLuis, 'chat_historial', 3000);
+    await entrar(sLuis, otraAulaId);
+    await entrar(sLuis, campusId);
+    const data = await historial;
+    return data && !data.mensajes.some(m => m.text === `${marca} aula`);
+  });
+
+  await caso('En un aula con clase en curso el historial es el de esa clase', async () => {
+    await pool.query(
+      "INSERT INTO chat_mensajes (espacio_id, sesion_id, remitente, texto, enviado_en) VALUES ($1, NULL, 'QA', $2, NOW() - INTERVAL '1 hour')",
+      [aulaId, `${marca} clase anterior`]
+    );
+    const historial = esperarEvento(sLuis, 'chat_historial', 3000, d => String(d.espacioId) === String(aulaId));
+    await entrar(sLuis, aulaId);
+    const data = await historial;
+    const textos = data?.mensajes.map(m => m.text) ?? [];
+    return textos.includes(`${marca} aula`) && !textos.includes(`${marca} clase anterior`);
+  });
+
+  sLuis.disconnect();
 
   for (const s of socketsAbiertos) s.disconnect();
 
