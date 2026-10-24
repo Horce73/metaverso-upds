@@ -230,6 +230,34 @@ function App() {
     }
   });
   const [pulsando, setPulsando] = useState(false);
+
+  // Subtítulos en vivo (A11Y-01). Verlos viene activado; transcribir la voz
+  // propia lo elige cada uno. Ambas preferencias quedan en este navegador.
+  const leerPreferencia = (clave: string, porDefecto: boolean) => {
+    try {
+      const v = localStorage.getItem(clave);
+      return v === null ? porDefecto : v === '1';
+    } catch {
+      return porDefecto;
+    }
+  };
+  const guardarPreferencia = (clave: string, valor: boolean) => {
+    try {
+      localStorage.setItem(clave, valor ? '1' : '0');
+    } catch {}
+  };
+  const [verSubtitulos, setVerSubtitulos] = useState(() => leerPreferencia('verSubtitulos', true));
+  const [transcribirVoz, setTranscribirVoz] = useState(() => leerPreferencia('transcribirVoz', false));
+  const alternarTranscribir = () => {
+    if (!transcribirVoz) {
+      const ok = window.confirm(
+        'Tu voz se transcribirá con el reconocimiento de voz del navegador (en Chrome y Edge, ese audio lo procesa el servicio de Google) y el texto se mostrará como subtítulo a quienes están en el espacio. ¿Activar?'
+      );
+      if (!ok) return;
+    }
+    setTranscribirVoz(!transcribirVoz);
+    guardarPreferencia('transcribirVoz', !transcribirVoz);
+  };
   // peerIds que este usuario silenció para sí en el espacio actual
   const [silenciadosLocal, setSilenciadosLocal] = useState<Set<string>>(new Set());
   const [avisoVoz, setAvisoVoz] = useState('');
@@ -1701,6 +1729,20 @@ function App() {
           </div>
         )}
 
+        {socket && (
+          <Subtitulos
+            socket={socket}
+            visible={verSubtitulos}
+            transcribir={transcribirVoz && puedeTranscribir()}
+            microfonoAbierto={!!audioClient && estadoVoz !== 'sin-microfono' && !micMuted && (!pulsarParaHablar || pulsando)}
+            onErrorTranscripcion={() => {
+              setTranscribirVoz(false);
+              guardarPreferencia('transcribirVoz', false);
+              setAvisoVoz('📝 No se pudo transcribir tu voz: el navegador no tiene permiso de micrófono para eso.');
+            }}
+          />
+        )}
+
         {avisoVoz && (
           <div className="aviso-voz" role="status">
             {avisoVoz}
@@ -1738,6 +1780,18 @@ function App() {
               {pulsando ? '🔴 Hablando…' : 'Mantén V para hablar'}
             </button>
           )}
+
+          <button
+            className={`control-btn ${verSubtitulos ? 'active' : ''}`}
+            onClick={() => {
+              setVerSubtitulos(!verSubtitulos);
+              guardarPreferencia('verSubtitulos', !verSubtitulos);
+            }}
+            aria-pressed={verSubtitulos}
+            title={verSubtitulos ? 'Ocultar subtítulos' : 'Mostrar subtítulos'}
+          >
+            CC
+          </button>
 
           {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
             <button className="control-btn" onClick={silenciarATodos} title="Silenciar a todos los estudiantes">

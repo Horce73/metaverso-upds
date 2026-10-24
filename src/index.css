@@ -3364,3 +3364,40 @@ main>h2:first-child {
     padding: 130px 16px 140px;
   }
 }
+
+/* ===== SUBTÍTULOS EN VIVO (A11Y-01) ===== */
+.subtitulos {
+  position: fixed;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  z-index: 620;
+  width: min(720px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.subtitulos p {
+  margin: 0;
+  align-self: center;
+  max-width: 100%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.subtitulos p strong {
+  color: #93c5fd;
+}
+
+/* El parcial todavía puede cambiar mientras la persona sigue hablando */
+.subtitulos__parcial {
+  opacity: 0.85;
+  font-style: italic;
+}

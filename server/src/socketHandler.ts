@@ -108,6 +108,8 @@ async function resolverIdentidad(token: unknown): Promise<Identidad | null> {
  * Al iniciar una clase, quienes ya estaban en el aula no vuelven a "entrar":
  * se les registra la asistencia en ese momento (DATA-01).
  */
+const MAX_LARGO_SUBTITULO = 300;
+
 export async function registrarPresentesEnAula(espacioId: number) {
   const usuarios = new Set<number>();
   activeUsers.forEach((u) => {
@@ -545,6 +547,21 @@ export function setupSockets(io: Server) {
       io.to(String(user.espacioId)).emit('chat_message', message);
       io.to(String(user.espacioId)).emit('chat_msg_received', message);
     };
+
+    // Subtítulos en vivo (A11Y-01): quien habla manda su propia transcripción
+    // y se difunde al resto del espacio con el nombre del token. No se guarda.
+    on('subtitulo', 'subtitulo', (data: { texto?: unknown; final?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user) return;
+      const saneado = sanearTextoChat(data?.texto);
+      if (!saneado.ok) return;
+      socket.to(String(user.espacioId)).emit('subtitulo', {
+        socketId: socket.id,
+        nombre: identidad.nombre,
+        texto: saneado.texto.slice(0, MAX_LARGO_SUBTITULO),
+        final: data?.final === true,
+      });
+    });
 
     on('send_chat', 'chat', handleSendChat);
     on('chat_msg_send', 'chat', handleSendChat);

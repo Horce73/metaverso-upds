@@ -73,5 +73,7 @@ export const CUPOS_SOCKET: Record<string, [max: number, ventanaMs: number]> = {
   pantalla: [20, 60_000],
   // El cliente envía como mucho 2 cuadros por segundo
   pantalla_cuadro: [6, 1_000],
-  chat: [10, 10_000]
+  chat: [10, 10_000],
+  // Parciales cada ~300 ms mientras se habla, más las frases finales
+  subtitulo: [50, 10_000]
 };
