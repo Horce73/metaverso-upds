@@ -253,6 +253,7 @@ export function setupSockets(io: Server) {
       position: [number, number, number];
       rotation: [number, number, number];
       estaSentado?: boolean;
+      t?: number;
     }) => {
       const user = activeUsers.get(socket.id);
       if (!user) return;
@@ -264,7 +265,9 @@ export function setupSockets(io: Server) {
         socketId: socket.id,
         position: user.position,
         rotation: user.rotation,
-        estaSentado: user.estaSentado
+        estaSentado: user.estaSentado,
+        // 3D-03: hora del emisor (su reloj, no el del servidor), para interpolar
+        t: typeof data.t === 'number' && Number.isFinite(data.t) ? data.t : undefined
       };
 
       // 3D-04: en el aula se difunde a todos (es un solo salon compacto,
