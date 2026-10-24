@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { minutosEfectivos, aCsv, nombreArchivo } from '../../server/src/asistencia.ts';
+import { minutosEfectivos } from '../../server/src/asistencia.ts';
+import { aCsv, nombreArchivo } from '../../server/src/csv.ts';
 
 const t = (hhmm) => new Date(`2026-10-24T${hhmm}:00Z`);
 const tramo = (entrada, salida) => ({ entrada: t(entrada), salida: salida ? t(salida) : null });
