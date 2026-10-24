@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { LandingPage } from './components/LandingPage.js';
 import { Login } from './components/Login.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
+import { VistaSinTresD, type MotivoSinTresD } from './components/VistaSinTresD.js';
+import { hayWebGL } from './components/soporteTresD.js';
+import { LimiteTresD } from './components/LimiteTresD.js';
+import { registrarMovimiento, olvidarRemoto, olvidarRemotos } from './components/mundo3d/posicionesRemotas.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
 import { CrearCursoModal } from './components/CrearCursoModal.js';
 import { PanelDiagnosticoVoz } from './components/PanelDiagnosticoVoz.js';
@@ -44,15 +48,32 @@ function CargandoPantalla({ mensaje }: { mensaje: string }) {
   );
 }
 
-function CargandoEscena3D() {
+// Con conexión lenta el paquete de three.js tarda: pasado un rato se ofrece
+// seguir la clase sin 3D en vez de esperar (A11Y-04).
+const ESPERA_ANTES_DE_OFRECER_SIN_3D_MS = 8000;
+
+function CargandoEscena3D({ onSinTresD }: { onSinTresD: () => void }) {
+  const [tarda, setTarda] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setTarda(true), ESPERA_ANTES_DE_OFRECER_SIN_3D_MS);
+    return () => clearTimeout(id);
+  }, []);
   return (
     <div
       style={{
-        width: '100vw', height: '100vh', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', background: 'var(--background)',
+        width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', gap: '16px',
+        alignItems: 'center', justifyContent: 'center', background: 'var(--background)',
       }}
     >
       <span className="spinner" style={{ width: '32px', height: '32px', display: 'inline-block' }}></span>
+      {tarda && (
+        <div role="status" style={{ textAlign: 'center', color: 'var(--text-secondary)', maxWidth: '360px', padding: '0 16px' }}>
+          <p style={{ marginBottom: '10px' }}>La escena 3D está tardando en cargar.</p>
+          <button type="button" className="btn-secondary" onClick={onSinTresD}>
+            Entrar sin 3D
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -121,6 +142,32 @@ function App() {
   // para siempre. Arranca cerrada en tactil; en escritorio sigue como antes.
   const [sidebarAbierta, setSidebarAbierta] = useState(!esTactil);
 
+  // Modo sin 3D (A11Y-04): obligado sin WebGL o si la escena falla; elegible
+  // desde el menú (se recuerda en este navegador).
+  const [webglDisponible] = useState(hayWebGL);
+  const [falloTresD, setFalloTresD] = useState(false);
+  const [eligioSinTresD, setEligioSinTresD] = useState(() => {
+    try {
+      return localStorage.getItem('modoSinTresD') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const motivoSinTresD: MotivoSinTresD | null = !webglDisponible
+    ? 'sin-webgl'
+    : falloTresD
+      ? 'fallo'
+      : eligioSinTresD
+        ? 'elegido'
+        : null;
+  const elegirSinTresD = (sinTresD: boolean) => {
+    setEligioSinTresD(sinTresD);
+    if (!sinTresD) setFalloTresD(false);
+    try {
+      localStorage.setItem('modoSinTresD', sinTresD ? '1' : '0');
+    } catch {}
+  };
+
   // Enrutador basado en Hash (URL independiente y persistente)
   const [route, setRoute] = useState<string>(getHashRoute);
 
@@ -133,10 +180,18 @@ function App() {
   const [espacios, setEspacios] = useState<Espacio[]>([]);
   const [espacioActivo, setEspacioActivo] = useState<Espacio | null>(null);
   const [spawnPosicion, setSpawnPosicion] = useState<PosicionGuardada | null>(null);
+  // Modo sin 3D: queda en el punto de llegada (el mismo que usa la voz al entrar)
+  const posicionSinTresD = useMemo<[number, number, number]>(
+    () => spawnPosicion?.position ?? (espacioActivo?.tipo === 'aula' ? [0, 0, 3] : [0, 0, 11]),
+    [spawnPosicion, espacioActivo?.tipo]
+  );
   const [menuAbierto, setMenuAbierto] = useState(false);
   // Última posición conocida DENTRO del campus en esta sesión (se fotografía al salir de
   // él), para que "Salir al Campus" no dependa de un viaje de ida y vuelta al servidor.
   const ultimaPosicionCampusRef = useRef<PosicionGuardada | null>(null);
+  // Espacio en el que estaba la pestaña antes de recargar (F5), pendiente de
+  // volver a unirse cuando carguen los espacios.
+  const espacioRestauradoRef = useRef<Espacio | null>(null);
 
   // Conexiones Sockets y WebRTC (socketRef síncrono para evitar cierres de estado desactualizados)
   const socketRef = useRef<Socket | null>(null);
@@ -238,7 +293,9 @@ function App() {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
       if (savedAvatar) setAvatar(JSON.parse(savedAvatar));
-      if (savedEspacio) setEspacioActivo(JSON.parse(savedEspacio));
+      // No se activa directo: el socket de esta pestaña es nuevo y nunca se
+      // unió a ese espacio. Lo retoma el auto-join de abajo, como un join real.
+      if (savedEspacio) espacioRestauradoRef.current = JSON.parse(savedEspacio);
     }
   }, []);
 
@@ -386,6 +443,7 @@ function App() {
       setAudioClient(null);
     }
     setRemoteUsers({});
+    olvidarRemotos();
     setSilenciadosLocal(new Set());
     setMaterialesAbierto(false);
     setMaterialAbierto(null);
@@ -479,6 +537,9 @@ function App() {
     newAudioClient.configurarZonas(espacio.tipo, esDifusor(misRoles, espacio.tipo));
     setAudioClient(newAudioClient);
 
+    // 'user_moved' no trae el peerId y ya no pasa por remoteUsers (ver abajo)
+    const peerPorSocket = new Map<string, string>();
+
     const registrarEnVoz = (u: any) => {
       if (!u?.peerId) return;
       if (u.position) newAudioClient.updateSourcePosition(u.peerId, u.position);
@@ -489,7 +550,10 @@ function App() {
     const handleInitialUsers = (users: any) => {
       console.log('👥 Usuarios en el espacio:', users);
       setRemoteUsers(users);
-      Object.values(users).forEach(registrarEnVoz);
+      Object.entries(users).forEach(([socketId, u]: [string, any]) => {
+        if (u?.peerId) peerPorSocket.set(socketId, u.peerId);
+        registrarEnVoz(u);
+      });
     };
 
     // Los roles de localStorage pueden estar desactualizados; los del servidor
@@ -558,10 +622,13 @@ function App() {
       // su primer 'move' no se sabe si está en alcance de voz.
       const nuevo = { ...data.user, position: undefined };
       setRemoteUsers((prev) => ({ ...prev, [data.socketId]: nuevo }));
+      if (nuevo.peerId) peerPorSocket.set(data.socketId, nuevo.peerId);
       registrarEnVoz(nuevo);
     });
 
     activeSocket.on('user_left', (data: any) => {
+      olvidarRemoto(data.socketId);
+      peerPorSocket.delete(data.socketId);
       setRemoteUsers((prev) => {
         const copy = { ...prev };
         const leftUser = copy[data.socketId];
@@ -573,20 +640,19 @@ function App() {
       });
     });
 
+    // Sin setState: la posición va directo al buffer que lee cada avatar en
+    // su useFrame, y a la voz espacial. remoteUsers guarda sólo quién está.
     activeSocket.on('user_moved', (data: any) => {
-      setRemoteUsers((prev) => {
-        const existing = prev[data.socketId] || {};
-        return {
-          ...prev,
-          [data.socketId]: {
-            ...existing,
-            position: data.position,
-            rotation: data.rotation,
-            estaSentado: data.estaSentado,
-            t: data.t,
-          },
-        };
-      });
+      registrarMovimiento(
+        data.socketId,
+        data.position,
+        data.rotation?.[1] ?? 0,
+        !!data.estaSentado,
+        data.t,
+        performance.now()
+      );
+      const peerId = peerPorSocket.get(data.socketId);
+      if (peerId) newAudioClient.updateSourcePosition(peerId, data.position);
     });
 
     activeSocket.off('chat_rechazado');
@@ -872,6 +938,18 @@ function App() {
     if (route === '/admin' || route === '/docente') return;
     if (espacios.length === 0) return;
 
+    const restaurado = espacioRestauradoRef.current;
+    espacioRestauradoRef.current = null;
+    if (restaurado && route === '/metaverso') {
+      // Se toma la versión recién cargada (sesion_activa al día). Si ya no
+      // figura entre los espacios visibles, se cae al campus.
+      const actual = espacios.find((e) => String(e.id) === String(restaurado.id));
+      if (actual) {
+        handleJoinSpace(actual, actual.tipo === 'campus' ? avatar?.ultima_posicion ?? undefined : undefined);
+        return;
+      }
+    }
+
     const campus = espacios.find((e) => e.tipo === 'campus');
     if (campus) handleJoinSpace(campus, avatar?.ultima_posicion ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -974,8 +1052,27 @@ function App() {
   if (route === '/metaverso' && espacioActivo) {
     return (
       <div className="metaverso-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+        {motivoSinTresD ? (
+          <VistaSinTresD
+            socket={socket!}
+            audioClient={audioClient}
+            espacio={espacioActivo}
+            espacios={espacios}
+            remoteUsers={remoteUsers}
+            marcas={marcasAula}
+            pantallaUrl={pantalla.activa ? pantallaUrl : null}
+            pantallaPor={pantalla.por}
+            posicion={posicionSinTresD}
+            motivo={motivoSinTresD}
+            esInvitado={!!user.isGuest || user.rol === 'invitado'}
+            onEntrarAula={(espacioSeleccionado) => setSolicitudAulaModal(espacioSeleccionado as Espacio)}
+            onVerPantallaGrande={() => setPantallaGrande(true)}
+            onVolverTresD={webglDisponible ? () => elegirSinTresD(false) : undefined}
+          />
+        ) : (
+        <LimiteTresD onFallo={() => setFalloTresD(true)}>
         {/* Canvas 3D de Three.js */}
-        <Suspense fallback={<CargandoEscena3D />}>
+        <Suspense fallback={<CargandoEscena3D onSinTresD={() => elegirSinTresD(true)} />}>
         <MetaversoCanvas
           key={espacioActivo.id}
           socket={socket!}
@@ -1001,6 +1098,8 @@ function App() {
           }}
         />
         </Suspense>
+        </LimiteTresD>
+        )}
 
         {/* Menú Hamburguesa */}
         <div className="hamburger-menu">
@@ -1051,6 +1150,17 @@ function App() {
                   🎨 Avatar
                 </button>
               )}
+              {webglDisponible && (
+                <button
+                  className="hamburger-item"
+                  onClick={() => {
+                    setMenuAbierto(false);
+                    elegirSinTresD(!motivoSinTresD);
+                  }}
+                >
+                  {motivoSinTresD ? '🌐 Volver al 3D' : '🧊 Modo sin 3D'}
+                </button>
+              )}
               <button
                 className="hamburger-item hamburger-item-danger"
                 onClick={() => {
@@ -1082,7 +1192,7 @@ function App() {
         )}
 
         {/* Guía de Teclas (solo con teclado; en táctil el joystick ya es autoexplicativo) */}
-        {!esTactil && (
+        {!esTactil && !motivoSinTresD && (
           <div className="keys-guide">
             <div className="keys-row">
               <span className="key-cap">W</span>
