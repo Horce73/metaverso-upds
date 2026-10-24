@@ -583,6 +583,7 @@ function App() {
             position: data.position,
             rotation: data.rotation,
             estaSentado: data.estaSentado,
+            t: data.t,
           },
         };
       });

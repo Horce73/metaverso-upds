@@ -3,12 +3,13 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKeyboardControls } from './useKeyboardControls.js';
 import { estadoJoystick } from './touchControls.js';
+import { crearEstado, recibir, posicionEn, VELOCIDAD_CAMINAR } from './interpolacion.js';
 import { crearTexturaTexto } from './texto3d.js';
 import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './personalizacion.js';
 
 export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
 
-const VELOCIDAD = 4;
+const VELOCIDAD = VELOCIDAD_CAMINAR;
 const ROTACION_LERP = 10;
 const FRECUENCIA_CAMINAR = 9;
 const AMPLITUD_CAMINAR = 0.6;
@@ -39,6 +40,8 @@ interface AvatarModelProps {
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
   /** Nivel de voz actual (0..1) de esta persona; enciende el anillo de "está hablando". */
   nivelVoz?: () => number;
+  /** Avatar remoto: hora del emisor de la última posición recibida (3D-03). */
+  tiempoMuestra?: number;
 }
 
 // ---------------------------------------------------------------------
@@ -256,8 +259,13 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   mitadAnchoIslaAcademica,
   onUpdatePosicion,
   nivelVoz,
+  tiempoMuestra,
 }) => {
   const grupoRef = useRef<THREE.Group>(null);
+  // Avatar remoto (3D-03): muestras recibidas con la hora del emisor, y la
+  // posición interpolada del frame anterior para saber si está caminando.
+  const interpolacionRef = useRef(crearEstado());
+  const posPreviaRemotaRef = useRef<THREE.Vector3 | null>(null);
   const cuerpoRef = useRef<THREE.Group>(null);
   const controles = useKeyboardControls();
   const { camera } = useThree();
@@ -313,6 +321,12 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (isLocal) return;
+    recibir(interpolacionRef.current, [position[0], position[1], position[2]], rotation[1] || 0, tiempoMuestra, performance.now());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLocal, position[0], position[1], position[2], rotation[1], tiempoMuestra]);
 
   // Teletransportación inmediata a la silla al sentarse
   useEffect(() => {
@@ -443,29 +457,22 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
 
       onUpdatePosicion?.(grupoRef.current.position, grupoRef.current.rotation.y);
     } else {
-      const posObjetivo = new THREE.Vector3(...position);
+      // 3D-03: se dibuja un poco en el pasado, entre las dos muestras que
+      // rodean ese instante (ver interpolacion.ts), en vez de perseguir el
+      // último paquete. El ángulo ya viene interpolado por el camino corto.
+      const muestra = posicionEn(interpolacionRef.current, performance.now());
       const posActual = grupoRef.current.position;
-      const dist = posActual.distanceTo(posObjetivo);
-
-      // Si la distancia es grande (teletransporte / cambio de espacio), posicionar de inmediato
-      if (dist > 12.0) {
-        posActual.copy(posObjetivo);
-        grupoRef.current.rotation.y = rotation[1] || 0;
-      } else {
-        const lerpFactor = Math.min(1, delta * 10);
-        posActual.lerp(posObjetivo, lerpFactor);
-
-        // Orientar el avatar hacia donde camina si la distancia es apreciable
-        let anguloTarget = rotation[1] || 0;
-        if (dist > 0.1) {
-          const dx = posObjetivo.x - posActual.x;
-          const dz = posObjetivo.z - posActual.z;
-          anguloTarget = Math.atan2(dx, dz);
-        }
-        grupoRef.current.rotation.y = lerpAngulo(grupoRef.current.rotation.y, anguloTarget, lerpFactor);
+      if (muestra) {
+        posActual.set(muestra.pos[0], muestra.pos[1], muestra.pos[2]);
+        grupoRef.current.rotation.y = muestra.angulo;
       }
 
-      estaCaminando = dist > 0.04 && !estaSentado;
+      // Caminando = se desplazó este frame a más de 0,5 u/s (camina a 4)
+      const previa = posPreviaRemotaRef.current;
+      const desplazamiento = previa ? Math.hypot(posActual.x - previa.x, posActual.z - previa.z) : 0;
+      if (previa) previa.copy(posActual);
+      else posPreviaRemotaRef.current = posActual.clone();
+      estaCaminando = delta > 0 && desplazamiento / delta > 0.5 && !estaSentado;
 
       if (estaCaminando) {
         tiempoAnimRef.current += delta;

@@ -120,6 +120,8 @@ const LocalPlayerController: React.FC<{
         position: posArray,
         rotation: rotArray,
         estaSentado,
+        // 3D-03: hora del emisor; el receptor interpola con ella, no con la de llegada
+        t: ahora,
       });
 
       if (audioClient) {
@@ -771,6 +773,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
                 personalizacion={aparienciaRemota}
                 position={u.position || [0, 0, 0]}
                 rotation={u.rotation || [0, 0, 0]}
+                tiempoMuestra={u.t}
                 isLocal={false}
                 estaSentado={u.estaSentado}
                 nivelVoz={audioClient && u.peerId ? () => audioClient.nivelDe(u.peerId) : undefined}
