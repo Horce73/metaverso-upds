@@ -1182,6 +1182,13 @@ main>h2:first-child {
   font-size: 0.75rem;
 }
 
+.chat-hora {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
 .chat-input-row {
   display: flex;
   gap: 8px;

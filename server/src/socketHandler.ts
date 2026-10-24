@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
 import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
+import { guardarMensaje, historialDe, type MensajeChat } from './chatPersistencia.js';
 import { verificarToken } from './middleware/auth.js';
 import { CUPOS_SOCKET, limitador } from './limites.js';
 import { sanearTextoChat } from './chat.js';
@@ -242,6 +243,9 @@ export function setupSockets(io: Server) {
       // guardado en el navegador): el cliente decide con ellos si difunde la
       // voz en el aula, igual que lo deciden los demás (VOZ-03).
       socket.emit('join_aceptado', { espacioId: nuevoEspacioId, espacioTipo, roles });
+      historialDe(nuevoEspacioId)
+        .then((mensajes) => socket.emit('chat_historial', { espacioId: nuevoEspacioId, mensajes }))
+        .catch((err) => console.error('Error al leer el historial de chat:', err));
       socket.emit('space_users', usersInSpace);
       socket.emit('current_users', usersInSpace);
       if (espacioTipo === 'aula') {
@@ -519,7 +523,7 @@ export function setupSockets(io: Server) {
       io.emit('clase_finalizada', data);
     });
 
-    const handleSendChat = (data: {
+    const handleSendChat = async (data: {
       message: { sender: string; text: string };
     }) => {
       const user = activeUsers.get(socket.id);
@@ -531,7 +535,13 @@ export function setupSockets(io: Server) {
       }
       // Campos cerrados: el remitente lo pone el servidor (nadie escribe en
       // nombre de otro) y ningun campo extra del cliente llega a los demas.
-      const message = { sender: identidad.nombre, text: saneado.texto, enviadoEn: new Date().toISOString() };
+      // Se guarda antes de difundir (A11Y-02) para que el mensaje viaje con su
+      // id: el cliente lo usa para no duplicarlo al recibir el historial.
+      // Si la base falla, igual se difunde: el chat en vivo no depende de ella.
+      const message: MensajeChat = await guardarMensaje(user.espacioId, identidad.userId || null, identidad.nombre, saneado.texto).catch((err) => {
+        console.error('Error al guardar mensaje de chat:', err);
+        return { sender: identidad.nombre, text: saneado.texto, enviadoEn: new Date().toISOString() };
+      });
       io.to(String(user.espacioId)).emit('chat_message', message);
       io.to(String(user.espacioId)).emit('chat_msg_received', message);
     };
