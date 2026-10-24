@@ -8,7 +8,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { pool, enTransaccion } from './db.js';
-import { setupSockets, registrarPresentesEnAula } from './socketHandler.js';
+import { setupSockets, registrarPresentesEnAula, posicionesConocidas } from './socketHandler.js';
+import { iniciarMapaCalor, registrarRutasMapaCalor } from './mapaCalorServidor.js';
 import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
 import { registrarAsistencia, bitacora, cerrarTramosDeSesion } from './helpers.js';
 import { aplicarMigraciones } from './migraciones.js';
@@ -91,6 +92,7 @@ setupSockets(io);
 registrarRutasMateriales(app, io);
 registrarRutasAsistencia(app);
 registrarRutasBitacora(app);
+registrarRutasMapaCalor(app);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -1856,3 +1858,14 @@ try {
 server.listen(PORT, () => {
   console.log(`🚀 Metaverso UPDS Backend corriendo en http://localhost:${PORT}`);
 });
+
+// DATA-04: muestreo de posiciones para el mapa de calor. Al apagarse (docker
+// compose stop/restart manda SIGTERM) se guarda lo acumulado del último minuto.
+const detenerMapaCalor = iniciarMapaCalor(posicionesConocidas);
+for (const senal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(senal, () => {
+    detenerMapaCalor()
+      .catch((err) => console.error('Error al guardar el mapa de calor al cerrar:', err))
+      .finally(() => process.exit(0));
+  });
+}
