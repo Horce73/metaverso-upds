@@ -3226,117 +3226,143 @@ main>h2:first-child {
   margin-bottom: 20px;
 }
 
-/* ===== TABLERO DE ASISTENCIA (DATA-01/02) ===== */
-.tablero-asistencia {
+/* ===== MODO SIN 3D (A11Y-04) ===== */
+/* Ocupa el lugar del canvas: deja libre la barra superior, la barra de
+   controles de abajo y, en escritorio, la sidebar de la derecha. */
+.vista-sin-3d {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--background);
+  padding: 120px 360px 140px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.tablero-asistencia h3 {
-  margin: 8px 0 0;
-  font-size: 1.1rem;
+.vista-sin-3d > * {
+  width: 100%;
+  max-width: 760px;
 }
 
-.tablero-asistencia__barra {
+.vista-sin-3d__aviso {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  padding: 12px 16px;
+  border-radius: 14px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
 }
 
-.tablero-asistencia__barra select {
-  max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--panel-bg);
-  color: var(--text-primary);
-  border: 1px solid var(--panel-border);
+.vista-sin-3d__seccion {
+  padding: 18px 20px;
+  border-radius: 16px;
 }
 
-.tablero-asistencia__barra .btn-primary {
+.vista-sin-3d__seccion h2 {
+  font-size: 1.05rem;
+  margin: 0 0 12px;
+}
+
+.vista-sin-3d__vacio {
+  color: var(--text-secondary);
   margin: 0;
 }
 
-/* Las tablas anchas se desplazan dentro de su caja, no la página */
-.tablero-asistencia__desplazable {
-  overflow-x: auto;
+.vista-sin-3d__pantalla {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: zoom-in;
 }
 
-.tablero-asistencia__desplazable .admin-table {
-  margin-top: 0;
-  min-width: 640px;
+.vista-sin-3d__pantalla img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-.tablero-asistencia__detalle {
-  padding: 16px;
-  border-radius: 14px;
+.vista-sin-3d__lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.tablero-asistencia__nota {
+.vista-sin-3d__lista li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vista-sin-3d__lista li > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vista-sin-3d__lista small {
   color: var(--text-secondary);
 }
 
-.tablero-asistencia__error {
-  color: var(--error);
+.vista-sin-3d__lista .btn-primary {
+  margin: 0;
+  padding: 6px 16px;
 }
 
-.tablero-asistencia__porcentaje {
-  display: inline-flex;
+.vista-sin-3d__personas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.vista-sin-3d__personas li {
+  display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 110px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.1);
+  font-size: 0.9rem;
 }
 
-.tablero-asistencia__pista {
-  width: 60px;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(148, 163, 184, 0.25);
-  overflow: hidden;
+.vista-sin-3d__voz {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(148, 163, 184, 0.4);
+  transition: background 0.15s, box-shadow 0.15s;
 }
 
-.tablero-asistencia__pista > span {
-  display: block;
-  height: 100%;
-  background: var(--success);
+.vista-sin-3d__voz.hablando {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.3);
 }
 
-/* Visible sólo para lectores de pantalla */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+@media (max-width: 1024px) {
+  .vista-sin-3d {
+    padding-right: 320px;
+  }
 }
 
-.estado-asistencia {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.estado-asistencia--presente {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--success);
-}
-
-.estado-asistencia--tarde {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-
-.estado-asistencia--ausente {
-  background: rgba(239, 68, 68, 0.15);
-  color: var(--error);
+@media (max-width: 768px) {
+  .vista-sin-3d {
+    padding: 130px 16px 140px;
+  }
 }
 
 /* ===== SUBTÍTULOS EN VIVO (A11Y-01) ===== */

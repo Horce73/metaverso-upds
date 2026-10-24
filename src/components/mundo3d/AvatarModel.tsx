@@ -3,8 +3,10 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKeyboardControls } from './useKeyboardControls.js';
 import { estadoJoystick } from './touchControls.js';
-import { crearEstado, recibir, posicionEn, VELOCIDAD_CAMINAR } from './interpolacion.js';
-import { crearTexturaTexto } from './texto3d.js';
+import { posicionEn, VELOCIDAD_CAMINAR } from './interpolacion.js';
+import { estadoRemoto, registrarMovimiento } from './posicionesRemotas.js';
+import { Letrero } from './Letrero.js';
+import { useCalidad } from './useCalidad.js';
 import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './personalizacion.js';
 
 export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
@@ -40,8 +42,8 @@ interface AvatarModelProps {
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
   /** Nivel de voz actual (0..1) de esta persona; enciende el anillo de "está hablando". */
   nivelVoz?: () => number;
-  /** Avatar remoto: hora del emisor de la última posición recibida (3D-03). */
-  tiempoMuestra?: number;
+  /** Avatar remoto: su socket, para leer la posición en posicionesRemotas. */
+  socketId?: string;
 }
 
 // ---------------------------------------------------------------------
@@ -259,13 +261,16 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   mitadAnchoIslaAcademica,
   onUpdatePosicion,
   nivelVoz,
-  tiempoMuestra,
+  socketId,
 }) => {
   const grupoRef = useRef<THREE.Group>(null);
-  // Avatar remoto (3D-03): muestras recibidas con la hora del emisor, y la
-  // posición interpolada del frame anterior para saber si está caminando.
-  const interpolacionRef = useRef(crearEstado());
+  // Avatar remoto: posición interpolada del frame anterior, para saber si
+  // está caminando (las muestras viven en posicionesRemotas).
   const posPreviaRemotaRef = useRef<THREE.Vector3 | null>(null);
+  // Nivel de detalle (3D-02) de un avatar remoto: lejos de la cámara se
+  // ocultan las piezas marcadas userData.detalle y no proyecta sombra.
+  const lodRef = useRef<{ lejos: boolean | null; detalles: THREE.Object3D[]; conSombra: THREE.Mesh[] } | null>(null);
+  const { distanciaDetalle } = useCalidad();
   const cuerpoRef = useRef<THREE.Group>(null);
   const controles = useKeyboardControls();
   const { camera } = useThree();
@@ -322,11 +327,18 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Avatar remoto que todavía no se movió desde que entramos: su posición de
+  // llegada sirve de punto de partida, sin hora (3D-03).
   useEffect(() => {
-    if (isLocal) return;
-    recibir(interpolacionRef.current, [position[0], position[1], position[2]], rotation[1] || 0, tiempoMuestra, performance.now());
+    if (isLocal || !socketId || estadoRemoto(socketId)) return;
+    registrarMovimiento(socketId, [position[0], position[1], position[2]], rotation[1] || 0, estaSentado, undefined, performance.now());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocal, position[0], position[1], position[2], rotation[1], tiempoMuestra]);
+  }, []);
+
+  // Cabello y accesorios se remontan al cambiar la apariencia
+  useEffect(() => {
+    lodRef.current = null;
+  }, [personalizacion]);
 
   // Teletransportación inmediata a la silla al sentarse
   useEffect(() => {
@@ -366,8 +378,30 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     [faceTextureAtlas]
   );
 
+  const aplicarNivelDetalle = (grupo: THREE.Group, lejos: boolean) => {
+    if (!lodRef.current) {
+      const detalles: THREE.Object3D[] = [];
+      const conSombra: THREE.Mesh[] = [];
+      grupo.traverse((o) => {
+        if (o.userData.detalle) detalles.push(o);
+        // Se anota la primera vez: al volver a recorrer (cambio de apariencia
+        // estando lejos) las mallas viejas ya tienen castShadow apagado.
+        if (o.userData.sombra === undefined) o.userData.sombra = o.castShadow;
+        if ((o as THREE.Mesh).isMesh && o.userData.sombra) conSombra.push(o as THREE.Mesh);
+      });
+      lodRef.current = { lejos: null, detalles, conSombra };
+    }
+    const lod = lodRef.current;
+    if (lod.lejos === lejos) return;
+    lod.lejos = lejos;
+    lod.detalles.forEach((o) => (o.visible = !lejos));
+    lod.conSombra.forEach((m) => (m.castShadow = !lejos));
+  };
+
   useFrame((state, delta) => {
     if (!grupoRef.current) return;
+    const remoto = isLocal || !socketId ? undefined : estadoRemoto(socketId);
+    const sentado = remoto ? remoto.estaSentado : estaSentado;
     const tiempoGlobal = state.clock.getElapsedTime();
 
     // 1. Pestañeo Aleatorio
@@ -384,7 +418,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     let estaCaminando = false;
 
     if (isLocal) {
-      if (!estaSentado) {
+      if (!sentado) {
         const k = controles.current;
         const j = estadoJoystick;
         const adelante = k.adelante || j.adelante;
@@ -460,19 +494,21 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
       // 3D-03: se dibuja un poco en el pasado, entre las dos muestras que
       // rodean ese instante (ver interpolacion.ts), en vez de perseguir el
       // último paquete. El ángulo ya viene interpolado por el camino corto.
-      const muestra = posicionEn(interpolacionRef.current, performance.now());
+      const muestra = remoto ? posicionEn(remoto.interpolacion, performance.now()) : null;
       const posActual = grupoRef.current.position;
       if (muestra) {
         posActual.set(muestra.pos[0], muestra.pos[1], muestra.pos[2]);
         grupoRef.current.rotation.y = muestra.angulo;
       }
 
+      aplicarNivelDetalle(grupoRef.current, posActual.distanceTo(camera.position) > distanciaDetalle);
+
       // Caminando = se desplazó este frame a más de 0,5 u/s (camina a 4)
       const previa = posPreviaRemotaRef.current;
       const desplazamiento = previa ? Math.hypot(posActual.x - previa.x, posActual.z - previa.z) : 0;
       if (previa) previa.copy(posActual);
       else posPreviaRemotaRef.current = posActual.clone();
-      estaCaminando = delta > 0 && desplazamiento / delta > 0.5 && !estaSentado;
+      estaCaminando = delta > 0 && desplazamiento / delta > 0.5 && !sentado;
 
       if (estaCaminando) {
         tiempoAnimRef.current += delta;
@@ -483,7 +519,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
         if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -objetivoSwing, suavizado);
         if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, -objetivoSwing, suavizado);
         if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, objetivoSwing, suavizado);
-      } else if (estaSentado) {
+      } else if (sentado) {
         const suavizadoSentado = Math.min(1, delta * 15);
         if (brazoDerRef.current) brazoDerRef.current.rotation.x = THREE.MathUtils.lerp(brazoDerRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
         if (brazoIzqRef.current) brazoIzqRef.current.rotation.x = THREE.MathUtils.lerp(brazoIzqRef.current.rotation.x, -Math.PI / 4, suavizadoSentado);
@@ -500,7 +536,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
 
     // 2. Ajuste de Cadera al Sentarse / Respiración Idle / Caminata Waddle
     if (cuerpoRef.current) {
-      if (estaSentado) {
+      if (sentado) {
         cuerpoRef.current.position.y = THREE.MathUtils.lerp(cuerpoRef.current.position.y, -0.38, delta * 15);
         cuerpoRef.current.rotation.z = 0;
         cuerpoRef.current.scale.set(1, 1, 1);
@@ -531,7 +567,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           <mesh castShadow position={[0, -0.4, 0]} material={materialPiernas}>
             <boxGeometry args={[0.22, 0.8, 0.24]} />
           </mesh>
-          <mesh castShadow position={[0, -0.85, 0.05]}>
+          <mesh castShadow position={[0, -0.85, 0.05]} userData={{ detalle: true }}>
             <boxGeometry args={[0.24, 0.12, 0.32]} />
             <meshStandardMaterial color="#0f172a" roughness={0.4} />
           </mesh>
@@ -540,7 +576,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           <mesh castShadow position={[0, -0.4, 0]} material={materialPiernas}>
             <boxGeometry args={[0.22, 0.8, 0.24]} />
           </mesh>
-          <mesh castShadow position={[0, -0.85, 0.05]}>
+          <mesh castShadow position={[0, -0.85, 0.05]} userData={{ detalle: true }}>
             <boxGeometry args={[0.24, 0.12, 0.32]} />
             <meshStandardMaterial color="#0f172a" roughness={0.4} />
           </mesh>
@@ -556,7 +592,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           <mesh castShadow position={[0, -0.35, 0]} material={materialTorso}>
             <boxGeometry args={[0.18, 0.7, 0.18]} />
           </mesh>
-          <mesh castShadow position={[0, -0.72, 0]}>
+          <mesh castShadow position={[0, -0.72, 0]} userData={{ detalle: true }}>
             <sphereGeometry args={[0.1, 12, 12]} />
             <meshStandardMaterial color={colorPiel} />
           </mesh>
@@ -565,7 +601,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           <mesh castShadow position={[0, -0.35, 0]} material={materialTorso}>
             <boxGeometry args={[0.18, 0.7, 0.18]} />
           </mesh>
-          <mesh castShadow position={[0, -0.72, 0]}>
+          <mesh castShadow position={[0, -0.72, 0]} userData={{ detalle: true }}>
             <sphereGeometry args={[0.1, 12, 12]} />
             <meshStandardMaterial color={colorPiel} />
           </mesh>
@@ -578,19 +614,23 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
             <meshStandardMaterial color={colorPiel} roughness={0.5} />
           </mesh>
 
-          <mesh position={[0, 2.05, 0.261]}>
+          <mesh position={[0, 2.05, 0.261]} userData={{ detalle: true }}>
             <planeGeometry args={[0.44, 0.44]} />
             <meshBasicMaterial map={faceTextureAtlas} transparent alphaTest={0.05} />
           </mesh>
 
-          <VelloFacial estilo={estiloVelloFacial} color={colorVelloFacial} />
-          <Cabello estilo={estiloCabello} color={colorCabello} />
+          <group userData={{ detalle: true }}>
+            <VelloFacial estilo={estiloVelloFacial} color={colorVelloFacial} />
+            <Cabello estilo={estiloCabello} color={colorCabello} />
+          </group>
         </group>
 
         {/* Accesorios */}
-        {accesorios?.sombrero && <Sombrero />}
-        {accesorios?.gafas && <Gafas />}
-        {accesorios?.mochila && <Mochila color={oscurecerColor(colorPrimarioRopa)} />}
+        <group userData={{ detalle: true }}>
+          {accesorios?.sombrero && <Sombrero />}
+          {accesorios?.gafas && <Gafas />}
+          {accesorios?.mochila && <Mochila color={oscurecerColor(colorPrimarioRopa)} />}
+        </group>
       </group>
 
       {nivelVoz && <AnilloVoz nivelVoz={nivelVoz} />}
@@ -811,11 +851,7 @@ function oscurecerColor(hex: string): THREE.Color {
 }
 
 function Etiqueta({ nombre }: { nombre: string }) {
-  return (
-    <sprite position={[0, 2.8, 0]} scale={[1.5, 0.4, 1]}>
-      <spriteMaterial attach="material" map={crearTexturaTexto(nombre)} transparent />
-    </sprite>
-  );
+  return <Letrero texto={nombre} position={[0, 2.8, 0]} scale={[1.5, 0.4, 1]} />;
 }
 
 function esPosicionValida(
