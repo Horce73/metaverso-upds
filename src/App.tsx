@@ -137,6 +137,9 @@ function App() {
   // Última posición conocida DENTRO del campus en esta sesión (se fotografía al salir de
   // él), para que "Salir al Campus" no dependa de un viaje de ida y vuelta al servidor.
   const ultimaPosicionCampusRef = useRef<PosicionGuardada | null>(null);
+  // Espacio en el que estaba la pestaña antes de recargar (F5), pendiente de
+  // volver a unirse cuando carguen los espacios.
+  const espacioRestauradoRef = useRef<Espacio | null>(null);
 
   // Conexiones Sockets y WebRTC (socketRef síncrono para evitar cierres de estado desactualizados)
   const socketRef = useRef<Socket | null>(null);
@@ -238,7 +241,9 @@ function App() {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
       if (savedAvatar) setAvatar(JSON.parse(savedAvatar));
-      if (savedEspacio) setEspacioActivo(JSON.parse(savedEspacio));
+      // No se activa directo: el socket de esta pestaña es nuevo y nunca se
+      // unió a ese espacio. Lo retoma el auto-join de abajo, como un join real.
+      if (savedEspacio) espacioRestauradoRef.current = JSON.parse(savedEspacio);
     }
   }, []);
 
@@ -871,6 +876,18 @@ function App() {
     if (espacioActivo) return;
     if (route === '/admin' || route === '/docente') return;
     if (espacios.length === 0) return;
+
+    const restaurado = espacioRestauradoRef.current;
+    espacioRestauradoRef.current = null;
+    if (restaurado && route === '/metaverso') {
+      // Se toma la versión recién cargada (sesion_activa al día). Si ya no
+      // figura entre los espacios visibles, se cae al campus.
+      const actual = espacios.find((e) => String(e.id) === String(restaurado.id));
+      if (actual) {
+        handleJoinSpace(actual, actual.tipo === 'campus' ? avatar?.ultima_posicion ?? undefined : undefined);
+        return;
+      }
+    }
 
     const campus = espacios.find((e) => e.tipo === 'campus');
     if (campus) handleJoinSpace(campus, avatar?.ultima_posicion ?? undefined);
