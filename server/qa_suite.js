@@ -1210,6 +1210,43 @@ async function runTests() {
 
   sLuis.disconnect();
 
+  // ---------------------------------------------------------------------------
+  // Subtítulos en vivo (A11Y-01)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== SUBTÍTULOS ===');
+
+  const sOyente = await conectar(maria.token);
+  await entrar(sOyente, aulaId);
+
+  await caso('El subtítulo llega a los demás del espacio con el nombre del token', async () => {
+    const recibido = esperarEvento(sOyente, 'subtitulo', 3000);
+    sAna.emit('subtitulo', { texto: 'hola clase', final: true, nombre: 'Otro', socketId: 'falso' });
+    const data = await recibido;
+    return data?.texto === 'hola clase' && data.final === true && data.socketId === sAna.id && data.nombre !== 'Otro';
+  });
+
+  await caso('El subtítulo no vuelve a quien lo dijo ni sale del espacio', async () => {
+    const sCampus = await conectar((await tokenDe(ESTUDIANTE_3)).token);
+    try {
+      await entrar(sCampus, campusId);
+      const propio = esperarEvento(sAna, 'subtitulo', 800);
+      const ajeno = esperarEvento(sCampus, 'subtitulo', 800);
+      sAna.emit('subtitulo', { texto: 'solo el aula', final: false });
+      return (await propio) === null && (await ajeno) === null;
+    } finally {
+      sCampus.disconnect();
+    }
+  });
+
+  await caso('Un subtítulo vacío o que no es texto se descarta', async () => {
+    const recibido = esperarEvento(sOyente, 'subtitulo', 800);
+    sAna.emit('subtitulo', { texto: '   ' });
+    sAna.emit('subtitulo', { texto: { html: '<b>x</b>' } });
+    return (await recibido) === null;
+  });
+
+  sOyente.disconnect();
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');
