@@ -103,6 +103,18 @@ async function resolverIdentidad(token: unknown): Promise<Identidad | null> {
   return { userId, esInvitado: false, nombre: rows[0].nombre_visible || rows[0].nombre, roles };
 }
 
+/**
+ * Al iniciar una clase, quienes ya estaban en el aula no vuelven a "entrar":
+ * se les registra la asistencia en ese momento (DATA-01).
+ */
+export async function registrarPresentesEnAula(espacioId: number) {
+  const usuarios = new Set<number>();
+  activeUsers.forEach((u) => {
+    if (Number(u.espacioId) === espacioId && u.userId > 0) usuarios.add(u.userId);
+  });
+  for (const userId of usuarios) await registrarAsistencia(userId, espacioId);
+}
+
 export function setupSockets(io: Server) {
   // Handshake: sin un JWT valido en `auth.token` no hay conexion.
   io.use(async (socket, next) => {
@@ -181,6 +193,7 @@ export function setupSockets(io: Server) {
           }
           activeUsers.delete(sid);
           dejarAula(user.espacioId, sid);
+          registrarSalida(user.userId, user.espacioId);
         }
       });
 
@@ -193,6 +206,9 @@ export function setupSockets(io: Server) {
         dejarAula(prevUser.espacioId, socket.id);
         await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
         socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
+        // "Salir al Campus" reutiliza el socket: sin esto la asistencia seguía
+        // contando minutos hasta el fin de la clase (DATA-01)
+        await registrarSalida(prevUser.userId, prevUser.espacioId);
         if (prevUser.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(prevUser.userId, prevUser.position, prevUser.rotation);
         }

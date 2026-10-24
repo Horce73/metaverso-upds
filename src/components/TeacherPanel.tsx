@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { TableroAsistencia } from './TableroAsistencia.js';
 
 interface TeacherPanelProps {
   token: string;
@@ -207,7 +208,10 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({ token, user, onClose
         {activeTab === 'attendance' && (
           <div className="teacher-section">
             <h2>Asistencia de Estudiantes</h2>
-            <p style={{ color: 'var(--text-secondary)' }}>Visualiza y gestiona la asistencia automática de tus clases.</p>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              Se registra sola cuando cada estudiante entra al aula durante la clase.
+            </p>
+            <TableroAsistencia token={token} />
           </div>
         )}
 

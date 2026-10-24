@@ -1030,6 +1030,130 @@ async function runTests() {
     return borrar.status === 204 && despues.status === 404;
   });
 
+  // ---------------------------------------------------------------------------
+  // Tablero de asistencia (DATA-01/02)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== TABLERO DE ASISTENCIA ===');
+
+  const tramosDe = async (usuarioId, espacioId) =>
+    (await pool.query(
+      `SELECT t.salida FROM asistencia_tramos t
+       JOIN asistencias a ON a.id = t.asistencia_id
+       JOIN sesiones_clase s ON s.id = a.sesion_id
+       WHERE a.usuario_id = $1 AND s.espacio_id = $2 AND s.estado = 'en_curso'
+       ORDER BY t.entrada`,
+      [usuarioId, espacioId]
+    )).rows;
+  const esperarQue = async (condicion, ms = 3000) => {
+    const limite = Date.now() + ms;
+    while (Date.now() < limite) {
+      if (await condicion()) return true;
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return false;
+  };
+  const asignaturaPiloto = (await pool.query('SELECT asignatura_id FROM espacios WHERE id = $1', [aulaId])).rows[0].asignatura_id;
+
+  await caso('Salir del aula al campus (mismo socket) cierra el tramo de asistencia', async () => {
+    await entrar(sAna, aulaId);
+    const abierto = await esperarQue(async () => (await tramosDe(ana.id, aulaId)).some(t => t.salida === null));
+    await entrar(sAna, campusId);
+    const cerrado = await esperarQue(async () => (await tramosDe(ana.id, aulaId)).every(t => t.salida !== null));
+    return abierto && cerrado;
+  });
+
+  await caso('Volver a entrar a la misma clase abre un tramo nuevo', async () => {
+    const antes = (await tramosDe(ana.id, aulaId)).length;
+    await entrar(sAna, aulaId);
+    return esperarQue(async () => {
+      const tramos = await tramosDe(ana.id, aulaId);
+      return tramos.length === antes + 1 && tramos.filter(t => t.salida === null).length === 1;
+    });
+  });
+
+  await caso('El docente ve el tablero de su asignatura con la asistencia de la alumna', async () => {
+    const res = await api(`/api/asistencia/asignaturas/${asignaturaPiloto}`, { token: docente.token });
+    const data = await res.json();
+    const fila = data.estudiantes?.find(e => e.id === ana.id);
+    const enCurso = data.sesiones?.find(s => s.estado === 'en_curso');
+    return res.status === 200 && fila && enCurso && data.celdas[ana.id][enCurso.id].estado !== 'ausente';
+  });
+
+  await caso('La lista de asignaturas del docente incluye la del aula piloto', async () => {
+    const res = await api('/api/asistencia/asignaturas', { token: docente.token });
+    const lista = await res.json();
+    return res.status === 200 && lista.some(a => a.id === asignaturaPiloto && a.sesiones > 0);
+  });
+
+  await caso('Un estudiante no puede ver el tablero (403)', async () => {
+    const res = await api(`/api/asistencia/asignaturas/${asignaturaPiloto}`, { token: ana.token });
+    return res.status === 403;
+  });
+
+  await caso('Otro docente no puede ver el tablero de una asignatura ajena (403)', async () => {
+    const res = await api(`/api/asistencia/asignaturas/${asignaturaPiloto}`, { token: docente2.token });
+    return res.status === 403;
+  });
+
+  await caso('Exportar a CSV: descarga con BOM, encabezados y una fila por inscrito', async () => {
+    const res = await api(`/api/asistencia/asignaturas/${asignaturaPiloto}?formato=csv`, { token: docente.token });
+    // res.text() se come el BOM: se lee crudo para comprobar que viaja
+    const crudo = new Uint8Array(await res.arrayBuffer());
+    const texto = new TextDecoder('utf-8', { ignoreBOM: true }).decode(crudo);
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM inscripciones WHERE asignatura_id = $1', [asignaturaPiloto]);
+    const lineas = texto.replace(/^\uFEFF/, '').trim().split('\r\n');
+    return res.status === 200
+      && res.headers.get('content-type').startsWith('text/csv')
+      && /attachment; filename="asistencia_.+\.csv"/.test(res.headers.get('content-disposition'))
+      && crudo[0] === 0xef && crudo[1] === 0xbb && crudo[2] === 0xbf
+      && lineas[0].startsWith('Registro,Apellido,Nombre,Presentes,Tardes,Ausencias')
+      && lineas.length === rows[0].n + 1;
+  });
+
+  await caso('Detalle de una clase: entrada, minutos y CSV por sesión', async () => {
+    const sesionId = (await pool.query(
+      "SELECT id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso'", [aulaId]
+    )).rows[0].id;
+    const res = await api(`/api/asistencia/sesiones/${sesionId}`, { token: docente.token });
+    const data = await res.json();
+    const fila = data.estudiantes?.find(e => e.id === ana.id);
+    const csv = await api(`/api/asistencia/sesiones/${sesionId}?formato=csv`, { token: docente.token });
+    const texto = await csv.text();
+    return res.status === 200 && fila?.entrada && fila.salida === null && Number.isInteger(fila.minutos)
+      && csv.status === 200 && texto.includes('Minutos efectivos');
+  });
+
+  await caso('Iniciar la clase registra la asistencia de quien ya estaba en el aula', async () => {
+    const bd = (await pool.query("SELECT id FROM asignaturas WHERE codigo = 'BD-101'")).rows[0].id;
+    await pool.query('INSERT INTO inscripciones (usuario_id, asignatura_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [maria.id, bd]);
+    const sMaria = await conectar(maria.token);
+    try {
+      await entrar(sMaria, otraAulaId);
+      const res = await curso(docente.token, {
+        espacio_id: otraAulaId, nombre_curso: 'Base de Datos I', codigo_curso: 'BD-101', tema: 'Clase QA tablero'
+      });
+      const { sesion } = await res.json();
+      const filas = await esperarFila('SELECT 1 FROM asistencias WHERE sesion_id = $1 AND usuario_id = $2', [sesion.id, maria.id]);
+      const { rows } = await pool.query('SELECT asignatura_id FROM sesiones_clase WHERE id = $1', [sesion.id]);
+      return res.status === 201 && filas.length === 1 && rows[0].asignatura_id === bd;
+    } finally {
+      sMaria.disconnect();
+    }
+  });
+
+  await caso('Finalizar la clase cierra los tramos abiertos', async () => {
+    const sesionId = (await pool.query(
+      "SELECT id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso'", [otraAulaId]
+    )).rows[0].id;
+    const res = await api(`/api/sesiones/${sesionId}/finalizar`, { method: 'PUT', token: docente.token });
+    const { rows } = await pool.query(
+      `SELECT 1 FROM asistencia_tramos t JOIN asistencias a ON a.id = t.asistencia_id
+       WHERE a.sesion_id = $1 AND t.salida IS NULL`,
+      [sesionId]
+    );
+    return res.status === 200 && rows.length === 0;
+  });
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');
