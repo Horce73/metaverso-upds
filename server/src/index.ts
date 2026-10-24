@@ -8,11 +8,12 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { pool, enTransaccion } from './db.js';
-import { setupSockets } from './socketHandler.js';
+import { setupSockets, registrarPresentesEnAula } from './socketHandler.js';
 import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
-import { registrarAsistencia, bitacora } from './helpers.js';
+import { registrarAsistencia, bitacora, cerrarTramosDeSesion } from './helpers.js';
 import { aplicarMigraciones } from './migraciones.js';
 import { registrarRutasMateriales } from './materiales.js';
+import { registrarRutasAsistencia } from './reporteAsistencia.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 
 dotenv.config();
@@ -87,6 +88,7 @@ const io = new Server(server, {
 
 setupSockets(io);
 registrarRutasMateriales(app, io);
+registrarRutasAsistencia(app);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -590,13 +592,14 @@ app.post('/api/sesiones', authenticateJWT, requiereRol('docente'), async (req: a
     }
 
     const result = await pool.query(
-      `INSERT INTO sesiones_clase (espacio_id, docente_id, tema, inicio_programado, fin_programado, inicio_real, estado, tolerancia_min)
-       VALUES ($1, $2, $3, $4, $5, NOW(), 'en_curso', $6)
+      `INSERT INTO sesiones_clase (espacio_id, docente_id, asignatura_id, tema, inicio_programado, fin_programado, inicio_real, estado, tolerancia_min)
+       VALUES ($1, $2, (SELECT asignatura_id FROM espacios WHERE id = $1), $3, $4, $5, NOW(), 'en_curso', $6)
        RETURNING *`,
       [espacio_id, userId, tema, inicio_programado || new Date().toISOString(), fin_programado || new Date(Date.now() + 90 * 60000).toISOString(), tolerancia_min || 10]
     );
 
     await bitacora(userId, 'inicio_clase', `${tema || ''} | espacio=${espacio_id}`, req.ip);
+    await registrarPresentesEnAula(Number(espacio_id));
 
     res.status(201).json({ message: 'Clase programada e iniciada', sesion: result.rows[0] });
   } catch (err: any) {
@@ -689,14 +692,15 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
         `UPDATE asistencias SET hora_salida = NOW() WHERE sesion_id = $1 AND hora_salida IS NULL`,
         [sesionPreviaId]
       );
+      await cerrarTramosDeSesion(sesionPreviaId, client);
     }
 
     // 5. Crear sesión de clase en curso
     const sesionRes = await client.query(
-      `INSERT INTO sesiones_clase (espacio_id, docente_id, tema, inicio_programado, fin_programado, inicio_real, estado)
-       VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '90 minutes', NOW(), 'en_curso')
+      `INSERT INTO sesiones_clase (espacio_id, docente_id, asignatura_id, tema, inicio_programado, fin_programado, inicio_real, estado)
+       VALUES ($1, $2, $3, $4, NOW(), NOW() + INTERVAL '90 minutes', NOW(), 'en_curso')
        RETURNING *`,
-      [espacio_id, userId, tema]
+      [espacio_id, userId, asignaturaId, tema]
     );
     await client.query('COMMIT');
     liberar();
@@ -711,6 +715,7 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
     };
 
     await bitacora(userId, 'crear_curso', `${nombre_curso} (${codigo_curso}) - ${tema}`, req.ip);
+    await registrarPresentesEnAula(Number(espacio_id));
 
     res.status(201).json({
       message: 'Curso creado e inicio de clase exitoso',
@@ -761,6 +766,7 @@ app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) =>
       `UPDATE asistencias SET hora_salida = NOW() WHERE sesion_id = $1 AND hora_salida IS NULL`,
       [id]
     );
+    await cerrarTramosDeSesion(Number(id));
 
     await bitacora(userId, 'fin_clase', sesion.tema || '', req.ip);
     res.json({ message: 'Clase finalizada', sesion: result.rows[0] });

@@ -55,18 +55,46 @@ export async function registrarAsistencia(userId: number, espacioId: number) {
     );
 
     if (result.rows.length === 0) {
+      // Vuelve a entrar a la misma clase: el estado (presente/tarde) es el de
+      // la primera vez, pero abre un tramo nuevo y deja de figurar como salido.
       const existente = await pool.query(
-        'SELECT hora_ingreso, estado FROM asistencias WHERE sesion_id = $1 AND usuario_id = $2',
+        `UPDATE asistencias SET hora_salida = NULL
+         WHERE sesion_id = $1 AND usuario_id = $2
+         RETURNING id, hora_ingreso, estado`,
         [clase.id, userId]
       );
-      return { registrado: false, motivo: 'Ya registrado previamente', ...existente.rows[0] };
+      const { id, ...datos } = existente.rows[0];
+      await abrirTramo(id);
+      return { registrado: false, motivo: 'Ya registrado previamente', ...datos };
     }
 
+    await abrirTramo(result.rows[0].id);
     return { registrado: true, estado, hora_ingreso: result.rows[0].hora_ingreso };
   } catch (err) {
     console.error('Error al registrar asistencia:', err);
     return null;
   }
+}
+
+// DATA-01: cada entrada al aula es un tramo; la salida lo cierra. Si ya hay
+// uno abierto (dos pestañas, reconexión antes del disconnect) no se duplica.
+async function abrirTramo(asistenciaId: number) {
+  await pool.query(
+    `INSERT INTO asistencia_tramos (asistencia_id)
+     VALUES ($1)
+     ON CONFLICT (asistencia_id) WHERE salida IS NULL DO NOTHING`,
+    [asistenciaId]
+  );
+}
+
+/** Cierra los tramos abiertos de toda una sesión (al finalizar la clase). */
+export async function cerrarTramosDeSesion(sesionId: number, db: { query: typeof pool.query } = pool) {
+  await db.query(
+    `UPDATE asistencia_tramos t SET salida = NOW()
+     FROM asistencias a
+     WHERE t.asistencia_id = a.id AND a.sesion_id = $1 AND t.salida IS NULL`,
+    [sesionId]
+  );
 }
 
 export async function registrarSalida(userId: number, espacioId: number) {
@@ -85,6 +113,12 @@ export async function registrarSalida(userId: number, espacioId: number) {
     await pool.query(
       `UPDATE asistencias SET hora_salida = NOW()
        WHERE sesion_id = $1 AND usuario_id = $2 AND hora_salida IS NULL`,
+      [res.rows[0].id, userId]
+    );
+    await pool.query(
+      `UPDATE asistencia_tramos t SET salida = NOW()
+       FROM asistencias a
+       WHERE t.asistencia_id = a.id AND a.sesion_id = $1 AND a.usuario_id = $2 AND t.salida IS NULL`,
       [res.rows[0].id, userId]
     );
   } catch (err) {
