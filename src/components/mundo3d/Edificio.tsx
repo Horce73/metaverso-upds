@@ -1,6 +1,7 @@
 import React, { type ReactNode } from 'react';
 import * as THREE from 'three';
-import { crearTexturaTexto } from './texto3d.js';
+import { Letrero } from './Letrero.js';
+import { useCalidad } from './useCalidad.js';
 
 interface EdificioProps {
   posicion: [number, number, number];
@@ -39,6 +40,7 @@ export const Edificio: React.FC<EdificioProps> = ({
   const dz = mirarHacia[2] - posicion[2];
   const rotacionY = Math.atan2(dx, dz);
 
+  const { lucesPuntuales } = useCalidad();
   const espesor = 0.2;
   const textoEstado = tieneClaseEnCurso
     ? `🟢 CLASE EN CURSO: ${temaClase || 'Software'}`
@@ -78,33 +80,37 @@ export const Edificio: React.FC<EdificioProps> = ({
 
       {/* Letrero con el nombre del edificio */}
       {nombre && (
-        <sprite position={[0, alto + 0.9, profundidad / 2 + 0.3]} scale={[3.4, 0.85, 1]}>
-          <spriteMaterial attach="material" map={crearTexturaTexto(nombre, { ancho: 500, alto: 120, fuente: 'bold 42px sans-serif' })} transparent />
-        </sprite>
+        <Letrero
+          texto={nombre}
+          position={[0, alto + 0.9, profundidad / 2 + 0.3]}
+          scale={[3.4, 0.85, 1]}
+          ancho={500}
+          alto={120}
+          fuente="bold 42px sans-serif"
+        />
       )}
 
       {/* Indicador 3D de Estado de Clase en Vivo (Verde / Rojo) */}
-      <sprite position={[0, alto + 0.3, profundidad / 2 + 0.3]} scale={[3.8, 0.6, 1]}>
-        <spriteMaterial
-          attach="material"
-          map={crearTexturaTexto(textoEstado, {
-            ancho: 600,
-            alto: 100,
-            fondo: tieneClaseEnCurso ? '#065f46' : '#991b1b',
-            color: '#ffffff',
-            fuente: 'bold 32px sans-serif',
-          })}
-          transparent
-        />
-      </sprite>
+      <Letrero
+        texto={textoEstado}
+        position={[0, alto + 0.3, profundidad / 2 + 0.3]}
+        scale={[3.8, 0.6, 1]}
+        ancho={600}
+        alto={100}
+        fondo={tieneClaseEnCurso ? '#065f46' : '#991b1b'}
+        color="#ffffff"
+        fuente="bold 32px sans-serif"
+      />
 
       {/* Luz de estado sobre la puerta */}
-      <pointLight
-        position={[0, alto - 0.2, profundidad / 2 + 0.5]}
-        color={tieneClaseEnCurso ? '#10b981' : '#ef4444'}
-        intensity={1.5}
-        distance={4}
-      />
+      {lucesPuntuales && (
+        <pointLight
+          position={[0, alto - 0.2, profundidad / 2 + 0.5]}
+          color={tieneClaseEnCurso ? '#10b981' : '#ef4444'}
+          intensity={1.5}
+          distance={4}
+        />
+      )}
 
       {/* Zona Interactivas / Botón Puerta de Ingreso al Aula */}
       {onInteractuar && (
@@ -127,19 +133,16 @@ export const Edificio: React.FC<EdificioProps> = ({
           </mesh>
 
           {/* Prompt flotante para ingresar con la tecla E */}
-          <sprite position={[0, 1.3, 0]} scale={[3.4, 0.7, 1]}>
-            <spriteMaterial
-              attach="material"
-              map={crearTexturaTexto('🚪 Presiona [E] o Toca', {
-                ancho: 450,
-                alto: 100,
-                fondo: '#1e293b',
-                color: '#38bdf8',
-                fuente: 'bold 34px sans-serif',
-              })}
-              transparent
-            />
-          </sprite>
+          <Letrero
+            texto="🚪 Presiona [E] o Toca"
+            position={[0, 1.3, 0]}
+            scale={[3.4, 0.7, 1]}
+            ancho={450}
+            alto={100}
+            fondo="#1e293b"
+            color="#38bdf8"
+            fuente="bold 34px sans-serif"
+          />
         </group>
       )}
 

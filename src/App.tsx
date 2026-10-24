@@ -5,6 +5,7 @@ import { Login } from './components/Login.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
+import { registrarMovimiento, olvidarRemoto, olvidarRemotos } from './components/mundo3d/posicionesRemotas.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
 import { CrearCursoModal } from './components/CrearCursoModal.js';
 import { PanelDiagnosticoVoz } from './components/PanelDiagnosticoVoz.js';
@@ -391,6 +392,7 @@ function App() {
       setAudioClient(null);
     }
     setRemoteUsers({});
+    olvidarRemotos();
     setSilenciadosLocal(new Set());
     setMaterialesAbierto(false);
     setMaterialAbierto(null);
@@ -484,6 +486,9 @@ function App() {
     newAudioClient.configurarZonas(espacio.tipo, esDifusor(misRoles, espacio.tipo));
     setAudioClient(newAudioClient);
 
+    // 'user_moved' no trae el peerId y ya no pasa por remoteUsers (ver abajo)
+    const peerPorSocket = new Map<string, string>();
+
     const registrarEnVoz = (u: any) => {
       if (!u?.peerId) return;
       if (u.position) newAudioClient.updateSourcePosition(u.peerId, u.position);
@@ -494,7 +499,10 @@ function App() {
     const handleInitialUsers = (users: any) => {
       console.log('👥 Usuarios en el espacio:', users);
       setRemoteUsers(users);
-      Object.values(users).forEach(registrarEnVoz);
+      Object.entries(users).forEach(([socketId, u]: [string, any]) => {
+        if (u?.peerId) peerPorSocket.set(socketId, u.peerId);
+        registrarEnVoz(u);
+      });
     };
 
     // Los roles de localStorage pueden estar desactualizados; los del servidor
@@ -563,10 +571,13 @@ function App() {
       // su primer 'move' no se sabe si está en alcance de voz.
       const nuevo = { ...data.user, position: undefined };
       setRemoteUsers((prev) => ({ ...prev, [data.socketId]: nuevo }));
+      if (nuevo.peerId) peerPorSocket.set(data.socketId, nuevo.peerId);
       registrarEnVoz(nuevo);
     });
 
     activeSocket.on('user_left', (data: any) => {
+      olvidarRemoto(data.socketId);
+      peerPorSocket.delete(data.socketId);
       setRemoteUsers((prev) => {
         const copy = { ...prev };
         const leftUser = copy[data.socketId];
@@ -578,20 +589,19 @@ function App() {
       });
     });
 
+    // Sin setState: la posición va directo al buffer que lee cada avatar en
+    // su useFrame, y a la voz espacial. remoteUsers guarda sólo quién está.
     activeSocket.on('user_moved', (data: any) => {
-      setRemoteUsers((prev) => {
-        const existing = prev[data.socketId] || {};
-        return {
-          ...prev,
-          [data.socketId]: {
-            ...existing,
-            position: data.position,
-            rotation: data.rotation,
-            estaSentado: data.estaSentado,
-            t: data.t,
-          },
-        };
-      });
+      registrarMovimiento(
+        data.socketId,
+        data.position,
+        data.rotation?.[1] ?? 0,
+        !!data.estaSentado,
+        data.t,
+        performance.now()
+      );
+      const peerId = peerPorSocket.get(data.socketId);
+      if (peerId) newAudioClient.updateSourcePosition(peerId, data.position);
     });
 
     activeSocket.off('chat_rechazado');

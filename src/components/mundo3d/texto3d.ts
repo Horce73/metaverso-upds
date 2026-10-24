@@ -1,6 +1,7 @@
+import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 
-interface OpcionesTexto {
+export interface OpcionesTexto {
   ancho?: number;
   alto?: number;
   fondo?: string;
@@ -37,5 +38,22 @@ export function crearTexturaTexto(texto: string, opciones: OpcionesTexto = {}): 
 
   const textura = new THREE.CanvasTexture(canvas);
   textura.needsUpdate = true;
+  return textura;
+}
+
+/**
+ * Igual que crearTexturaTexto, pero para usar dentro de un componente: crea la
+ * textura una sola vez por texto/opciones y la libera de la GPU al cambiar o
+ * desmontarse. Llamar a crearTexturaTexto directo en el JSX crea (y sube a la
+ * GPU) una textura nueva en cada render sin liberar nunca la anterior; con 30
+ * avatares moviéndose eso eran cientos de texturas por segundo.
+ */
+export function useTexturaTexto(texto: string, opciones: OpcionesTexto = {}): THREE.CanvasTexture {
+  const { ancho, alto, fondo, color, fuente } = opciones;
+  const textura = useMemo(
+    () => crearTexturaTexto(texto, { ancho, alto, fondo, color, fuente }),
+    [texto, ancho, alto, fondo, color, fuente]
+  );
+  useEffect(() => () => textura.dispose(), [textura]);
   return textura;
 }
