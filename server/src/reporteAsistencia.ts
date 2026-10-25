@@ -6,7 +6,8 @@ import type { Express } from 'express';
 import { pool } from './db.js';
 import { authenticateJWT } from './middleware/auth.js';
 import { bitacora } from './helpers.js';
-import { armarTablero, aCsv, fechaHora, nombreArchivo, type Celda } from './asistencia.js';
+import { armarTablero, fechaHora } from './asistencia.js';
+import { aCsv, nombreArchivo, type Celda } from './csv.js';
 
 const ZONA_HORARIA = process.env.ZONA_HORARIA || 'America/La_Paz';
 

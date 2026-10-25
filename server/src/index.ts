@@ -14,6 +14,7 @@ import { registrarAsistencia, bitacora, cerrarTramosDeSesion } from './helpers.j
 import { aplicarMigraciones } from './migraciones.js';
 import { registrarRutasMateriales } from './materiales.js';
 import { registrarRutasAsistencia } from './reporteAsistencia.js';
+import { registrarRutasBitacora } from './bitacoraAdmin.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 
 dotenv.config();
@@ -89,6 +90,7 @@ const io = new Server(server, {
 setupSockets(io);
 registrarRutasMateriales(app, io);
 registrarRutasAsistencia(app);
+registrarRutasBitacora(app);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -779,42 +781,7 @@ app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) =>
 // ----------------------------------------------------------------------------
 // 9. Bitacora de Auditoria (RNF-05) - Solo Admin
 // ----------------------------------------------------------------------------
-app.get('/api/admin/bitacora', authenticateJWT, requiereAdmin, async (req: any, res) => {
-  try {
-    const { evento, desde, hasta, limit: queryLimit } = req.query;
-    let sql = `
-      SELECT b.id, b.usuario_id, b.evento, b.detalle, b.ip, b.fecha,
-             u.email, u.nombre, u.apellido
-      FROM bitacora b
-      LEFT JOIN usuarios u ON u.id = b.usuario_id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
-    let idx = 1;
-
-    if (evento) {
-      sql += ` AND b.evento = $${idx++}`;
-      params.push(evento);
-    }
-    if (desde) {
-      sql += ` AND b.fecha >= $${idx++}`;
-      params.push(desde);
-    }
-    if (hasta) {
-      sql += ` AND b.fecha <= $${idx++}`;
-      params.push(hasta);
-    }
-
-    sql += ` ORDER BY b.fecha DESC LIMIT $${idx}`;
-    params.push(Math.min(Number(queryLimit) || 200, 500));
-
-    const result = await pool.query(sql, params);
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Error al obtener bitacora:', err);
-    res.status(500).json({ error: 'Error de servidor' });
-  }
-});
+// Rutas en bitacoraAdmin.ts (DATA-03): filtros, páginas y exportación
 
 // ── Admin: Dashboard (stats + alertas calculadas al vuelo) ──────────────────
 app.get('/api/admin/dashboard', authenticateJWT, requiereAdmin, async (req, res) => {

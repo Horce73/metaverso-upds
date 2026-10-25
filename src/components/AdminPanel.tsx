@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AdminDashboardTab, { type DashboardData, ROLE_COLORS } from './AdminDashboardTab';
 import { AdminVoiceTour } from './AdminVoiceTour';
 
@@ -84,7 +84,6 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
   const [carreras, setCarreras] = useState<Carrera[]>([]);
   const [asignaturas, setAsignaturas] = useState<Asignatura[]>([]);
   const [docentes, setDocentes] = useState<Docente[]>([]);
-  const [bitacora, setBitacora] = useState<BitacoraEntry[]>([]);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
 
   // Loading & notification
@@ -156,14 +155,6 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
     } catch (err: any) { notify('error', err.message); }
   }, [headers]);
 
-  const fetchBitacora = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/bitacora?limit=100', { headers });
-      if (!res.ok) throw new Error('Error al cargar bitácora');
-      setBitacora(await res.json());
-    } catch (err: any) { notify('error', err.message); }
-  }, [headers]);
-
   // ─── Load data on tab change ─────────────────────────────────────────────
 
   useEffect(() => {
@@ -175,12 +166,11 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
         case 'espacios': await fetchEspacios(); break;
         case 'carreras': await fetchCarreras(); break;
         case 'asignaturas': await fetchAsignaturas(); break;
-        case 'reportes': await fetchBitacora(); break;
       }
       setLoading(false);
     };
     load();
-  }, [activeTab, fetchDashboard, fetchUsuarios, fetchEspacios, fetchCarreras, fetchAsignaturas, fetchBitacora]);
+  }, [activeTab, fetchDashboard, fetchUsuarios, fetchEspacios, fetchCarreras, fetchAsignaturas]);
 
   // ─── CRUD Handlers ───────────────────────────────────────────────────────
 
@@ -363,7 +353,7 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
 
           {/* ═══ REPORTES TAB ═══ */}
           {activeTab === 'reportes' && !loading && (
-            <ReportesTab bitacora={bitacora} />
+            <ReportesTab token={token} onError={(msg) => notify('error', msg)} />
           )}
         </div>
       </div>
@@ -430,6 +420,11 @@ const labelStyle: React.CSSProperties = {
 const btnPrimary: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 8, border: 'none',
   background: '#3b82f6', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14,
+};
+
+const btnSecondary: React.CSSProperties = {
+  padding: '10px 20px', borderRadius: 8, border: '1px solid #334155',
+  background: 'transparent', color: '#cbd5e1', fontWeight: 500, cursor: 'pointer', fontSize: 14,
 };
 
 const btnDanger: React.CSSProperties = {
@@ -930,46 +925,164 @@ function AsignaturasTab({ asignaturas, carreras, docentes, showCreate, setShowCr
 
 // ─── REPORTES (Bitácora) ───────────────────────────────────────────────────
 
-function ReportesTab({ bitacora }: { bitacora: BitacoraEntry[] }) {
+// Visor de bitácora (DATA-03): filtros, páginas hacia atrás y exportación.
+// Los filtros se aplican al pulsar Buscar, no en cada tecla.
+interface FiltrosBitacora {
+  evento: string;
+  q: string;
+  desde: string;
+  hasta: string;
+}
+const SIN_FILTROS: FiltrosBitacora = { evento: '', q: '', desde: '', hasta: '' };
+
+function ReportesTab({ token, onError }: { token: string; onError: (msg: string) => void }) {
   const eventoColors: Record<string, string> = {
     login_ok: '#16a34a', logout: '#64748b', crear_usuario: '#3b82f6',
     editar_usuario: '#f59e0b', eliminar_usuario: '#dc2626', crear_espacio: '#065f46',
-    crear_carrera: '#8b5cf6', crear_asignatura: '#0891b2',
+    crear_carrera: '#8b5cf6', crear_asignatura: '#0891b2', login_fallido: '#b91c1c',
+    login_bloqueado: '#7f1d1d', exportar_asistencia: '#0e7490', exportar_bitacora: '#0e7490',
   };
+  const [borrador, setBorrador] = useState<FiltrosBitacora>(SIN_FILTROS);
+  const [filtros, setFiltros] = useState<FiltrosBitacora>(SIN_FILTROS);
+  const [filas, setFilas] = useState<BitacoraEntry[]>([]);
+  const [siguiente, setSiguiente] = useState<number | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [eventos, setEventos] = useState<{ evento: string; cantidad: number }[]>([]);
+  // Ref: el padre pasa una función nueva en cada render, y como dependencia
+  // de los efectos de abajo un error repetido volvería a pedir en bucle.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
+  const consulta = useCallback((f: FiltrosBitacora, extra: Record<string, string> = {}) => {
+    const params = new URLSearchParams(extra);
+    (Object.keys(f) as (keyof FiltrosBitacora)[]).forEach((k) => { if (f[k]) params.set(k, f[k]); });
+    return `/api/admin/bitacora?${params}`;
+  }, []);
+
+  const pedir = useCallback(async (url: string) => {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error('Error al cargar bitácora');
+    return res;
+  }, [token]);
+
+  useEffect(() => {
+    pedir('/api/admin/bitacora/eventos').then((r) => r.json()).then(setEventos).catch((e) => onErrorRef.current(e.message));
+  }, [pedir]);
+
+  useEffect(() => {
+    setCargando(true);
+    pedir(consulta(filtros))
+      .then((r) => r.json())
+      .then((data) => { setFilas(data.filas); setSiguiente(data.siguiente); })
+      .catch((e) => onErrorRef.current(e.message))
+      .finally(() => setCargando(false));
+  }, [filtros, pedir, consulta]);
+
+  const cargarMas = async () => {
+    if (siguiente === null) return;
+    setCargando(true);
+    try {
+      const data = await (await pedir(consulta(filtros, { antes_de: String(siguiente) }))).json();
+      setFilas((prev) => [...prev, ...data.filas]);
+      setSiguiente(data.siguiente);
+    } catch (e: any) { onError(e.message); }
+    setCargando(false);
+  };
+
+  const exportar = async () => {
+    try {
+      const res = await pedir(consulta(filtros, { formato: 'csv' }));
+      const nombre = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || 'bitacora.csv';
+      const url = URL.createObjectURL(await res.blob());
+      const enlace = document.createElement('a');
+      enlace.href = url;
+      enlace.download = nombre;
+      enlace.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) { onError(e.message); }
+  };
+
+  const campo: React.CSSProperties = { ...inputStyle, width: 'auto', marginTop: 4 };
+  const etiqueta: React.CSSProperties = { display: 'flex', flexDirection: 'column', color: '#94a3b8', fontSize: 12 };
 
   return (
     <div>
-      <h3 style={{ color: '#f1f5f9', margin: '0 0 20px 0' }}>Bitácora de Auditoría</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #1e293b' }}>
-            {['Fecha', 'Evento', 'Detalle', 'Usuario', 'IP'].map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '12px 8px', color: '#64748b', fontSize: 13, fontWeight: 500 }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {bitacora.map(b => (
-            <tr key={b.id} style={{ borderBottom: '1px solid #1e293b' }}>
-              <td style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 13 }}>
-                {new Date(b.fecha).toLocaleString()}
-              </td>
-              <td style={{ padding: '12px 8px' }}>
-                <span style={{
-                  display: 'inline-block', padding: '2px 8px', borderRadius: 4,
-                  background: eventoColors[b.evento] || '#475569', color: '#fff',
-                  fontSize: 11, fontWeight: 600,
-                }}>{b.evento}</span>
-              </td>
-              <td style={{ padding: '12px 8px', color: '#f1f5f9', fontSize: 13 }}>{b.detalle}</td>
-              <td style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 13 }}>
-                {b.nombre ? `${b.nombre} ${b.apellido}` : b.email || 'Sistema'}
-              </td>
-              <td style={{ padding: '12px 8px', color: '#64748b', fontSize: 13 }}>{b.ip || '-'}</td>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 16px 0', gap: 12, flexWrap: 'wrap' }}>
+        <h3 style={{ color: '#f1f5f9', margin: 0 }}>Bitácora de Auditoría</h3>
+        <button type="button" onClick={exportar} style={btnPrimary}>⬇️ Exportar CSV</button>
+      </div>
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); setFiltros(borrador); }}
+        style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}
+      >
+        <label style={etiqueta}>
+          Evento
+          <select style={campo} value={borrador.evento} onChange={(e) => setBorrador({ ...borrador, evento: e.target.value })}>
+            <option value="">Todos</option>
+            {eventos.map((ev) => <option key={ev.evento} value={ev.evento}>{ev.evento} ({ev.cantidad})</option>)}
+          </select>
+        </label>
+        <label style={etiqueta}>
+          Usuario o detalle
+          <input style={campo} type="search" value={borrador.q} placeholder="email, nombre o texto" onChange={(e) => setBorrador({ ...borrador, q: e.target.value })} />
+        </label>
+        <label style={etiqueta}>
+          Desde
+          <input style={campo} type="date" value={borrador.desde} onChange={(e) => setBorrador({ ...borrador, desde: e.target.value })} />
+        </label>
+        <label style={etiqueta}>
+          Hasta
+          <input style={campo} type="date" value={borrador.hasta} onChange={(e) => setBorrador({ ...borrador, hasta: e.target.value })} />
+        </label>
+        <button type="submit" style={btnPrimary}>Buscar</button>
+        <button type="button" style={btnSecondary} onClick={() => { setBorrador(SIN_FILTROS); setFiltros(SIN_FILTROS); }}>Limpiar</button>
+      </form>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #1e293b' }}>
+              {['Fecha', 'Evento', 'Detalle', 'Usuario', 'IP'].map(h => (
+                <th key={h} scope="col" style={{ textAlign: 'left', padding: '12px 8px', color: '#64748b', fontSize: 13, fontWeight: 500 }}>{h}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filas.map(b => (
+              <tr key={b.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                <td style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 13, whiteSpace: 'nowrap' }}>
+                  {new Date(b.fecha).toLocaleString()}
+                </td>
+                <td style={{ padding: '12px 8px' }}>
+                  <button
+                    type="button"
+                    title="Filtrar por este evento"
+                    onClick={() => { const f = { ...borrador, evento: b.evento }; setBorrador(f); setFiltros(f); }}
+                    style={{
+                      display: 'inline-block', padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer',
+                      background: eventoColors[b.evento] || '#475569', color: '#fff',
+                      fontSize: 11, fontWeight: 600,
+                    }}
+                  >{b.evento}</button>
+                </td>
+                <td style={{ padding: '12px 8px', color: '#f1f5f9', fontSize: 13, wordBreak: 'break-word' }}>{b.detalle}</td>
+                <td style={{ padding: '12px 8px', color: '#94a3b8', fontSize: 13 }}>
+                  {b.nombre ? `${b.nombre} ${b.apellido}` : b.email || 'Sistema'}
+                </td>
+                <td style={{ padding: '12px 8px', color: '#64748b', fontSize: 13 }}>{b.ip || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'center', padding: 16, color: '#64748b', fontSize: 13 }}>
+        {cargando ? 'Cargando…'
+          : filas.length === 0 ? 'Sin eventos con esos filtros.'
+          : siguiente !== null ? <button type="button" style={btnSecondary} onClick={cargarMas}>Cargar más</button>
+          : `${filas.length} eventos — no hay más.`}
+      </div>
     </div>
   );
 }

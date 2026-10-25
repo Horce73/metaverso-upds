@@ -338,7 +338,58 @@ async function runTests() {
     const res = await api('/api/admin/bitacora?limit=20', { token });
     const data = await res.json();
     return res.status === 200
-      && data.some(b => b.usuario_id === idEstudiante && b.evento === 'actualizacion_datos');
+      && data.filas.some(b => b.usuario_id === idEstudiante && b.evento === 'actualizacion_datos');
+  });
+
+  // Visor de bitácora (DATA-03)
+  const tokenAdmin = (await tokenDe(ADMIN)).token;
+  const bit = async (query) => {
+    const res = await api(`/api/admin/bitacora?${query}`, { token: tokenAdmin });
+    return { status: res.status, data: res.status === 200 ? await res.json() : null };
+  };
+
+  await caso('Bitácora: el filtro por evento trae sólo ese evento', async () => {
+    const { status, data } = await bit('evento=login_ok&limit=50');
+    return status === 200 && data.filas.length > 0 && data.filas.every(b => b.evento === 'login_ok');
+  });
+
+  await caso('Bitácora: la búsqueda encuentra por email del usuario', async () => {
+    const { data } = await bit(`q=${encodeURIComponent(ESTUDIANTE.email)}&limit=50`);
+    return data.filas.length > 0 && data.filas.every(b => b.email === ESTUDIANTE.email || b.detalle.includes(ESTUDIANTE.email));
+  });
+
+  await caso('Bitácora: las páginas siguen hacia atrás sin repetir', async () => {
+    const primera = (await bit('limit=3')).data;
+    const segunda = (await bit(`limit=3&antes_de=${primera.siguiente}`)).data;
+    const ids = [...primera.filas, ...segunda.filas].map(b => Number(b.id));
+    return primera.siguiente !== null && segunda.filas.length > 0
+      && new Set(ids).size === ids.length && ids.every((id, i) => i === 0 || id < ids[i - 1]);
+  });
+
+  await caso('Bitácora: un rango que termina ayer no trae eventos de hoy', async () => {
+    const ayer = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const { data } = await bit(`hasta=${ayer}&evento=login_ok&limit=500`);
+    return data.filas.every(b => new Date(b.fecha).getTime() < Date.now() - 86400000);
+  });
+
+  await caso('Bitácora: un texto con comodines de LIKE se busca literal', async () => {
+    const { status, data } = await bit('q=%25_%25&limit=5');
+    return status === 200 && data.filas.every(b => `${b.detalle}${b.email}`.includes('%_%'));
+  });
+
+  await caso('Bitácora: se exporta a CSV con BOM y encabezados', async () => {
+    const res = await api('/api/admin/bitacora?formato=csv&evento=login_ok', { token: tokenAdmin });
+    const crudo = new Uint8Array(await res.arrayBuffer());
+    const texto = new TextDecoder('utf-8', { ignoreBOM: true }).decode(crudo);
+    return res.status === 200 && crudo[0] === 0xef
+      && texto.slice(1).startsWith('Fecha,Evento,Detalle,Usuario,Email,IP') && texto.includes('login_ok');
+  });
+
+  await caso('Bitácora: lista de eventos para el filtro (403 a un estudiante)', async () => {
+    const ok = await api('/api/admin/bitacora/eventos', { token: tokenAdmin });
+    const eventos = await ok.json();
+    const prohibido = await api('/api/admin/bitacora/eventos', { token: tokenEstudiante });
+    return ok.status === 200 && eventos.some(e => e.evento === 'login_ok' && e.cantidad > 0) && prohibido.status === 403;
   });
 
   // ---------------------------------------------------------------------------
