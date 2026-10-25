@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Stars } from '@react-three/drei';
+import { Stars, PerformanceMonitor } from '@react-three/drei';
 import { Socket } from 'socket.io-client';
 import * as THREE from 'three';
 import { AudioClient } from './AudioClient.js';
@@ -18,10 +18,11 @@ import type { ZonaBloqueada } from './mundo3d/AvatarModel.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
-import { Pupitre, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
-import { crearTexturaTexto } from './mundo3d/texto3d.js';
+import { PupitresInstanciados, CajasInstanciadas, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
+import { Letrero } from './mundo3d/Letrero.js';
 import { useEsTactil } from './mundo3d/useEsTactil.js';
-import { esTeclaDelMundo3D } from './teclado.js';
+import { AJUSTES_CALIDAD, bajarNivel, subirNivel, nivelInicial, type NivelCalidad } from './mundo3d/calidad.js';
+import { CalidadContexto, useCalidad } from './mundo3d/useCalidad.js';
 import { VirtualJoystick } from './mundo3d/VirtualJoystick.js';
 import { suscribirPizarra, dibujarTramo, redibujarTodo } from './pizarra.js';
 import { MESAS_AULA } from './zonasVoz.js';
@@ -254,38 +255,46 @@ const MesasDeTrabajo: React.FC = () => (
             <planeGeometry args={[ancho, fondo]} />
             <meshStandardMaterial color={color} transparent opacity={0.28} />
           </mesh>
-          <sprite position={[m.x0 < 0 ? -ancho / 2 + 1.2 : ancho / 2 - 1.2, 2.6, 0]} scale={[2.2, 0.6, 1]}>
-            <spriteMaterial
-              attach="material"
-              map={crearTexturaTexto(`👥 Mesa ${m.id}`, {
-                ancho: 360,
-                alto: 100,
-                fondo: color,
-                color: '#ffffff',
-                fuente: 'bold 44px sans-serif',
-              })}
-              transparent
-            />
-          </sprite>
+          <Letrero
+            texto={`👥 Mesa ${m.id}`}
+            position={[m.x0 < 0 ? -ancho / 2 + 1.2 : ancho / 2 - 1.2, 2.6, 0]}
+            scale={[2.2, 0.6, 1]}
+            ancho={360}
+            alto={100}
+            fondo={color}
+            color="#ffffff"
+            fuente="bold 44px sans-serif"
+          />
         </group>
       );
     })}
   </group>
 );
 
+const PUPITRES_AULA: [number, number, number][] = [-8.5, -3, 3, 8.5].flatMap((x) =>
+  [-5, 0, 5].map((z): [number, number, number] => [x, 0, z])
+);
+const CUADERNOS_AULA = PUPITRES_AULA.map(([x, , z]): [number, number, number] => [x + 0.1, 0.99, z - 0.05]);
+const COLORES_CUADERNOS = PUPITRES_AULA.map(([x, , z]) => ((x + z) % 2 === 0 ? '#2563eb' : '#059669'));
+
 const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; modoGrupos?: boolean }> = ({
   socket,
   pantallaUrl,
   modoGrupos,
 }) => {
+  const { sombras, tamanoSombra, lucesPuntuales } = useCalidad();
   return (
     <group>
       <ambientLight intensity={0.95} color="#ffffff" />
+      {/* Única luz con sombra del aula: la general del Canvas no proyecta
+          aquí, o cada malla se dibujaría una vez más por cada mapa de sombra.
+          key: el mapa de sombra no cambia de tamaño sin recrear la luz. */}
       <directionalLight
+        key={tamanoSombra}
         position={[15, 25, 12]}
         intensity={1.4}
-        castShadow
-        shadow-mapSize={[1024, 1024]}
+        castShadow={sombras}
+        shadow-mapSize={[tamanoSombra, tamanoSombra]}
         color="#fffbeb"
       />
       <directionalLight position={[-15, 15, -10]} intensity={0.6} color="#e0f2fe" />
@@ -311,19 +320,16 @@ const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; mod
         </mesh>
         <PizarronAula socket={socket} />
         {pantallaUrl && <PantallaProyector url={pantallaUrl} />}
-        <sprite position={[0, 3.7, 0.3]} scale={[6.5, 1.2, 1]}>
-          <spriteMaterial
-            attach="material"
-            map={crearTexturaTexto('💻 Pizarra Digital UPDS — Aula Virtual', {
-              ancho: 800,
-              alto: 150,
-              fondo: '#1e3a8a',
-              color: '#ffffff',
-              fuente: 'bold 44px sans-serif',
-            })}
-            transparent
-          />
-        </sprite>
+        <Letrero
+          texto="💻 Pizarra Digital UPDS — Aula Virtual"
+          position={[0, 3.7, 0.3]}
+          scale={[6.5, 1.2, 1]}
+          ancho={800}
+          alto={150}
+          fondo="#1e3a8a"
+          color="#ffffff"
+          fuente="bold 44px sans-serif"
+        />
       </group>
 
       <group position={[0, 0, -13]}>
@@ -346,17 +352,14 @@ const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; mod
         </mesh>
       </group>
 
-      {[-8.5, -3, 3, 8.5].map((x) =>
-        [-5, 0, 5].map((z) => (
-          <group key={`pupitre-${x}-${z}`} position={[x, 0, z]}>
-            <Pupitre position={[0, 0, 0]} />
-            <mesh position={[0.1, 0.99, -0.05]} castShadow>
-              <boxGeometry args={[0.4, 0.03, 0.45]} />
-              <meshStandardMaterial color={(x + z) % 2 === 0 ? '#2563eb' : '#059669'} />
-            </mesh>
-          </group>
-        ))
-      )}
+      <PupitresInstanciados posiciones={PUPITRES_AULA} />
+      <CajasInstanciadas
+        tamano={[0.4, 0.03, 0.45]}
+        posiciones={CUADERNOS_AULA}
+        colores={COLORES_CUADERNOS}
+      >
+        <meshStandardMaterial />
+      </CajasInstanciadas>
 
       <Sofa position={[-16, 0, 12]} rotation={[0, Math.PI / 4, 0]} color="#0ea5e9" />
       <Sofa position={[16, 0, 12]} rotation={[0, -Math.PI / 4, 0]} color="#10b981" />
@@ -412,7 +415,7 @@ const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; mod
               <boxGeometry args={[3, 0.1, 3]} />
               <meshStandardMaterial color="#ffffff" emissive="#fef08a" emissiveIntensity={0.8} />
             </mesh>
-            <pointLight intensity={0.3} distance={10} color="#fef08a" />
+            {lucesPuntuales && <pointLight intensity={0.3} distance={10} color="#fef08a" />}
           </group>
         ))
       )}
@@ -437,6 +440,32 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   modoGrupos,
 }) => {
   const esTactil = useEsTactil();
+
+  // Calidad gráfica (3D-05): arranca según el equipo o lo aprendido en la
+  // visita anterior, y la ajusta el PerformanceMonitor según los FPS reales.
+  const [nivelCalidad, setNivelCalidad] = useState<NivelCalidad>(() => {
+    try {
+      const guardado = localStorage.getItem('calidadGrafica');
+      if (guardado === 'alta' || guardado === 'media' || guardado === 'baja') return guardado;
+    } catch {}
+    return nivelInicial({
+      esTactil: window.matchMedia?.('(pointer: coarse)').matches ?? false,
+      memoriaGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+      nucleos: navigator.hardwareConcurrency,
+    });
+  });
+  const ajustesCalidad = AJUSTES_CALIDAD[nivelCalidad];
+  const ultimoCambioCalidadRef = useRef<'subio' | 'bajo' | null>(null);
+  const cambiarNivelCalidad = useCallback((cambio: (n: NivelCalidad) => NivelCalidad, sentido: 'subio' | 'bajo') => {
+    ultimoCambioCalidadRef.current = sentido;
+    setNivelCalidad((actual) => {
+      const nuevo = cambio(actual);
+      try {
+        localStorage.setItem('calidadGrafica', nuevo);
+      } catch {}
+      return nuevo;
+    });
+  }, []);
 
   const aulas = React.useMemo<AulaCampus[]>(
     () =>
@@ -524,17 +553,6 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     setPersonalizacion(nueva);
     onUpdateAvatarPersonalization?.(nueva);
   };
-
-  useEffect(() => {
-    if (audioClient) {
-      Object.keys(remoteUsers).forEach((socketId) => {
-        const user = remoteUsers[socketId];
-        if (user.peerId && user.position) {
-          audioClient.updateSourcePosition(user.peerId, user.position);
-        }
-      });
-    }
-  }, [remoteUsers, audioClient]);
 
   const [estaSentado, setEstaSentado] = useState(false);
   const [asientoCercano, setAsientoCercano] = useState<AsientoInteractive | null>(null);
@@ -689,95 +707,109 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     <div className="canvas-container" style={{ position: 'relative', width: '100%', height: '100vh' }}>
       <Canvas
         shadows={{ type: THREE.PCFShadowMap }}
-        dpr={[1, 1.5]}
-        gl={{ powerPreference: 'high-performance', antialias: true }}
+        dpr={Math.min(window.devicePixelRatio || 1, ajustesCalidad.dpr)}
+        gl={{ powerPreference: 'high-performance', antialias: !esTactil }}
         camera={{ fov: 60, position: [0, 3, 10] }}
       >
-        <color attach="background" args={['#87ceeb']} />
-        <Stars radius={100} depth={50} count={1200} factor={4} saturation={0} fade speed={1} />
+        <CalidadContexto.Provider value={ajustesCalidad}>
+          <PerformanceMonitor
+            // A 60 Hz: baja si la mayoría de las muestras de 2,5 s quedan bajo
+            // 45 FPS, sube si casi todas llegan a ~58. Tras varios vaivenes se
+            // queda quieto (onFallback) en vez de alternar para siempre.
+            bounds={(refresco) => (refresco > 100 ? [60, 100] : [45, Math.max(50, refresco - 3)])}
+            flipflops={4}
+            onDecline={() => cambiarNivelCalidad(bajarNivel, 'bajo')}
+            onIncline={() => cambiarNivelCalidad(subirNivel, 'subio')}
+            onFallback={() => {
+              // Si el último cambio fue subir y no se sostuvo, se vuelve al de abajo.
+              if (ultimoCambioCalidadRef.current === 'subio') cambiarNivelCalidad(bajarNivel, 'bajo');
+            }}
+          />
+          <color attach="background" args={['#87ceeb']} />
+          {ajustesCalidad.estrellas > 0 && (
+            <Stars radius={100} depth={50} count={ajustesCalidad.estrellas} factor={4} saturation={0} fade speed={1} />
+          )}
 
-        <ambientLight intensity={isAula ? 0.9 : 0.7} color="#ffffff" />
-        <directionalLight
-          position={[10, 20, 10]}
-          intensity={1.3}
-          castShadow
-          shadow-mapSize={[1024, 1024]}
-        />
+          <ambientLight intensity={isAula ? 0.9 : 0.7} color="#ffffff" />
+          <directionalLight
+            key={ajustesCalidad.tamanoSombra}
+            position={[10, 20, 10]}
+            intensity={1.3}
+            castShadow={!isAula && ajustesCalidad.sombras}
+            shadow-mapSize={[ajustesCalidad.tamanoSombra, ajustesCalidad.tamanoSombra]}
+          />
 
-        {isAula ? (
-          <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} modoGrupos={modoGrupos} />
-        ) : (
-          <group>
-            <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />
-          </group>
-        )}
+          {isAula ? (
+            <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} modoGrupos={modoGrupos} />
+          ) : (
+            <group>
+              <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />
+            </group>
+          )}
 
-        {isAula && asientoCercano && !estaSentado && (
-          <sprite position={[asientoCercano.x, asientoCercano.y + 1.8, asientoCercano.z]} scale={[3.6, 0.8, 1]}>
-            <spriteMaterial
-              attach="material"
-              map={crearTexturaTexto('🪑 Presiona [E] para Sentarse', {
-                ancho: 500,
-                alto: 100,
-                fondo: '#0284c7',
-                color: '#ffffff',
-                fuente: 'bold 32px sans-serif',
-              })}
-              transparent
+          {isAula && asientoCercano && !estaSentado && (
+            <Letrero
+              texto="🪑 Presiona [E] para Sentarse"
+              position={[asientoCercano.x, asientoCercano.y + 1.8, asientoCercano.z]}
+              scale={[3.6, 0.8, 1]}
+              ancho={500}
+              alto={100}
+              fondo="#0284c7"
+              color="#ffffff"
+              fuente="bold 32px sans-serif"
             />
-          </sprite>
-        )}
+          )}
 
-        <LocalPlayerController
-          socket={socket}
-          audioClient={audioClient}
-          localAvatar={localAvatar}
-          marca={marcaLocal}
-          personalizacion={personalizacion}
-          avatarEstadoRef={avatarEstadoRef}
-          isAula={isAula}
-          spawnPosicion={spawnPosicion}
-          estaSentado={estaSentado}
-          posicionSentadoTarget={posicionSentadoTarget}
-          zonasBloqueadasCampus={zonasBloqueadasAulas}
-          mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
-          onMove={(pos, rot) => onPositionChange?.(pos, rot)}
-        />
+          <LocalPlayerController
+            socket={socket}
+            audioClient={audioClient}
+            localAvatar={localAvatar}
+            marca={marcaLocal}
+            personalizacion={personalizacion}
+            avatarEstadoRef={avatarEstadoRef}
+            isAula={isAula}
+            spawnPosicion={spawnPosicion}
+            estaSentado={estaSentado}
+            posicionSentadoTarget={posicionSentadoTarget}
+            zonasBloqueadasCampus={zonasBloqueadasAulas}
+            mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
+            onMove={(pos, rot) => onPositionChange?.(pos, rot)}
+          />
 
-        <CameraRig avatarEstadoRef={avatarEstadoRef} />
+          <CameraRig avatarEstadoRef={avatarEstadoRef} />
 
-        {Object.keys(remoteUsers)
-          .filter((sId) => {
-            const u = remoteUsers[sId];
-            if (sId === socket.id) return false;
-            const localId = localAvatar?.usuario_id || localAvatar?.id;
-            if (localId && u && String(u.userId) === String(localId)) return false;
-            return true;
-          })
-          .map((socketId) => {
-            const u = remoteUsers[socketId];
-            let apRemota = u?.apariencia;
-            if (typeof apRemota === 'string') {
-              try { apRemota = JSON.parse(apRemota); } catch {}
-            }
-            const aparienciaRemota: PersonalizacionAvatar = apRemota && typeof apRemota === 'object' && Object.keys(apRemota).length > 0
-              ? { ...PERSONALIZACION_POR_DEFECTO, ...apRemota }
-              : PERSONALIZACION_POR_DEFECTO;
+          {Object.keys(remoteUsers)
+            .filter((sId) => {
+              const u = remoteUsers[sId];
+              if (sId === socket.id) return false;
+              const localId = localAvatar?.usuario_id || localAvatar?.id;
+              if (localId && u && String(u.userId) === String(localId)) return false;
+              return true;
+            })
+            .map((socketId) => {
+              const u = remoteUsers[socketId];
+              let apRemota = u?.apariencia;
+              if (typeof apRemota === 'string') {
+                try { apRemota = JSON.parse(apRemota); } catch {}
+              }
+              const aparienciaRemota: PersonalizacionAvatar = apRemota && typeof apRemota === 'object' && Object.keys(apRemota).length > 0
+                ? { ...PERSONALIZACION_POR_DEFECTO, ...apRemota }
+                : PERSONALIZACION_POR_DEFECTO;
 
-            return (
-              <AvatarModel
-                key={socketId}
-                nombre={`${marcas?.[socketId] ? `${marcas[socketId]} ` : ''}${u.nombreVisible || 'Estudiante'}`}
-                personalizacion={aparienciaRemota}
-                position={u.position || [0, 0, 0]}
-                rotation={u.rotation || [0, 0, 0]}
-                tiempoMuestra={u.t}
-                isLocal={false}
-                estaSentado={u.estaSentado}
-                nivelVoz={audioClient && u.peerId ? () => audioClient.nivelDe(u.peerId) : undefined}
-              />
-            );
-          })}
+              return (
+                <AvatarModel
+                  key={socketId}
+                  nombre={`${marcas?.[socketId] ? `${marcas[socketId]} ` : ''}${u.nombreVisible || 'Estudiante'}`}
+                  personalizacion={aparienciaRemota}
+                  position={u.position || [0, 0, 0]}
+                  rotation={u.rotation || [0, 0, 0]}
+                  socketId={socketId}
+                  isLocal={false}
+                  nivelVoz={audioClient && u.peerId ? () => audioClient.nivelDe(u.peerId) : undefined}
+                />
+              );
+            })}
+        </CalidadContexto.Provider>
       </Canvas>
 
       {esTactil && (

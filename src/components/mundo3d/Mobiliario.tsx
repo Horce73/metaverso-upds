@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
+import * as THREE from 'three';
 
 export const Pupitre: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
   position,
@@ -29,6 +30,87 @@ export const Pupitre: React.FC<{ position: [number, number, number]; rotation?: 
         <boxGeometry args={[0.44, 0.35, 0.05]} />
         <meshStandardMaterial color="#555555" />
       </mesh>
+    </group>
+  );
+};
+
+type Vec3 = [number, number, number];
+
+interface CajasInstanciadasProps {
+  tamano: Vec3;
+  /** Centro de cada caja, ya en las coordenadas del grupo padre. */
+  posiciones: Vec3[];
+  escala?: number;
+  /** Color por instancia; si falta, todas usan el del material. */
+  colores?: string[];
+  children: React.ReactNode;
+}
+
+/**
+ * Muchas cajas iguales en una sola llamada de dibujo (3D-02). Las aulas
+ * repiten el mismo mueble decenas de veces: como mallas sueltas, cada pieza
+ * de cada pupitre era una llamada de dibujo, y otra más por sombra.
+ */
+export const CajasInstanciadas: React.FC<CajasInstanciadasProps> = ({ tamano, posiciones, escala = 1, colores, children }) => {
+  const ref = useRef<THREE.InstancedMesh>(null);
+
+  useLayoutEffect(() => {
+    const malla = ref.current;
+    if (!malla) return;
+    const matriz = new THREE.Matrix4();
+    const rotacion = new THREE.Quaternion();
+    const vectorEscala = new THREE.Vector3(escala, escala, escala);
+    const color = new THREE.Color();
+    posiciones.forEach((p, i) => {
+      malla.setMatrixAt(i, matriz.compose(new THREE.Vector3(...p), rotacion, vectorEscala));
+      if (colores) malla.setColorAt(i, color.set(colores[i % colores.length]));
+    });
+    malla.instanceMatrix.needsUpdate = true;
+    if (malla.instanceColor) malla.instanceColor.needsUpdate = true;
+    // Sin esto la esfera envolvente es la de una sola caja en el origen y la
+    // cámara descarta (frustum culling) el grupo entero al no verla.
+    malla.computeBoundingSphere();
+  }, [posiciones, escala, colores]);
+
+  return (
+    <instancedMesh key={posiciones.length} ref={ref} args={[undefined, undefined, posiciones.length]} castShadow>
+      <boxGeometry args={tamano} />
+      {children}
+    </instancedMesh>
+  );
+};
+
+// Piezas del Pupitre de arriba, en sus coordenadas sin escalar.
+const ESCALA_PUPITRE = 2.2;
+const PIEZAS_PUPITRE: { tamano: Vec3; centros: Vec3[]; material: 'mesa' | 'pata' | 'silla' }[] = [
+  { tamano: [0.55, 0.06, 0.42], centros: [[0, 0.45, 0]], material: 'mesa' },
+  { tamano: [0.05, 0.44, 0.35], centros: [[-0.22, 0.22, 0], [0.22, 0.22, 0]], material: 'pata' },
+  { tamano: [0.44, 0.05, 0.38], centros: [[0, 0.24, 0.3]], material: 'silla' },
+  { tamano: [0.44, 0.35, 0.05], centros: [[0, 0.45, 0.46]], material: 'silla' },
+];
+
+/** Igual que varios <Pupitre> sin rotar, pero en cuatro llamadas de dibujo en total. */
+export const PupitresInstanciados: React.FC<{ posiciones: Vec3[] }> = ({ posiciones }) => {
+  const piezas = React.useMemo(
+    () =>
+      PIEZAS_PUPITRE.map((pieza) => ({
+        ...pieza,
+        posiciones: posiciones.flatMap(([x, y, z]) =>
+          pieza.centros.map(([cx, cy, cz]): Vec3 => [x + cx * ESCALA_PUPITRE, y + cy * ESCALA_PUPITRE, z + cz * ESCALA_PUPITRE])
+        ),
+      })),
+    [posiciones]
+  );
+
+  return (
+    <group>
+      {piezas.map((pieza, i) => (
+        <CajasInstanciadas key={i} tamano={pieza.tamano} posiciones={pieza.posiciones} escala={ESCALA_PUPITRE}>
+          {pieza.material === 'mesa' && <meshStandardMaterial color="#8d6e4a" roughness={0.4} />}
+          {pieza.material === 'pata' && <meshStandardMaterial color="#333333" metalness={0.5} />}
+          {pieza.material === 'silla' && <meshStandardMaterial color="#555555" />}
+        </CajasInstanciadas>
+      ))}
     </group>
   );
 };
