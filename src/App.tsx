@@ -283,6 +283,8 @@ function App() {
   const [encuesta, setEncuesta] = useState<EncuestaEstado | null>(null);
   const [panelEncuesta, setPanelEncuesta] = useState<false | 'usuario' | 'sola'>(false);
   const ultimaEncuestaRef = useRef<number | null>(null);
+  // Grabación de la clase como acta (AULA-04)
+  const [grabacion, setGrabacion] = useState<{ activa: boolean; por?: string }>({ activa: false });
   const capturaRef = useRef<CapturaPantalla | null>(null);
   const [chatMessages, setChatMessages] = useState<MensajeChat[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -502,6 +504,7 @@ function App() {
     setModoGrupos(false);
     setEncuesta(null);
     setPanelEncuesta(false);
+    setGrabacion({ activa: false });
     ultimaEncuestaRef.current = null;
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
@@ -618,6 +621,10 @@ function App() {
       if (data?.abierta && data.id !== ultimaEncuestaRef.current) setPanelEncuesta((p) => p || 'sola');
       ultimaEncuestaRef.current = data?.id ?? null;
     });
+    activeSocket.off('grabacion_estado');
+    activeSocket.on('grabacion_estado', (data: { activa: boolean; por?: string }) => setGrabacion(data));
+    activeSocket.off('grabacion_rechazada');
+    activeSocket.on('grabacion_rechazada', (data: { motivo: string }) => alert(`⚠️ ${data.motivo}`));
     activeSocket.off('encuesta_rechazada');
     activeSocket.on('encuesta_rechazada', (data: { motivo: string }) => alert(`⚠️ ${data.motivo}`));
 
@@ -1788,6 +1795,12 @@ function App() {
           </Dialogo>
         )}
 
+        {espacioActivo.tipo === 'aula' && grabacion.activa && (
+          <div className="aviso-grabacion" role="status">
+            🔴 Se está grabando la clase{grabacion.por ? ` (${grabacion.por})` : ''}: los subtítulos y la pantalla compartida quedan en el acta
+          </div>
+        )}
+
         {espacioActivo.tipo === 'aula' && panelEncuesta && (
           <PanelEncuesta
             encuesta={encuesta}
@@ -1912,6 +1925,18 @@ function App() {
           {tengoLaPalabra && (
             <button className="boton-pulsar-hablar hablando" onClick={() => socketRef.current?.emit('quitar_palabra')}>
               🎤 Tienes la palabra · Terminar
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
+            <button
+              className={`control-btn ${grabacion.activa ? 'active' : ''}`}
+              onClick={() => socketRef.current?.emit('grabacion', { activa: !grabacion.activa })}
+              aria-pressed={grabacion.activa}
+              title={grabacion.activa ? 'Detener la grabación' : 'Grabar la clase (subtítulos y pantalla compartida quedan en el acta)'}
+              aria-label={grabacion.activa ? 'Detener la grabación' : 'Grabar la clase'}
+            >
+              {grabacion.activa ? '⏹' : '⏺'}
             </button>
           )}
 

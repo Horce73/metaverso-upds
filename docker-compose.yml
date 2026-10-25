@@ -41,6 +41,8 @@ services:
     # Archivos de materiales del aula (AULA-06): sobreviven a reconstruir la imagen
     volumes:
       - materiales_data:/app/uploads/materiales
+      # Capturas de la pantalla compartida de las clases grabadas (AULA-04)
+      - grabaciones_data:/app/uploads/grabaciones
     depends_on:
       db:
         condition: service_healthy
@@ -67,3 +69,4 @@ services:
 volumes:
   postgres_data:
   materiales_data:
+  grabaciones_data:
