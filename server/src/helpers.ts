@@ -1,4 +1,5 @@
 import { pool } from './db.js';
+import { log } from './registro.js';
 
 // Registrar evento en la bitácora. Nunca hace fallar la petición que lo llama.
 export async function bitacora(usuarioId: number | null, evento: string, detalle = '', ip = '') {
@@ -8,7 +9,7 @@ export async function bitacora(usuarioId: number | null, evento: string, detalle
       [usuarioId, evento, detalle, ip]
     );
   } catch (err) {
-    console.error('Error al registrar bitacora:', err);
+    log.error('Error al registrar bitacora', err);
   }
 }
 
@@ -71,7 +72,7 @@ export async function registrarAsistencia(userId: number, espacioId: number) {
     await abrirTramo(result.rows[0].id);
     return { registrado: true, estado, hora_ingreso: result.rows[0].hora_ingreso };
   } catch (err) {
-    console.error('Error al registrar asistencia:', err);
+    log.error('Error al registrar asistencia', err);
     return null;
   }
 }
@@ -122,7 +123,7 @@ export async function registrarSalida(userId: number, espacioId: number) {
       [res.rows[0].id, userId]
     );
   } catch (err) {
-    console.error('Error al registrar salida:', err);
+    log.error('Error al registrar salida', err);
   }
 }
 
@@ -138,6 +139,6 @@ export async function actualizarUltimaPosicion(
       [userId, JSON.stringify({ position, rotation })]
     );
   } catch (err) {
-    console.error('Error al guardar última posición:', err);
+    log.error('Error al guardar última posición', err);
   }
 }

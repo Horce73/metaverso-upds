@@ -2,6 +2,7 @@ import { readdir, readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import type pg from 'pg';
+import { log } from './registro.js';
 
 // Migraciones versionadas (OPS-04). Cada cambio de esquema es un par de
 // archivos en server/migrations:
@@ -75,7 +76,7 @@ async function prepararTabla(client: pg.PoolClient) {
     await client.query(
       "INSERT INTO schema_migraciones (version, nombre) VALUES ('0001', 'esquema_inicial')"
     );
-    console.log('[migraciones] base existente detectada: 0001_esquema_inicial marcada como aplicada');
+    log.info('migraciones: base existente, 0001_esquema_inicial marcada como aplicada');
   }
 }
 
@@ -123,7 +124,7 @@ export async function aplicarMigraciones(pool: pg.Pool, directorio?: string): Pr
         [m.version, m.nombre]
       ));
       nuevas.push(`${m.version}_${m.nombre}`);
-      console.log(`[migraciones] aplicada ${m.version}_${m.nombre}`);
+      log.info('migración aplicada', { version: m.version, nombre: m.nombre });
     }
     return nuevas;
   });
@@ -141,7 +142,7 @@ export async function revertirUltima(pool: pg.Pool, directorio?: string): Promis
       'DELETE FROM schema_migraciones WHERE version = $1',
       [version]
     ));
-    console.log(`[migraciones] revertida ${m.version}_${m.nombre}`);
+    log.info('migración revertida', { version: m.version, nombre: m.nombre });
     return `${m.version}_${m.nombre}`;
   });
 }

@@ -6,6 +6,7 @@ import type { Express } from 'express';
 import { pool } from './db.js';
 import { authenticateJWT, requiereAdmin } from './middleware/auth.js';
 import { Acumulador, MUESTREO_S, TAMANO_CELDA } from './mapaCalor.js';
+import { log } from './registro.js';
 
 const VOLCADO_S = 60;
 const ZONA_HORARIA = process.env.ZONA_HORARIA || 'America/La_Paz';
@@ -34,7 +35,7 @@ export function iniciarMapaCalor(obtenerPosiciones: () => { espacioId: number; x
     for (const p of obtenerPosiciones()) acumulador.sumar(p.espacioId, p.x, p.z, MUESTREO_S);
   }, MUESTREO_S * 1000);
   const volcado = setInterval(() => {
-    volcar(acumulador).catch((err) => console.error('Error al guardar el mapa de calor:', err));
+    volcar(acumulador).catch((err) => log.error('Error al guardar el mapa de calor', err));
   }, VOLCADO_S * 1000);
   muestreo.unref();
   volcado.unref();
@@ -67,7 +68,7 @@ export function registrarRutasMapaCalor(app: Express) {
       );
       res.json({ tamano_celda: TAMANO_CELDA, celdas: rows });
     } catch (err) {
-      console.error('Error al leer el mapa de calor:', err);
+      log.error('Error al leer el mapa de calor', err);
       res.status(500).json({ error: 'Error de servidor' });
     }
   });

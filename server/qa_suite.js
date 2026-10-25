@@ -1335,6 +1335,22 @@ async function runTests() {
 
   await pool.query('DELETE FROM mapa_calor WHERE espacio_id = $1 AND cx = 400', [campusId]);
 
+  // ---------------------------------------------------------------------------
+  // Sondas de salud (OPS-03)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== SALUD ===');
+
+  await caso('/api/salud responde sin token', async () => {
+    const res = await fetch(`${BACKEND_URL}/api/salud`);
+    return res.status === 200 && (await res.json()).estado === 'ok';
+  });
+
+  await caso('/api/salud/lista confirma base y migraciones al día', async () => {
+    const res = await fetch(`${BACKEND_URL}/api/salud/lista`);
+    const data = await res.json();
+    return res.status === 200 && data.baseDeDatos === 'ok' && data.migraciones === 'ok';
+  });
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');

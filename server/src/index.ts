@@ -17,6 +17,8 @@ import { registrarRutasMateriales } from './materiales.js';
 import { registrarRutasAsistencia } from './reporteAsistencia.js';
 import { registrarRutasBitacora } from './bitacoraAdmin.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
+import { log } from './registro.js';
+import { registrarRutasSalud } from './salud.js';
 
 dotenv.config();
 
@@ -81,6 +83,27 @@ const opcionesCors = {
 
 app.use(cors(opcionesCors));
 app.use(express.json());
+
+// OPS-03: una línea por pedido a la API (método, ruta sin query, estado,
+// duración y usuario si lo hay). Las sondas de salud no, que son constantes.
+app.use('/api', (req: any, res, next) => {
+  if (req.path.startsWith('/salud')) return next();
+  const inicio = process.hrtime.bigint();
+  res.on('finish', () => {
+    const campos = {
+      metodo: req.method,
+      ruta: req.originalUrl.split('?')[0],
+      estado: res.statusCode,
+      ms: Math.round(Number(process.hrtime.bigint() - inicio) / 1e6),
+      usuarioId: req.user?.userId ?? null,
+      ip: req.ip,
+    };
+    if (res.statusCode >= 500) log.warn('pedido', campos);
+    else log.info('pedido', campos);
+  });
+  next();
+});
+registrarRutasSalud(app);
 app.use('/api', limiteApi);
 
 const server = createServer(app);
@@ -122,10 +145,10 @@ const peerServer = ExpressPeerServer(server, {
 app.use('/peer', peerServer);
 
 peerServer.on('connection', (client: any) => {
-  console.log(`[peer] conectado: ${client.getId()}`);
+  log.info('peer conectado', { peerId: client.getId() });
 });
 peerServer.on('disconnect', (client: any) => {
-  console.log(`[peer] desconectado: ${client.getId()}`);
+  log.info('peer desconectado', { peerId: client.getId() });
 });
 
 // Servidores ICE para WebRTC. Se sirven desde el backend para no dejar
@@ -146,7 +169,7 @@ app.get('/api/ice-servers', (_req, res) => {
       credential: process.env.TURN_CREDENTIAL
     });
   } else {
-    console.warn('[ice] TURN no configurado: el audio solo funcionara en la misma red local');
+    log.warn('TURN no configurado: el audio solo funcionará en la misma red local');
   }
 
   res.json({ iceServers });
@@ -243,7 +266,7 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
       }
     });
   } catch (err: any) {
-    console.error('Error al registrar:', err);
+    log.error('Error al registrar', err);
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Ese correo ya está registrado' });
     }
@@ -341,7 +364,7 @@ app.post('/api/auth/login', limiteLogin, async (req, res) => {
       } : null
     });
   } catch (err) {
-    console.error('Error al iniciar sesión:', err);
+    log.error('Error al iniciar sesión', err);
     res.status(500).json({ error: 'Error del servidor al iniciar sesión' });
   }
 });
@@ -386,7 +409,7 @@ app.post('/api/auth/guest', limiteInvitado, async (req, res) => {
       avatar: defaultAvatar
     });
   } catch (err) {
-    console.error('Error en guest login:', err);
+    log.error('Error en guest login', err);
     res.status(500).json({ error: 'Error al ingresar como invitado' });
   }
 });
@@ -423,7 +446,7 @@ app.get('/api/auth/yo', authenticateJWT, async (req: any, res) => {
       } : null
     });
   } catch (err) {
-    console.error('Error al obtener usuario:', err);
+    log.error('Error al obtener usuario', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -536,7 +559,7 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
 
     res.json(espacios);
   } catch (err) {
-    console.error('Error al listar espacios:', err);
+    log.error('Error al listar espacios', err);
     res.status(500).json({ error: 'Error de base de datos' });
   }
 });
@@ -562,7 +585,7 @@ app.post('/api/avatar/custom', authenticateJWT, async (req: any, res) => {
     if (row) row.apariencia = parseApariencia(row.apariencia);
     res.json({ message: 'Avatar actualizado', avatar: row });
   } catch (err) {
-    console.error('Error al personalizar avatar:', err);
+    log.error('Error al personalizar avatar', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -607,7 +630,7 @@ app.post('/api/sesiones', authenticateJWT, requiereRol('docente'), async (req: a
 
     res.status(201).json({ message: 'Clase programada e iniciada', sesion: result.rows[0] });
   } catch (err: any) {
-    console.error('Error al programar clase:', err);
+    log.error('Error al programar clase', err);
     // Sin err.detail en la respuesta: el detalle de Postgres queda solo en el log.
     if (err.code === '23503') {
       return res.status(400).json({ error: 'El docente no tiene perfil docente registrado' });
@@ -729,7 +752,7 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
     });
   } catch (err) {
     if (!liberada) await client.query('ROLLBACK').catch(() => {});
-    console.error('Error al crear curso e iniciar clase:', err);
+    log.error('Error al crear curso e iniciar clase', err);
     res.status(500).json({ error: 'Error al crear curso en la base de datos' });
   } finally {
     liberar();
@@ -775,7 +798,7 @@ app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) =>
     await bitacora(userId, 'fin_clase', sesion.tema || '', req.ip);
     res.json({ message: 'Clase finalizada', sesion: result.rows[0] });
   } catch (err) {
-    console.error('Error al finalizar clase:', err);
+    log.error('Error al finalizar clase', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -994,7 +1017,7 @@ app.get('/api/admin/dashboard', authenticateJWT, requiereAdmin, async (req, res)
       alertas
     });
   } catch (err) {
-    console.error('Error al obtener dashboard:', err);
+    log.error('Error al obtener dashboard', err);
     res.status(500).json({ error: 'Error al obtener el dashboard' });
   }
 });
@@ -1018,7 +1041,7 @@ app.get('/api/admin/usuarios', authenticateJWT, requiereAdmin, async (req, res) 
     `);
     res.json(usuarios);
   } catch (err) {
-    console.error('Error al listar usuarios:', err);
+    log.error('Error al listar usuarios', err);
     res.status(500).json({ error: 'Error al listar usuarios' });
   }
 });
@@ -1042,7 +1065,7 @@ app.get('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req, r
     if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json(rows[0]);
   } catch (err) {
-    console.error('Error al obtener usuario:', err);
+    log.error('Error al obtener usuario', err);
     res.status(500).json({ error: 'Error al obtener usuario' });
   }
 });
@@ -1090,7 +1113,7 @@ app.post('/api/admin/usuarios', authenticateJWT, requiereAdmin, async (req: any,
     if ((err as any).code === '23505') {
       return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
     }
-    console.error('Error al crear usuario:', err);
+    log.error('Error al crear usuario', err);
     res.status(500).json({ error: 'Error al crear usuario' });
   }
 });
@@ -1146,7 +1169,7 @@ app.put('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req: a
     `, [id]);
     res.json(rows[0]);
   } catch (err) {
-    console.error('Error al actualizar usuario:', err);
+    log.error('Error al actualizar usuario', err);
     res.status(500).json({ error: 'Error al actualizar usuario' });
   }
 });
@@ -1166,7 +1189,7 @@ app.put('/api/admin/usuarios/:id/password', authenticateJWT, requiereAdmin, asyn
     await bitacora(req.user!.userId, 'reset_password', `Reseteó contraseña del usuario ID ${id}`, req.ip || '');
     res.json({ message: 'Contraseña actualizada' });
   } catch (err) {
-    console.error('Error al resetear contraseña:', err);
+    log.error('Error al resetear contraseña', err);
     res.status(500).json({ error: 'Error al actualizar contraseña' });
   }
 });
@@ -1185,7 +1208,7 @@ app.delete('/api/admin/usuarios/:id', authenticateJWT, requiereAdmin, async (req
     await bitacora(req.user!.userId, 'eliminar_usuario', `Eliminó usuario ID ${id}`, req.ip || '');
     res.json({ message: 'Usuario eliminado' });
   } catch (err) {
-    console.error('Error al eliminar usuario:', err);
+    log.error('Error al eliminar usuario', err);
     res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 });
@@ -1206,7 +1229,7 @@ app.get('/api/admin/espacios', authenticateJWT, requiereAdmin, async (req, res) 
     `);
     res.json(rows);
   } catch (err) {
-    console.error('Error al listar espacios:', err);
+    log.error('Error al listar espacios', err);
     res.status(500).json({ error: 'Error al listar espacios' });
   }
 });
@@ -1241,7 +1264,7 @@ app.post('/api/admin/espacios', authenticateJWT, requiereAdmin, async (req: any,
     await bitacora(req.user!.userId, 'crear_espacio', `Creó espacio "${nombre}" (${tipo})`, req.ip || '');
     res.status(201).json(rows[0]);
   } catch (err) {
-    console.error('Error al crear espacio:', err);
+    log.error('Error al crear espacio', err);
     res.status(500).json({ error: 'Error al crear espacio' });
   }
 });
@@ -1284,7 +1307,7 @@ app.put('/api/admin/espacios/:id', authenticateJWT, requiereAdmin, async (req: a
     `, [id]);
     res.json(rows[0]);
   } catch (err) {
-    console.error('Error al actualizar espacio:', err);
+    log.error('Error al actualizar espacio', err);
     res.status(500).json({ error: 'Error al actualizar espacio' });
   }
 });
@@ -1299,7 +1322,7 @@ app.delete('/api/admin/espacios/:id', authenticateJWT, requiereAdmin, async (req
     await bitacora(req.user!.userId, 'eliminar_espacio', `Eliminó espacio ID ${id}`, req.ip || '');
     res.json({ message: 'Espacio eliminado' });
   } catch (err) {
-    console.error('Error al eliminar espacio:', err);
+    log.error('Error al eliminar espacio', err);
     res.status(500).json({ error: 'Error al eliminar espacio' });
   }
 });
@@ -1322,7 +1345,7 @@ app.get('/api/admin/carreras', authenticateJWT, requiereAdmin, async (req, res) 
     `);
     res.json(rows);
   } catch (err) {
-    console.error('Error al listar carreras:', err);
+    log.error('Error al listar carreras', err);
     res.status(500).json({ error: 'Error al listar carreras' });
   }
 });
@@ -1348,7 +1371,7 @@ app.post('/api/admin/carreras', authenticateJWT, requiereAdmin, async (req: any,
     if ((err as any).code === '23505') {
       return res.status(409).json({ error: 'Ya existe una carrera con esa sigla o nombre' });
     }
-    console.error('Error al crear carrera:', err);
+    log.error('Error al crear carrera', err);
     res.status(500).json({ error: 'Error al crear carrera' });
   }
 });
@@ -1380,7 +1403,7 @@ app.put('/api/admin/carreras/:id', authenticateJWT, requiereAdmin, async (req: a
     const { rows } = await pool.query('SELECT * FROM carreras WHERE id = $1', [id]);
     res.json(rows[0]);
   } catch (err) {
-    console.error('Error al actualizar carrera:', err);
+    log.error('Error al actualizar carrera', err);
     res.status(500).json({ error: 'Error al actualizar carrera' });
   }
 });
@@ -1400,7 +1423,7 @@ app.delete('/api/admin/carreras/:id', authenticateJWT, requiereAdmin, async (req
     await bitacora(req.user!.userId, 'eliminar_carrera', `Eliminó carrera ID ${id}`, req.ip || '');
     res.json({ message: 'Carrera eliminada' });
   } catch (err) {
-    console.error('Error al eliminar carrera:', err);
+    log.error('Error al eliminar carrera', err);
     res.status(500).json({ error: 'Error al eliminar carrera' });
   }
 });
@@ -1421,7 +1444,7 @@ app.get('/api/admin/asignaturas', authenticateJWT, requiereAdmin, async (req, re
     `);
     res.json(rows);
   } catch (err) {
-    console.error('Error al listar asignaturas:', err);
+    log.error('Error al listar asignaturas', err);
     res.status(500).json({ error: 'Error al listar asignaturas' });
   }
 });
@@ -1453,7 +1476,7 @@ app.post('/api/admin/asignaturas', authenticateJWT, requiereAdmin, async (req: a
     if ((err as any).code === '23505') {
       return res.status(409).json({ error: 'Ya existe una asignatura con ese código' });
     }
-    console.error('Error al crear asignatura:', err);
+    log.error('Error al crear asignatura', err);
     res.status(500).json({ error: 'Error al crear asignatura' });
   }
 });
@@ -1485,7 +1508,7 @@ app.put('/api/admin/asignaturas/:id', authenticateJWT, requiereAdmin, async (req
     const { rows } = await pool.query('SELECT * FROM asignaturas WHERE id = $1', [id]);
     res.json(rows[0]);
   } catch (err) {
-    console.error('Error al actualizar asignatura:', err);
+    log.error('Error al actualizar asignatura', err);
     res.status(500).json({ error: 'Error al actualizar asignatura' });
   }
 });
@@ -1505,7 +1528,7 @@ app.delete('/api/admin/asignaturas/:id', authenticateJWT, requiereAdmin, async (
     await bitacora(req.user!.userId, 'eliminar_asignatura', `Eliminó asignatura ID ${id}`, req.ip || '');
     res.json({ message: 'Asignatura eliminada' });
   } catch (err) {
-    console.error('Error al eliminar asignatura:', err);
+    log.error('Error al eliminar asignatura', err);
     res.status(500).json({ error: 'Error al eliminar asignatura' });
   }
 });
@@ -1525,7 +1548,7 @@ app.get('/api/admin/docentes', authenticateJWT, requiereAdmin, async (req, res) 
     `);
     res.json(rows);
   } catch (err) {
-    console.error('Error al listar docentes:', err);
+    log.error('Error al listar docentes', err);
     res.status(500).json({ error: 'Error al listar docentes' });
   }
 });
@@ -1544,7 +1567,7 @@ app.get('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) 
     }
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Error al obtener datos personales:', err);
+    log.error('Error al obtener datos personales', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -1603,7 +1626,7 @@ app.put('/api/usuario/datos-personales', authenticateJWT, async (req: any, res) 
     await bitacora(userId, 'actualizacion_datos', '', req.ip);
     res.json({ message: 'Datos personales actualizados', datos: result.rows[0] });
   } catch (err: any) {
-    console.error('Error al actualizar datos personales:', err);
+    log.error('Error al actualizar datos personales', err);
     if (err.code === '23505') {
       return res.status(409).json({ error: 'El documento de identidad ya está registrado' });
     }
@@ -1625,7 +1648,7 @@ app.get('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) =
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('Error al obtener consentimientos:', err);
+    log.error('Error al obtener consentimientos', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -1653,7 +1676,7 @@ app.post('/api/usuario/consentimientos', authenticateJWT, async (req: any, res) 
     await bitacora(req.user.userId, 'consentimiento', `${tipo}=${otorgado}`, req.ip);
     res.status(201).json({ message: 'Consentimiento registrado', consentimiento: result.rows[0] });
   } catch (err) {
-    console.error('Error al registrar consentimiento:', err);
+    log.error('Error al registrar consentimiento', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -1692,7 +1715,7 @@ app.post('/api/asistencia', authenticateJWT, async (req: any, res) => {
     await bitacora(userId, 'asistencia', `sesion=${espacio_id} estado=${resultado.estado}`, req.ip);
     res.json(resultado);
   } catch (err) {
-    console.error('Error al registrar asistencia:', err);
+    log.error('Error al registrar asistencia', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -1755,7 +1778,7 @@ app.get('/api/sesiones', authenticateJWT, async (req: any, res) => {
     const result = await pool.query(sql, params);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error al obtener sesiones:', err);
+    log.error('Error al obtener sesiones', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -1838,7 +1861,7 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
       asistencias
     });
   } catch (err) {
-    console.error('Error al obtener reporte de asistencia:', err);
+    log.error('Error al obtener reporte de asistencia', err);
     res.status(500).json({ error: 'Error de servidor' });
   }
 });
@@ -1851,12 +1874,19 @@ app.get('/api/asistencias/reporte/:sesionId', authenticateJWT, async (req: any, 
 try {
   await aplicarMigraciones(pool);
 } catch (err) {
-  console.error('❌ No se pudieron aplicar las migraciones:', err);
+  log.error('❌ No se pudieron aplicar las migraciones', err);
   process.exit(1);
 }
 
 server.listen(PORT, () => {
-  console.log(`🚀 Metaverso UPDS Backend corriendo en http://localhost:${PORT}`);
+  log.info('Backend escuchando', { puerto: Number(PORT) });
+});
+
+// OPS-03: un error que nadie atrapó queda registrado con su pila
+process.on('unhandledRejection', (motivo) => log.error('promesa rechazada sin atrapar', motivo));
+process.on('uncaughtException', (err) => {
+  log.error('excepción sin atrapar', err);
+  process.exit(1);
 });
 
 // DATA-04: muestreo de posiciones para el mapa de calor. Al apagarse (docker
@@ -1865,7 +1895,7 @@ const detenerMapaCalor = iniciarMapaCalor(posicionesConocidas);
 for (const senal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(senal, () => {
     detenerMapaCalor()
-      .catch((err) => console.error('Error al guardar el mapa de calor al cerrar:', err))
+      .catch((err) => log.error('Error al guardar el mapa de calor al cerrar', err))
       .finally(() => process.exit(0));
   });
 }
