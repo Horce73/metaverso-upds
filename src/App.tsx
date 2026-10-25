@@ -5,6 +5,10 @@ import { Login } from './components/Login.js';
 import { Pizarra2D } from './components/Pizarra2D.js';
 import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
+import { estaEscribiendo } from './components/teclado.js';
+import { Dialogo } from './components/Dialogo.js';
+import { Subtitulos } from './components/Subtitulos.js';
+import { puedeTranscribir } from './components/transcripcion.js';
 import { VistaSinTresD, type MotivoSinTresD } from './components/VistaSinTresD.js';
 import { hayWebGL } from './components/soporteTresD.js';
 import { LimiteTresD } from './components/LimiteTresD.js';
@@ -1094,6 +1098,18 @@ function App() {
   if (route === '/metaverso' && espacioActivo) {
     return (
       <div className="metaverso-wrapper" style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+        {/* Primer Tab de la página: sin esto, llegar al chat con teclado
+            obliga a recorrer todo el HUD. Sólo se ve con el foco. */}
+        <button
+          type="button"
+          className="saltar-al-chat"
+          onClick={() => {
+            setSidebarAbierta(true);
+            setTimeout(() => document.getElementById('entrada-chat')?.focus(), 0);
+          }}
+        >
+          Saltar al chat
+        </button>
         {motivoSinTresD ? (
           <VistaSinTresD
             socket={socket!}
@@ -1196,6 +1212,17 @@ function App() {
                   }}
                 >
                   🎨 Avatar
+                </button>
+              )}
+              {puedeTranscribir() && (
+                <button
+                  className="hamburger-item"
+                  onClick={() => {
+                    setMenuAbierto(false);
+                    alternarTranscribir();
+                  }}
+                >
+                  {transcribirVoz ? '📝 Dejar de transcribir mi voz' : '📝 Transcribir mi voz (subtítulos)'}
                 </button>
               )}
               {webglDisponible && (

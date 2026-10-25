@@ -21,6 +21,7 @@ import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { PupitresInstanciados, CajasInstanciadas, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { Letrero } from './mundo3d/Letrero.js';
 import { useEsTactil } from './mundo3d/useEsTactil.js';
+import { esTeclaDelMundo3D } from './teclado.js';
 import { AJUSTES_CALIDAD, bajarNivel, subirNivel, nivelInicial, type NivelCalidad } from './mundo3d/calidad.js';
 import { CalidadContexto, useCalidad } from './mundo3d/useCalidad.js';
 import { VirtualJoystick } from './mundo3d/VirtualJoystick.js';
