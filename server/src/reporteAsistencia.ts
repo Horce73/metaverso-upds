@@ -8,6 +8,7 @@ import { authenticateJWT } from './middleware/auth.js';
 import { bitacora } from './helpers.js';
 import { armarTablero, fechaHora } from './asistencia.js';
 import { aCsv, nombreArchivo, type Celda } from './csv.js';
+import { log } from './registro.js';
 
 const ZONA_HORARIA = process.env.ZONA_HORARIA || 'America/La_Paz';
 
@@ -32,7 +33,7 @@ async function esAdmin(userId: number): Promise<boolean> {
 }
 
 /** El titular de la asignatura, quien dictó alguna de sus clases, o un administrador. */
-async function puedeVerAsignatura(userId: number, asignaturaId: number): Promise<boolean> {
+export async function puedeVerAsignatura(userId: number, asignaturaId: number): Promise<boolean> {
   if (await esAdmin(userId)) return true;
   const { rows } = await pool.query(
     `SELECT 1 FROM asignaturas WHERE id = $1 AND docente_id = $2
@@ -104,7 +105,7 @@ export function registrarRutasAsistencia(app: Express) {
       );
       res.json(rows);
     } catch (err) {
-      console.error('Error al listar asignaturas con asistencia:', err);
+      log.error('Error al listar asignaturas con asistencia', err);
       res.status(500).json({ error: 'Error de servidor' });
     }
   });
@@ -151,7 +152,7 @@ export function registrarRutasAsistencia(app: Express) {
       await bitacora(userId, 'consulta_asistencia', `asignatura=${asignaturaId}`, req.ip);
       res.json({ asignatura, ...tablero });
     } catch (err) {
-      console.error('Error al armar el tablero de asistencia:', err);
+      log.error('Error al armar el tablero de asistencia', err);
       res.status(500).json({ error: 'Error de servidor' });
     }
   });
@@ -219,7 +220,7 @@ export function registrarRutasAsistencia(app: Express) {
 
       res.json({ sesion: resumen, estudiantes: filas });
     } catch (err) {
-      console.error('Error al armar la asistencia de la sesión:', err);
+      log.error('Error al armar la asistencia de la sesión', err);
       res.status(500).json({ error: 'Error de servidor' });
     }
   });

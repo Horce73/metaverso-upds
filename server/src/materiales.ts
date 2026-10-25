@@ -10,6 +10,7 @@ import path from 'node:path';
 import { pool } from './db.js';
 import { authenticateJWT } from './middleware/auth.js';
 import { bitacora } from './helpers.js';
+import { log } from './registro.js';
 
 export const LIMITE_MATERIAL_BYTES = 20 * 1024 * 1024;
 
@@ -116,7 +117,7 @@ const cuerpoArchivo = (req: any, res: any, next: any) =>
   });
 
 export function registrarRutasMateriales(app: Express, io: Server) {
-  mkdir(DIRECTORIO, { recursive: true }).catch((err) => console.error('No se pudo crear el directorio de materiales:', err));
+  mkdir(DIRECTORIO, { recursive: true }).catch((err) => log.error('No se pudo crear el directorio de materiales', err));
 
   app.get('/api/aulas/:espacioId/materiales', authenticateJWT, async (req: any, res) => {
     try {
@@ -132,7 +133,7 @@ export function registrarRutasMateriales(app: Express, io: Server) {
       );
       res.json({ puedeGestionar: acceso.gestiona, materiales: rows.map(publico) });
     } catch (err) {
-      console.error('Error al listar materiales:', err);
+      log.error('Error al listar materiales', err);
       res.status(500).json({ error: 'Error al listar materiales' });
     }
   });
@@ -176,7 +177,7 @@ export function registrarRutasMateriales(app: Express, io: Server) {
       await bitacora(req.user.userId, 'subir_material', `${titulo} (${extension}, ${datos.length} B)`, req.ip);
       res.status(201).json(publico(rows[0]));
     } catch (err) {
-      console.error('Error al subir material:', err);
+      log.error('Error al subir material', err);
       res.status(500).json({ error: 'Error al subir material' });
     }
   });
@@ -207,7 +208,7 @@ export function registrarRutasMateriales(app: Express, io: Server) {
       );
       res.send(datos);
     } catch (err) {
-      console.error('Error al servir material:', err);
+      log.error('Error al servir material', err);
       res.status(500).json({ error: 'Error al descargar material' });
     }
   });
@@ -224,7 +225,7 @@ export function registrarRutasMateriales(app: Express, io: Server) {
       await bitacora(req.user.userId, 'borrar_material', encontrado.material.titulo, req.ip);
       res.status(204).end();
     } catch (err) {
-      console.error('Error al borrar material:', err);
+      log.error('Error al borrar material', err);
       res.status(500).json({ error: 'Error al borrar material' });
     }
   });
@@ -261,7 +262,7 @@ export function registrarRutasMateriales(app: Express, io: Server) {
       });
       res.json({ registradoEnSesion: sesion.length > 0 ? sesion[0].id : null });
     } catch (err) {
-      console.error('Error al mostrar material:', err);
+      log.error('Error al mostrar material', err);
       res.status(500).json({ error: 'Error al mostrar material' });
     }
   });

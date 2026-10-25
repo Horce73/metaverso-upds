@@ -1,7 +1,10 @@
 import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
-import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
+import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion, bitacora } from './helpers.js';
 import { guardarMensaje, historialDe, type MensajeChat } from './chatPersistencia.js';
+import { validarEncuesta, MAX_OPCIONES } from './encuestas.js';
+import { crearEncuesta, votar, cerrarEncuesta, encuestaVigente } from './encuestasServidor.js';
+import { estadoGrabacion, iniciarGrabacion, detenerGrabacion, grabarSubtitulo, grabarCaptura } from './grabacionServidor.js';
 import { verificarToken } from './middleware/auth.js';
 import { CUPOS_SOCKET, limitador } from './limites.js';
 import { sanearTextoChat } from './chat.js';
@@ -17,6 +20,7 @@ import {
 import { validarLote, agregarLote, cerrarTrazo, cerrarTrazosDe, trazosVisibles, deshacerTrazo, borrarTodo } from './pizarra.js';
 import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detenerPantalla, pantallaDe } from './pantalla.js';
 import { debeRecibirMovimiento } from './relevanciaPosicion.js';
+import { log } from './registro.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -140,13 +144,30 @@ export function setupSockets(io: Server) {
       socket.data.identidad = identidad;
       next();
     } catch (err) {
-      console.error('Error autenticando socket:', err);
+      log.error('Error autenticando socket', err);
       next(new Error('NO_AUTORIZADO'));
     }
   });
 
   // Cola de preguntas de un aula (AULA-03), para todos los que están en ella
   const emitirPreguntas = (espacioId: number) => io.to(String(espacioId)).emit('estado_preguntas', estadoPublico(espacioId));
+
+  // Encuesta del aula (AULA-05) a cada uno de los que están: quien la dirige
+  // (docente o administrador) ve el conteo en vivo; el resto, sólo cuántos
+  // votaron hasta que se cierra, y su propio voto.
+  const emitirEncuesta = async (espacioId: number, soloA?: string) => {
+    const vigente = await encuestaVigente(espacioId);
+    activeUsers.forEach((u, sid) => {
+      if (Number(u.espacioId) !== espacioId || (soloA && sid !== soloA)) return;
+      if (!vigente) return void io.to(sid).emit('encuesta_estado', null);
+      const { estado, votosPorUsuario } = vigente;
+      io.to(sid).emit('encuesta_estado', {
+        ...estado,
+        votos: estado.abierta && !esDocenteOAdmin(u.roles) ? null : estado.votos,
+        miVoto: votosPorUsuario.get(u.userId) ?? null,
+      });
+    });
+  };
   const dejarAula = (espacioId: number, socketId: string) => {
     if (salirDelAula(espacioId, socketId)) emitirPreguntas(espacioId);
     // Si estaba compartiendo pantalla (AULA-01), se apaga para todos
@@ -164,7 +185,7 @@ export function setupSockets(io: Server) {
         if (permitido()) handler(...args);
       });
     };
-    console.log(`🔌 Cliente conectado: ${socket.id} (usuario ${identidad.userId || 'invitado'})`);
+    log.info('socket conectado', { socketId: socket.id, usuarioId: identidad.userId || null });
 
     on('join_space', 'join_space', async (data: any) => {
       const numUserId = identidad.userId;
@@ -191,7 +212,7 @@ export function setupSockets(io: Server) {
       // Limpiar registros o conexiones previas del mismo usuario (Enforzar 1 Sola Sesión Activa)
       activeUsers.forEach((user, sid) => {
         if (sid !== socket.id && (numUserId > 0 && user.userId === numUserId)) {
-          console.log(`⚠️ Cerrando sesión previa de usuario ${numUserId} en socket ${sid}`);
+          log.info('sesión previa cerrada', { usuarioId: numUserId, socketId: sid });
           io.to(sid).emit('session_terminated', {
             reason: 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'
           });
@@ -221,7 +242,7 @@ export function setupSockets(io: Server) {
       if (prevUser && prevUser.espacioId !== nuevoEspacioId) {
         socket.leave(String(prevUser.espacioId));
         dejarAula(prevUser.espacioId, socket.id);
-        await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
+        await cerrarTrazosDe(socket.id).catch((err) => log.error('Error al cerrar trazos', err));
         socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
         // "Salir al Campus" reutiliza el socket: sin esto la asistencia seguía
         // contando minutos hasta el fin de la clase (DATA-01)
@@ -262,7 +283,7 @@ export function setupSockets(io: Server) {
       socket.emit('join_aceptado', { espacioId: nuevoEspacioId, espacioTipo, roles });
       historialDe(nuevoEspacioId)
         .then((mensajes) => socket.emit('chat_historial', { espacioId: nuevoEspacioId, mensajes }))
-        .catch((err) => console.error('Error al leer el historial de chat:', err));
+        .catch((err) => log.error('Error al leer el historial de chat', err));
       socket.emit('space_users', usersInSpace);
       socket.emit('current_users', usersInSpace);
       if (espacioTipo === 'aula') {
@@ -271,6 +292,8 @@ export function setupSockets(io: Server) {
         const pantalla = pantallaDe(nuevoEspacioId);
         socket.emit('pantalla_estado', estadoPantalla(nuevoEspacioId));
         socket.emit('modo_grupos', { activo: aulasEnGrupos.has(nuevoEspacioId) });
+        emitirEncuesta(nuevoEspacioId, socket.id).catch((err) => console.error('Error al enviar la encuesta:', err));
+        socket.emit('grabacion_estado', estadoGrabacion(nuevoEspacioId));
         if (pantalla?.ultimoCuadro) socket.emit('pantalla_cuadro', pantalla.ultimoCuadro);
       }
 
@@ -279,7 +302,7 @@ export function setupSockets(io: Server) {
         user: userState
       });
 
-      console.log(`👤 ${nombreVisible} (${numUserId || 'invitado'}) se unió al espacio ${espacioId}`);
+      log.info('unido al espacio', { socketId: socket.id, usuarioId: numUserId || null, espacioId: nuevoEspacioId, tipo: espacioTipo });
 
       if (numUserId > 0) {
         await registrarAsistencia(numUserId, nuevoEspacioId);
@@ -337,7 +360,7 @@ export function setupSockets(io: Server) {
       if (!reenviar) return;
       io.to(String(user.espacioId)).emit('pizarra_trazo', { ...reenviar, autorSocketId: socket.id });
       if (reenviar.fin) {
-        await cerrarTrazo(reenviar.id).catch((err) => console.error('Error al guardar trazo:', err));
+        await cerrarTrazo(reenviar.id).catch((err) => log.error('Error al guardar trazo', err));
       }
     });
 
@@ -350,7 +373,7 @@ export function setupSockets(io: Server) {
           io.to(String(user.espacioId)).emit('pizarra_borrado', { ids: [String(data?.id)] });
         }
       } catch (err) {
-        console.error('Error al deshacer trazo:', err);
+        log.error('Error al deshacer trazo', err);
       }
     });
 
@@ -361,7 +384,7 @@ export function setupSockets(io: Server) {
         await borrarTodo(user.espacioId);
         io.to(String(user.espacioId)).emit('board_cleared');
       } catch (err) {
-        console.error('Error al borrar la pizarra:', err);
+        log.error('Error al borrar la pizarra', err);
       }
     });
 
@@ -373,7 +396,7 @@ export function setupSockets(io: Server) {
       try {
         socket.emit('pizarra_state', { trazos: await trazosVisibles(user.espacioId) });
       } catch (err) {
-        console.error('Error al leer la pizarra:', err);
+        log.error('Error al leer la pizarra', err);
       }
     });
 
@@ -404,7 +427,7 @@ export function setupSockets(io: Server) {
         );
         socket.emit('pizarra_saved_status', { success: true });
       } catch (err) {
-        console.error('Error al guardar pizarra:', err);
+        log.error('Error al guardar pizarra', err);
         socket.emit('pizarra_saved_status', { success: false, error: 'DB_ERROR' });
       }
     });
@@ -417,7 +440,7 @@ export function setupSockets(io: Server) {
       if (identidad.esInvitado) return;
       // Quien solicita es el usuario del token, no el que diga el payload.
       const usuario = { id: identidad.userId, nombre: identidad.nombre };
-      console.log(`📩 Solicitud de acceso recibida de ${usuario.nombre} para el espacio ${data.espacioId}`);
+      log.info('solicitud de acceso al aula', { usuarioId: identidad.userId || null, espacioId: data.espacioId });
       // Emitir a todos los docentes EXCEPTO al propio remitente
       socket.broadcast.emit('nueva_solicitud_acceso', {
         estudianteSocketId: socket.id,
@@ -480,6 +503,62 @@ export function setupSockets(io: Server) {
     });
 
     // Trabajo en grupos (AULA-07): sólo docente o admin, sólo en un aula
+    on('encuesta_crear', 'encuestas', async (data: { pregunta?: unknown; opciones?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      const valida = validarEncuesta(data ?? {});
+      if (!valida.ok) return void socket.emit('encuesta_rechazada', { motivo: valida.motivo });
+      try {
+        await crearEncuesta(user.espacioId, identidad.userId || null, valida.pregunta, valida.opciones);
+        await bitacora(identidad.userId || null, 'crear_encuesta', valida.pregunta.slice(0, 200));
+        await emitirEncuesta(user.espacioId);
+      } catch (err) {
+        console.error('Error al crear encuesta:', err);
+        socket.emit('encuesta_rechazada', { motivo: 'No se pudo crear la encuesta.' });
+      }
+    });
+
+    on('encuesta_votar', 'encuestas', async (data: { encuestaId?: unknown; opcion?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !identidad.userId) return;
+      const encuestaId = Number(data?.encuestaId);
+      const opcion = Number(data?.opcion);
+      if (!Number.isInteger(encuestaId) || !Number.isInteger(opcion) || opcion < 0 || opcion >= MAX_OPCIONES) return;
+      try {
+        if (await votar(user.espacioId, encuestaId, identidad.userId, opcion)) await emitirEncuesta(user.espacioId);
+      } catch (err) {
+        console.error('Error al votar:', err);
+      }
+    });
+
+    on('encuesta_cerrar', 'encuestas', async () => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      try {
+        if (await cerrarEncuesta(user.espacioId)) await emitirEncuesta(user.espacioId);
+      } catch (err) {
+        console.error('Error al cerrar encuesta:', err);
+      }
+    });
+
+    // Grabación de la clase como acta (AULA-04): sólo con una clase en curso
+    on('grabacion', 'grabacion', async (data: { activa?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      try {
+        if (data?.activa === true) {
+          if (!(await iniciarGrabacion(user.espacioId, identidad.userId || null, identidad.nombre))) {
+            return void socket.emit('grabacion_rechazada', { motivo: 'Inicia la clase antes de grabarla.' });
+          }
+        } else {
+          await detenerGrabacion(user.espacioId);
+        }
+        io.to(String(user.espacioId)).emit('grabacion_estado', estadoGrabacion(user.espacioId));
+      } catch (err) {
+        console.error('Error al cambiar la grabación:', err);
+      }
+    });
+
     on('modo_grupos', 'preguntas', (data: { activo?: unknown }) => {
       const user = activeUsers.get(socket.id);
       if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
@@ -507,6 +586,7 @@ export function setupSockets(io: Server) {
       if (!user || !esCuadroValido(datos)) return;
       if (guardarCuadro(user.espacioId, socket.id, datos)) {
         socket.to(String(user.espacioId)).volatile.emit('pantalla_cuadro', datos);
+        grabarCaptura(user.espacioId, user.nombreVisible, datos).catch((err) => console.error('Error al grabar captura:', err));
       }
     });
 
@@ -524,7 +604,7 @@ export function setupSockets(io: Server) {
       aprobado: boolean;
     }) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
-      console.log(`✉️ Docente respondió a solicitud de ${data.estudianteSocketId}: ${data.aprobado ? 'APROBADO' : 'RECHAZADO'}`);
+      log.info('solicitud de acceso respondida', { socketId: data.estudianteSocketId, aprobado: !!data.aprobado });
       io.to(data.estudianteSocketId).emit('respuesta_solicitud_acceso', {
         espacioId: data.espacioId,
         aprobado: data.aprobado,
@@ -533,13 +613,13 @@ export function setupSockets(io: Server) {
 
     on('clase_iniciada', 'clase_iniciada', (sesion: any) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
-      console.log('🎓 Clase iniciada por el docente:', sesion);
+      log.info('clase iniciada', { sesionId: sesion?.id, espacioId: sesion?.espacio_id });
       io.emit('clase_iniciada', sesion);
     });
 
     on('clase_finalizada', 'clase_finalizada', (data: { espacioId: string }) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
-      console.log('🛑 Clase finalizada en espacio:', data.espacioId);
+      log.info('clase finalizada', { espacioId: data.espacioId });
       io.emit('clase_finalizada', data);
     });
 
@@ -559,7 +639,7 @@ export function setupSockets(io: Server) {
       // id: el cliente lo usa para no duplicarlo al recibir el historial.
       // Si la base falla, igual se difunde: el chat en vivo no depende de ella.
       const message: MensajeChat = await guardarMensaje(user.espacioId, identidad.userId || null, identidad.nombre, saneado.texto).catch((err) => {
-        console.error('Error al guardar mensaje de chat:', err);
+        log.error('Error al guardar mensaje de chat', err);
         return { sender: identidad.nombre, text: saneado.texto, enviadoEn: new Date().toISOString() };
       });
       io.to(String(user.espacioId)).emit('chat_message', message);
@@ -573,12 +653,17 @@ export function setupSockets(io: Server) {
       if (!user) return;
       const saneado = sanearTextoChat(data?.texto);
       if (!saneado.ok) return;
+      const texto = saneado.texto.slice(0, MAX_LARGO_SUBTITULO);
       socket.to(String(user.espacioId)).emit('subtitulo', {
         socketId: socket.id,
         nombre: identidad.nombre,
-        texto: saneado.texto.slice(0, MAX_LARGO_SUBTITULO),
+        texto,
         final: data?.final === true,
       });
+      // Con la clase grabándose, las frases terminadas quedan en el acta (AULA-04)
+      if (data?.final === true) {
+        grabarSubtitulo(user.espacioId, identidad.nombre, texto).catch((err) => console.error('Error al grabar subtítulo:', err));
+      }
     });
 
     on('send_chat', 'chat', handleSendChat);
@@ -587,13 +672,13 @@ export function setupSockets(io: Server) {
     socket.on('disconnect', async () => {
       const user = activeUsers.get(socket.id);
       if (user) {
-        console.log(`🔌 Cliente desconectado: ${user.nombreVisible} (${socket.id})`);
+        log.info('socket desconectado', { socketId: socket.id, usuarioId: user.userId || null, espacioId: user.espacioId });
         socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
         conPosicionReal.delete(socket.id);
         dejarAula(user.espacioId, socket.id);
         // Un trazo a medias se guarda con lo que alcanzó a dibujar
-        await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
+        await cerrarTrazosDe(socket.id).catch((err) => log.error('Error al cerrar trazos', err));
         await registrarSalida(user.userId, user.espacioId);
         if (user.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(user.userId, user.position, user.rotation);

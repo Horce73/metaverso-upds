@@ -38,12 +38,23 @@ services:
     environment:
       - PORT=3001
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/metaverso_upds
+      # Una línea JSON por evento (OPS-03): docker compose logs backend | jq
+      - LOG_FORMATO=json
     # Archivos de materiales del aula (AULA-06): sobreviven a reconstruir la imagen
     volumes:
       - materiales_data:/app/uploads/materiales
+      # Capturas de la pantalla compartida de las clases grabadas (AULA-04)
+      - grabaciones_data:/app/uploads/grabaciones
     depends_on:
       db:
         condition: service_healthy
+    # OPS-03: lista = la base contesta y no hay migraciones pendientes
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/salud/lista').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   frontend:
     build:
@@ -54,7 +65,8 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   tunnel:
     image: cloudflare/cloudflared:latest
@@ -73,3 +85,4 @@ services:
 volumes:
   postgres_data:
   materiales_data:
+  grabaciones_data:

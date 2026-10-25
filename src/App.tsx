@@ -7,6 +7,7 @@ import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
 import { estaEscribiendo } from './components/teclado.js';
 import { Dialogo } from './components/Dialogo.js';
+import { PanelEncuesta, type EncuestaEstado } from './components/PanelEncuesta.js';
 import { Subtitulos } from './components/Subtitulos.js';
 import { puedeTranscribir } from './components/transcripcion.js';
 import { VistaSinTresD, type MotivoSinTresD } from './components/VistaSinTresD.js';
@@ -278,6 +279,12 @@ function App() {
   const [compartiendo, setCompartiendo] = useState(false);
   // Trabajo en grupos del aula (AULA-07)
   const [modoGrupos, setModoGrupos] = useState(false);
+  // Encuesta del aula (AULA-05). 'sola': se abrió al lanzarse una nueva.
+  const [encuesta, setEncuesta] = useState<EncuestaEstado | null>(null);
+  const [panelEncuesta, setPanelEncuesta] = useState<false | 'usuario' | 'sola'>(false);
+  const ultimaEncuestaRef = useRef<number | null>(null);
+  // Grabación de la clase como acta (AULA-04)
+  const [grabacion, setGrabacion] = useState<{ activa: boolean; por?: string }>({ activa: false });
   const capturaRef = useRef<CapturaPantalla | null>(null);
   const [chatMessages, setChatMessages] = useState<MensajeChat[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -495,6 +502,10 @@ function App() {
     setPantallaUrl(null);
     setPantallaGrande(false);
     setModoGrupos(false);
+    setEncuesta(null);
+    setPanelEncuesta(false);
+    setGrabacion({ activa: false });
+    ultimaEncuestaRef.current = null;
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -603,6 +614,20 @@ function App() {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
     });
     activeSocket.off('modo_grupos');
+    activeSocket.off('encuesta_estado');
+    activeSocket.on('encuesta_estado', (data: EncuestaEstado | null) => {
+      setEncuesta(data);
+      // Una encuesta nueva y abierta se muestra sola, sin quitarle el foco a nadie
+      if (data?.abierta && data.id !== ultimaEncuestaRef.current) setPanelEncuesta((p) => p || 'sola');
+      ultimaEncuestaRef.current = data?.id ?? null;
+    });
+    activeSocket.off('grabacion_estado');
+    activeSocket.on('grabacion_estado', (data: { activa: boolean; por?: string }) => setGrabacion(data));
+    activeSocket.off('grabacion_rechazada');
+    activeSocket.on('grabacion_rechazada', (data: { motivo: string }) => alert(`⚠️ ${data.motivo}`));
+    activeSocket.off('encuesta_rechazada');
+    activeSocket.on('encuesta_rechazada', (data: { motivo: string }) => alert(`⚠️ ${data.motivo}`));
+
     activeSocket.on('modo_grupos', (data: { activo: boolean; por?: string }) => {
       setModoGrupos(data.activo);
       if (data.por) {
@@ -1621,7 +1646,9 @@ function App() {
         {sidebarAbierta && (
         <div className="overlay-panel sidebar-panel glass-panel">
           <div className="sidebar-title">Usuarios Activos</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '150px', overflowY: 'auto' }}>
+          {/* flexShrink 0: la sidebar es una columna flex con alto máximo, y
+              con muchos usuarios esta lista se comprimía hasta desaparecer */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '150px', overflowY: 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
               <span>
@@ -1770,6 +1797,24 @@ function App() {
           </Dialogo>
         )}
 
+        {espacioActivo.tipo === 'aula' && grabacion.activa && (
+          <div className="aviso-grabacion" role="status">
+            🔴 Se está grabando la clase{grabacion.por ? ` (${grabacion.por})` : ''}: los subtítulos y la pantalla compartida quedan en el acta
+          </div>
+        )}
+
+        {espacioActivo.tipo === 'aula' && panelEncuesta && (
+          <PanelEncuesta
+            encuesta={encuesta}
+            dirige={isDocente || isAdmin}
+            abiertaSola={panelEncuesta === 'sola'}
+            onCrear={(pregunta, opciones) => socketRef.current?.emit('encuesta_crear', { pregunta, opciones })}
+            onVotar={(opcion) => encuesta && socketRef.current?.emit('encuesta_votar', { encuestaId: encuesta.id, opcion })}
+            onCerrarEncuesta={() => socketRef.current?.emit('encuesta_cerrar')}
+            onClose={() => setPanelEncuesta(false)}
+          />
+        )}
+
         {socket && (
           <Subtitulos
             socket={socket}
@@ -1882,6 +1927,30 @@ function App() {
           {tengoLaPalabra && (
             <button className="boton-pulsar-hablar hablando" onClick={() => socketRef.current?.emit('quitar_palabra')}>
               🎤 Tienes la palabra · Terminar
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin) && (
+            <button
+              className={`control-btn ${grabacion.activa ? 'active' : ''}`}
+              onClick={() => socketRef.current?.emit('grabacion', { activa: !grabacion.activa })}
+              aria-pressed={grabacion.activa}
+              title={grabacion.activa ? 'Detener la grabación' : 'Grabar la clase (subtítulos y pantalla compartida quedan en el acta)'}
+              aria-label={grabacion.activa ? 'Detener la grabación' : 'Grabar la clase'}
+            >
+              {grabacion.activa ? '⏹' : '⏺'}
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin || encuesta) && (
+            <button
+              className={`control-btn ${panelEncuesta ? 'active' : ''}`}
+              onClick={() => setPanelEncuesta(panelEncuesta ? false : 'usuario')}
+              aria-pressed={!!panelEncuesta}
+              title="Encuesta"
+              aria-label="Encuesta"
+            >
+              📊
             </button>
           )}
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { PersonalizacionAvatar } from './AvatarModel.js';
+import { useEsTactil } from './useEsTactil.js';
 
 const COLORES_ROPA = [
   '#3498db', '#e67e22', '#e74c3c', '#2ecc71',
@@ -100,10 +101,19 @@ export const CustomizadorAvatar: React.FC<CustomizadorAvatarProps> = ({
       accesorios: { ...personalizacion.accesorios, [clave]: valor },
     });
 
+  // En táctil la esquina de abajo es del joystick y del botón de interactuar
+  // (bottom 84px): el botón queda compacto y encima de ellos.
+  const esTactil = useEsTactil();
+
   return (
-    <div style={estilos.contenedor}>
-      <button style={estilos.botonToggle} onClick={onToggle}>
-        {abierto ? 'Cerrar personalización ✕' : '✨ Personalizar avatar'}
+    <div style={esTactil ? { ...estilos.contenedor, bottom: '160px' } : estilos.contenedor}>
+      <button
+        style={esTactil && !abierto ? estilos.botonCompacto : estilos.botonToggle}
+        onClick={onToggle}
+        aria-label={abierto ? 'Cerrar personalización' : 'Personalizar avatar'}
+        aria-expanded={abierto}
+      >
+        {abierto ? 'Cerrar personalización ✕' : esTactil ? '✨' : '✨ Personalizar avatar'}
       </button>
 
       {abierto && (
@@ -340,6 +350,17 @@ const estilos: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
     transition: 'all 0.2s ease',
+  },
+  botonCompacto: {
+    width: '52px',
+    height: '52px',
+    borderRadius: '50%',
+    background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)',
+    color: '#fff',
+    border: '1px solid rgba(255,255,255,0.2)',
+    fontSize: '1.4rem',
+    cursor: 'pointer',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
   },
   panel: {
     background: 'rgba(15, 23, 42, 0.95)',
