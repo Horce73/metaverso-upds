@@ -27,6 +27,8 @@ dist-ssr
 server/node_modules
 server/dist
 server/.env
+# Token del túnel con nombre fijo (OPS-02)
+.env
 server/uploads
 
 # Imágenes para decorar el metaverso con temática de la universidad UPDS
