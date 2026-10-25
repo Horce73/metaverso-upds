@@ -235,6 +235,8 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={color}
                         type="button"
+                        aria-label={`Color de cabello ${color}`}
+                        aria-pressed={colorCabelloActual === color}
                         className={`color-swatch ${colorCabelloActual === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
                         onClick={() => actualizarCabello('color', color)}
@@ -267,6 +269,8 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={color}
                         type="button"
+                        aria-label={`Color de vello facial ${color}`}
+                        aria-pressed={colorVelloActual === color}
                         className={`color-swatch ${colorVelloActual === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
                         onClick={() => actualizarVello('color', color)}
@@ -304,6 +308,8 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={color}
                         type="button"
+                        aria-label={`Color de ropa (principal) ${color}`}
+                        aria-pressed={colorPrimarioActual === color}
                         className={`color-swatch ${colorPrimarioActual === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
                         onClick={() => actualizarRopa('colorPrimario', color)}
@@ -317,6 +323,8 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={`sec-${color}`}
                         type="button"
+                        aria-label={`Color de ropa (secundario) ${color}`}
+                        aria-pressed={colorSecundarioActual === color}
                         className={`color-swatch ${colorSecundarioActual === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
                         onClick={() => actualizarRopa('colorSecundario', color)}
@@ -335,6 +343,8 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
                       <button
                         key={color}
                         type="button"
+                        aria-label={`Tono de piel ${color}`}
+                        aria-pressed={apariencia.colorPiel === color}
                         className={`color-swatch ${apariencia.colorPiel === color ? 'selected' : ''}`}
                         style={{ backgroundColor: color }}
                         onClick={() => actualizar({ colorPiel: color })}

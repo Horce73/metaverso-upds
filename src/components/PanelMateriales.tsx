@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useDialogo } from './useDialogo.js';
 import {
   listarMateriales,
   subirMaterial,
@@ -21,6 +22,9 @@ interface PanelMaterialesProps {
 // Materiales de la asignatura del aula (AULA-06). Todos los inscritos los ven
 // y abren; el docente titular además sube, borra y muestra uno a la clase.
 export const PanelMateriales: React.FC<PanelMaterialesProps> = ({ token, espacioId, onAbrir, onClose }) => {
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  useDialogo(dialogoRef, onClose, { atraparFoco: false });
+
   const [materiales, setMateriales] = useState<Material[] | null>(null);
   const [puedeGestionar, setPuedeGestionar] = useState(false);
   const [error, setError] = useState('');
@@ -90,7 +94,7 @@ export const PanelMateriales: React.FC<PanelMaterialesProps> = ({ token, espacio
   };
 
   return (
-    <div className="panel-materiales glass-panel" role="dialog" aria-label="Materiales de la clase">
+    <div ref={dialogoRef} className="panel-materiales glass-panel" role="dialog" aria-label="Materiales de la clase">
       <div className="panel-materiales__cabecera">
         <h3>📚 Materiales de la clase</h3>
         <button className="btn-secondary" onClick={onClose} aria-label="Cerrar materiales">

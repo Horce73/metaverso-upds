@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { useDialogo } from './useDialogo.js';
 
 interface CrearCursoModalProps {
   espacio: {
@@ -18,6 +19,9 @@ export const CrearCursoModal: React.FC<CrearCursoModalProps> = ({
   onCursoCreado,
   onClose,
 }) => {
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  useDialogo(dialogoRef, onClose);
+
   const [nombreCurso, setNombreCurso] = useState(espacio.asignatura || '');
   const [codigoCurso, setCodigoCurso] = useState(espacio.asignatura_codigo || `SIS-${espacio.id}`);
   const [tema, setTema] = useState('');
@@ -69,18 +73,18 @@ export const CrearCursoModal: React.FC<CrearCursoModalProps> = ({
   };
 
   return (
-    <div className="avatar-customizer-3d-wrapper" style={{ zIndex: 2500 }}>
+    <div ref={dialogoRef} className="avatar-customizer-3d-wrapper" style={{ zIndex: 2500 }} role="dialog" aria-modal="true" aria-labelledby="titulo-crear-curso">
       <div className="customizer-card glass-panel" style={{ maxWidth: '500px', width: '92vw', padding: '26px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <div>
-            <h2 className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
+            <h2 id="titulo-crear-curso" className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
               🎓 Iniciar / Crear Curso
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '4px 0 0 0' }}>
               Configurar clase en {espacio.nombre}
             </p>
           </div>
-          <button className="btn-secondary" onClick={onClose} style={{ padding: '4px 10px', fontSize: '0.9rem' }}>
+          <button className="btn-secondary" onClick={onClose} style={{ padding: '4px 10px', fontSize: '0.9rem' }} aria-label="Cerrar">
             ✕
           </button>
         </div>

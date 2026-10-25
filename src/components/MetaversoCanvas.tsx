@@ -679,10 +679,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     const TECLAS_MOVIMIENTO = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-        return;
-      }
+      if (!esTeclaDelMundo3D(e)) return;
 
       const esTeclaE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E';
 

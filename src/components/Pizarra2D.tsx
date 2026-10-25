@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { useDialogo } from './useDialogo.js';
 import { Socket } from 'socket.io-client';
 import { dibujarTramo, redibujarTodo, nuevoIdTrazo, suscribirPizarra, type Punto, type Trazo } from './pizarra.js';
 
@@ -34,6 +35,9 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
   puedeAdministrar,
   onClose
 }) => {
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  useDialogo(dialogoRef, onClose);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const pizarraRef = useRef<ApiPizarra | null>(null);
@@ -197,9 +201,9 @@ export const Pizarra2D: React.FC<Pizarra2DProps> = ({
   };
 
   return (
-    <div className="pizarra-modal glass-panel">
+    <div ref={dialogoRef} className="pizarra-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="titulo-pizarra">
       <div className="pizarra-header">
-        <h3 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 600 }}>
+        <h3 id="titulo-pizarra" className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 600 }}>
           Pizarra Compartida - {puedeAdministrar ? 'Modo Escritura (Docente)' : puedeDibujar ? 'Modo Escritura (Estudiante)' : 'Visualización en Vivo'}
         </h3>
 

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useDialogo } from './useDialogo.js';
 import { urlDeMaterial, ICONO_MATERIAL, type Material } from './materiales.js';
 
 interface VisorMaterialProps {
@@ -12,6 +13,9 @@ interface VisorMaterialProps {
 // Abre un material del aula (AULA-06). PDF e imágenes se ven aquí mismo; el
 // resto (o un archivo que el servidor no sirve en línea) se ofrece para descargar.
 export const VisorMaterial: React.FC<VisorMaterialProps> = ({ token, material, aviso, onClose }) => {
+  const dialogoRef = useRef<HTMLDivElement>(null);
+  useDialogo(dialogoRef, onClose);
+
   const [archivo, setArchivo] = useState<{ url: string; enLinea: boolean } | null>(null);
   const [error, setError] = useState('');
 
@@ -33,15 +37,9 @@ export const VisorMaterial: React.FC<VisorMaterialProps> = ({ token, material, a
     };
   }, [token, material.id]);
 
-  useEffect(() => {
-    const alPulsar = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', alPulsar);
-    return () => window.removeEventListener('keydown', alPulsar);
-  }, [onClose]);
-
   const nombre = `${material.titulo}.${material.extension}`;
   return (
-    <div className="visor-material" role="dialog" aria-modal="true" aria-label={material.titulo}>
+    <div ref={dialogoRef} className="visor-material" role="dialog" aria-modal="true" aria-label={material.titulo}>
       <div className="visor-material__marco glass-panel">
         <div className="visor-material__cabecera">
           <div>
