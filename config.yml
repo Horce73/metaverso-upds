@@ -1,6 +1,6 @@
-# Archivo de configuración opcional para Cloudflare Tunnels (Named Tunnels)
-# Si deseas usar un túnel persistente con tu propio dominio en lugar de trycloudflare.com,
-# configura las siguientes líneas con tus credenciales de Cloudflare:
+# Archivo de ejemplo para un túnel nombrado con credenciales en archivo.
+# El camino recomendado es más simple: un token en el .env de la raíz
+# (ver docs/tunel.md); este archivo no lo usa docker-compose.yml.
 #
 # tunnel: tu-tunnel-id-guid
 # credentials-file: /etc/cloudflared/tu-tunnel-id.json

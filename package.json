@@ -11,6 +11,7 @@
     "carga:voz": "node pruebas/carga-voz/spike.mjs",
     "carga:trafico": "node pruebas/carga-trafico/medir-trafico.mjs",
     "carga:render": "node pruebas/carga-render/medir-render.mjs",
+    "tunel:url": "docker compose logs tunnel 2>&1 | grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' | tail -1",
     "test:unidad": "node --test 'pruebas/unidad/*.test.mjs'"
   },
   "dependencies": {

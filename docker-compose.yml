@@ -60,7 +60,13 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: metaverso_upds_tunnel
     restart: always
-    command: tunnel --no-autoupdate --url http://frontend:80
+    # OPS-02. Sin TUNNEL_TOKEN: túnel rápido, URL *.trycloudflare.com nueva en
+    # cada arranque (npm run tunel:url la muestra). Con TUNNEL_TOKEN y
+    # TUNEL_COMANDO en el .env de la raíz: túnel nombrado, URL fija
+    # (ver docs/tunel.md).
+    command: ${TUNEL_COMANDO:-tunnel --no-autoupdate --url http://frontend:80}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
     depends_on:
       - frontend
 
