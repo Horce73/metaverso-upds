@@ -3547,3 +3547,34 @@ main>h2:first-child {
   background: rgba(239, 68, 68, 0.15);
   color: var(--error);
 }
+
+/* ===== CONTROLES EN PANTALLAS TÁCTILES ===== */
+/* Abajo están el joystick (izquierda) y el botón de interactuar (derecha):
+   la barra de controles sube bajo la barra superior y, si no entra (en el
+   aula llega a 11 botones), se desplaza de lado en vez de taparlos. */
+@media (pointer: coarse) and (max-width: 768px) {
+  .hud-bottom-controls {
+    /* bajo la barra superior, que en el celular ocupa unos 155px */
+    top: 162px;
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    justify-content: flex-start;
+    overflow-x: auto;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  .hud-bottom-controls > * {
+    flex-shrink: 0;
+  }
+
+  .aviso-grabacion {
+    top: 226px;
+  }
+
+  .panel-encuesta {
+    top: 232px;
+  }
+}

@@ -1621,7 +1621,9 @@ function App() {
         {sidebarAbierta && (
         <div className="overlay-panel sidebar-panel glass-panel">
           <div className="sidebar-title">Usuarios Activos</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '150px', overflowY: 'auto' }}>
+          {/* flexShrink 0: la sidebar es una columna flex con alto máximo, y
+              con muchos usuarios esta lista se comprimía hasta desaparecer */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', maxHeight: '150px', overflowY: 'auto', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></div>
               <span>
