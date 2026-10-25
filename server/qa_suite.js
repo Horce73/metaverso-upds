@@ -1408,6 +1408,110 @@ async function runTests() {
   sDocEnc.disconnect();
   sAnaEnc.disconnect();
 
+  // ---------------------------------------------------------------------------
+  // Grabación de la clase y acta (AULA-04)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== GRABACIÓN Y ACTA ===');
+
+  const sDocGrab = await conectar(docente.token);
+  const sAnaGrab = await conectar(ana.token);
+  await entrar(sDocGrab, aulaId);
+  await entrar(sAnaGrab, aulaId);
+  const marcaGrab = `acta-${Math.random().toString(36).slice(2, 7)}`;
+  const sesionGrab = (await pool.query("SELECT id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso'", [aulaId])).rows[0].id;
+  const subtitulosGrabados = async (texto) =>
+    (await pool.query(
+      `SELECT 1 FROM grabacion_eventos ge JOIN grabaciones g ON g.id = ge.grabacion_id
+       WHERE g.sesion_id = $1 AND ge.tipo = 'subtitulo' AND ge.texto = $2`, [sesionGrab, texto]
+    )).rows.length;
+
+  await caso('Un estudiante no puede grabar la clase', async () => {
+    const llega = esperarEvento(sAnaGrab, 'grabacion_estado', 800, d => d?.activa);
+    sAnaGrab.emit('grabacion', { activa: true });
+    return (await llega) === null;
+  });
+
+  await caso('Sin clase en curso no se puede grabar', async () => {
+    // Mismo socket: un segundo socket del docente cerraría este (una sesión por usuario)
+    try {
+      await entrar(sDocGrab, otraAulaId);
+      const rechazo = esperarEvento(sDocGrab, 'grabacion_rechazada', 2000);
+      sDocGrab.emit('grabacion', { activa: true });
+      return Boolean((await rechazo)?.motivo);
+    } finally {
+      await entrar(sDocGrab, aulaId);
+    }
+  });
+
+  await caso('El docente graba y todo el aula ve el aviso', async () => {
+    const aviso = esperarEvento(sAnaGrab, 'grabacion_estado', 2000, d => d?.activa);
+    sDocGrab.emit('grabacion', { activa: true });
+    return typeof (await aviso)?.por === 'string';
+  });
+
+  await caso('Grabando, las frases terminadas quedan en el acta y los parciales no', async () => {
+    sAnaGrab.emit('subtitulo', { texto: `${marcaGrab} parcial`, final: false });
+    sAnaGrab.emit('subtitulo', { texto: `${marcaGrab} final`, final: true });
+    sAnaGrab.emit('chat_msg_send', { message: { text: `${marcaGrab} chat` } });
+    await esperarFila(
+      `SELECT 1 FROM grabacion_eventos ge JOIN grabaciones g ON g.id = ge.grabacion_id
+       WHERE g.sesion_id = $1 AND ge.texto = $2`, [sesionGrab, `${marcaGrab} final`]
+    );
+    return (await subtitulosGrabados(`${marcaGrab} final`)) === 1 && (await subtitulosGrabados(`${marcaGrab} parcial`)) === 0;
+  });
+
+  await caso('Grabando, la pantalla compartida deja una captura que el docente puede ver', async () => {
+    sDocGrab.emit('pantalla_iniciar');
+    await esperarEvento(sAnaGrab, 'pantalla_estado', 1500, d => d?.activa);
+    const cuadro = cuadroWebp('acta');
+    sDocGrab.emit('pantalla_cuadro', cuadro);
+    const filas = await esperarFila(
+      `SELECT ge.id FROM grabacion_eventos ge JOIN grabaciones g ON g.id = ge.grabacion_id
+       WHERE g.sesion_id = $1 AND ge.tipo = 'pantalla' ORDER BY ge.id DESC LIMIT 1`, [sesionGrab]
+    );
+    sDocGrab.emit('pantalla_detener');
+    if (filas.length === 0) return false;
+    const img = await api(`/api/actas/captura/${filas[0].id}`, { token: docente.token });
+    const bytes = Buffer.from(await img.arrayBuffer());
+    const ajena = await api(`/api/actas/captura/${filas[0].id}`, { token: ana.token });
+    return img.status === 200 && bytes.equals(cuadro) && ajena.status === 403;
+  });
+
+  await caso('Al detener, deja de grabar', async () => {
+    const aviso = esperarEvento(sAnaGrab, 'grabacion_estado', 2000, d => d && !d.activa);
+    sDocGrab.emit('grabacion', { activa: false });
+    await aviso;
+    sAnaGrab.emit('subtitulo', { texto: `${marcaGrab} después`, final: true });
+    await new Promise(r => setTimeout(r, 400));
+    return (await subtitulosGrabados(`${marcaGrab} después`)) === 0;
+  });
+
+  await caso('El acta de la clase junta grabación, subtítulos y chat (403 a un estudiante)', async () => {
+    const lista = await (await api('/api/actas', { token: docente.token })).json();
+    const res = await api(`/api/actas/${sesionGrab}`, { token: docente.token });
+    const { eventos } = await res.json();
+    const tipos = new Set(eventos.map(e => e.tipo));
+    const prohibido = await api(`/api/actas/${sesionGrab}`, { token: ana.token });
+    return lista.some(c => c.id === sesionGrab && c.grabaciones > 0)
+      && tipos.has('grabacion_inicio') && tipos.has('grabacion_fin')
+      && eventos.some(e => e.tipo === 'subtitulo' && e.texto === `${marcaGrab} final`)
+      && eventos.some(e => e.tipo === 'chat' && e.texto === `${marcaGrab} chat`)
+      && prohibido.status === 403;
+  });
+
+  await caso('El acta se descarga como HTML con el texto escapado', async () => {
+    sAnaGrab.emit('chat_msg_send', { message: { text: `${marcaGrab} <b>negrita</b>` } });
+    await esperarFila('SELECT 1 FROM chat_mensajes WHERE texto = $1', [`${marcaGrab} <b>negrita</b>`]);
+    const res = await api(`/api/actas/${sesionGrab}?formato=html`, { token: docente.token });
+    const html = await res.text();
+    return res.status === 200 && res.headers.get('content-type').startsWith('text/html')
+      && /filename="acta_.+\.html"/.test(res.headers.get('content-disposition'))
+      && html.includes(`${marcaGrab} &lt;b&gt;negrita&lt;/b&gt;`) && !html.includes('<b>negrita</b>');
+  });
+
+  sDocGrab.disconnect();
+  sAnaGrab.disconnect();
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');

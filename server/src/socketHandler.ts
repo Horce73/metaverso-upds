@@ -4,6 +4,7 @@ import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion, bitacor
 import { guardarMensaje, historialDe, type MensajeChat } from './chatPersistencia.js';
 import { validarEncuesta, MAX_OPCIONES } from './encuestas.js';
 import { crearEncuesta, votar, cerrarEncuesta, encuestaVigente } from './encuestasServidor.js';
+import { estadoGrabacion, iniciarGrabacion, detenerGrabacion, grabarSubtitulo, grabarCaptura } from './grabacionServidor.js';
 import { verificarToken } from './middleware/auth.js';
 import { CUPOS_SOCKET, limitador } from './limites.js';
 import { sanearTextoChat } from './chat.js';
@@ -291,6 +292,7 @@ export function setupSockets(io: Server) {
         socket.emit('pantalla_estado', estadoPantalla(nuevoEspacioId));
         socket.emit('modo_grupos', { activo: aulasEnGrupos.has(nuevoEspacioId) });
         emitirEncuesta(nuevoEspacioId, socket.id).catch((err) => console.error('Error al enviar la encuesta:', err));
+        socket.emit('grabacion_estado', estadoGrabacion(nuevoEspacioId));
         if (pantalla?.ultimoCuadro) socket.emit('pantalla_cuadro', pantalla.ultimoCuadro);
       }
 
@@ -538,6 +540,24 @@ export function setupSockets(io: Server) {
       }
     });
 
+    // Grabación de la clase como acta (AULA-04): sólo con una clase en curso
+    on('grabacion', 'grabacion', async (data: { activa?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      try {
+        if (data?.activa === true) {
+          if (!(await iniciarGrabacion(user.espacioId, identidad.userId || null, identidad.nombre))) {
+            return void socket.emit('grabacion_rechazada', { motivo: 'Inicia la clase antes de grabarla.' });
+          }
+        } else {
+          await detenerGrabacion(user.espacioId);
+        }
+        io.to(String(user.espacioId)).emit('grabacion_estado', estadoGrabacion(user.espacioId));
+      } catch (err) {
+        console.error('Error al cambiar la grabación:', err);
+      }
+    });
+
     on('modo_grupos', 'preguntas', (data: { activo?: unknown }) => {
       const user = activeUsers.get(socket.id);
       if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
@@ -565,6 +585,7 @@ export function setupSockets(io: Server) {
       if (!user || !esCuadroValido(datos)) return;
       if (guardarCuadro(user.espacioId, socket.id, datos)) {
         socket.to(String(user.espacioId)).volatile.emit('pantalla_cuadro', datos);
+        grabarCaptura(user.espacioId, user.nombreVisible, datos).catch((err) => console.error('Error al grabar captura:', err));
       }
     });
 
@@ -631,12 +652,17 @@ export function setupSockets(io: Server) {
       if (!user) return;
       const saneado = sanearTextoChat(data?.texto);
       if (!saneado.ok) return;
+      const texto = saneado.texto.slice(0, MAX_LARGO_SUBTITULO);
       socket.to(String(user.espacioId)).emit('subtitulo', {
         socketId: socket.id,
         nombre: identidad.nombre,
-        texto: saneado.texto.slice(0, MAX_LARGO_SUBTITULO),
+        texto,
         final: data?.final === true,
       });
+      // Con la clase grabándose, las frases terminadas quedan en el acta (AULA-04)
+      if (data?.final === true) {
+        grabarSubtitulo(user.espacioId, identidad.nombre, texto).catch((err) => console.error('Error al grabar subtítulo:', err));
+      }
     });
 
     on('send_chat', 'chat', handleSendChat);
