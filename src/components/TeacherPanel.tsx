@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TableroAsistencia } from './TableroAsistencia.js';
+import { ActasClase } from './ActasClase.js';
 
 interface TeacherPanelProps {
   token: string;
@@ -8,7 +9,7 @@ interface TeacherPanelProps {
 }
 
 export const TeacherPanel: React.FC<TeacherPanelProps> = ({ token, user, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'classes' | 'materials' | 'attendance' | 'students'>('classes');
+  const [activeTab, setActiveTab] = useState<'classes' | 'materials' | 'attendance' | 'actas' | 'students'>('classes');
   const [showNewClassForm, setShowNewClassForm] = useState(false);
   const [formData, setFormData] = useState({
     nombre: '',
@@ -72,6 +73,12 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({ token, user, onClose
           onClick={() => setActiveTab('attendance')}
         >
           ✓ Asistencia
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'actas' ? 'active' : ''}`}
+          onClick={() => setActiveTab('actas')}
+        >
+          🎬 Actas de clase
         </button>
         <button
           className={`tab-btn ${activeTab === 'students' ? 'active' : ''}`}
@@ -212,6 +219,16 @@ export const TeacherPanel: React.FC<TeacherPanelProps> = ({ token, user, onClose
               Se registra sola cuando cada estudiante entra al aula durante la clase.
             </p>
             <TableroAsistencia token={token} />
+          </div>
+        )}
+
+        {activeTab === 'actas' && (
+          <div className="teacher-section">
+            <h2>Actas de clase</h2>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              Lo que quedó de cada clase: asistencia, chat, materiales y encuestas. Si la grabaste (botón ⏺ en el aula), también los subtítulos y la pantalla compartida.
+            </p>
+            <ActasClase token={token} />
           </div>
         )}
 

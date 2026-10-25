@@ -23,26 +23,30 @@ function enfocablesDe(contenedor: HTMLElement): HTMLElement[] {
 interface OpcionesDialogo {
   /** Atrapar Tab dentro (modales). Un panel lateral no modal lo deja en false. */
   atraparFoco?: boolean;
+  /** Llevar el foco adentro al abrir. false para lo que se abre solo (no le roba el foco a quien escribe). */
+  enfocar?: boolean;
 }
 
-export function useDialogo(ref: RefObject<HTMLElement | null>, onClose: () => void, { atraparFoco = true }: OpcionesDialogo = {}) {
+export function useDialogo(ref: RefObject<HTMLElement | null>, onClose: () => void, { atraparFoco = true, enfocar = true }: OpcionesDialogo = {}) {
   const cerrarRef = useRef(onClose);
   cerrarRef.current = onClose;
 
   useEffect(() => {
     const contenedor = ref.current;
     if (!contenedor) return;
-    const previo = document.activeElement as HTMLElement | null;
+    const previo = enfocar ? (document.activeElement as HTMLElement | null) : null;
 
-    // El primer campo si hay uno (lo que se viene a llenar); si no, el primer botón
-    const inicial =
-      contenedor.querySelector<HTMLElement>('[data-foco-inicial]') ??
-      contenedor.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea, select') ??
-      enfocablesDe(contenedor)[0];
-    if (inicial) inicial.focus();
-    else {
-      contenedor.tabIndex = -1;
-      contenedor.focus();
+    if (enfocar) {
+      // El primer campo si hay uno (lo que se viene a llenar); si no, el primer botón
+      const inicial =
+        contenedor.querySelector<HTMLElement>('[data-foco-inicial]') ??
+        contenedor.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), textarea, select') ??
+        enfocablesDe(contenedor)[0];
+      if (inicial) inicial.focus();
+      else {
+        contenedor.tabIndex = -1;
+        contenedor.focus();
+      }
     }
 
     const alPulsar = (e: KeyboardEvent) => {
@@ -74,5 +78,5 @@ export function useDialogo(ref: RefObject<HTMLElement | null>, onClose: () => vo
       contenedor.removeEventListener('keydown', alPulsar);
       if (previo && document.contains(previo)) previo.focus();
     };
-  }, [ref, atraparFoco]);
+  }, [ref, atraparFoco, enfocar]);
 }

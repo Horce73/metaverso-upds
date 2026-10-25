@@ -33,7 +33,7 @@ async function esAdmin(userId: number): Promise<boolean> {
 }
 
 /** El titular de la asignatura, quien dictó alguna de sus clases, o un administrador. */
-async function puedeVerAsignatura(userId: number, asignaturaId: number): Promise<boolean> {
+export async function puedeVerAsignatura(userId: number, asignaturaId: number): Promise<boolean> {
   if (await esAdmin(userId)) return true;
   const { rows } = await pool.query(
     `SELECT 1 FROM asignaturas WHERE id = $1 AND docente_id = $2
