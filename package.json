@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "carga:voz": "node pruebas/carga-voz/spike.mjs",
     "carga:trafico": "node pruebas/carga-trafico/medir-trafico.mjs",
-    "test:unidad": "node --test 'pruebas/unidad/*.test.mjs'"
+    "test:unidad": "node --import ./pruebas/unidad/resolver-ts.mjs --test 'pruebas/unidad/*.test.mjs'"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

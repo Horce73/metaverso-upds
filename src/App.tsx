@@ -7,6 +7,7 @@ import { AudioClient, type EstadoVoz } from './components/AudioClient.js';
 import { esDifusor } from './components/zonasVoz.js';
 import { estaEscribiendo } from './components/teclado.js';
 import { Dialogo } from './components/Dialogo.js';
+import { PanelEncuesta, type EncuestaEstado } from './components/PanelEncuesta.js';
 import { Subtitulos } from './components/Subtitulos.js';
 import { puedeTranscribir } from './components/transcripcion.js';
 import { SolicitudAccesoModal } from './components/SolicitudAccesoModal.js';
@@ -223,6 +224,10 @@ function App() {
   const [compartiendo, setCompartiendo] = useState(false);
   // Trabajo en grupos del aula (AULA-07)
   const [modoGrupos, setModoGrupos] = useState(false);
+  // Encuesta del aula (AULA-05). 'sola': se abrió al lanzarse una nueva.
+  const [encuesta, setEncuesta] = useState<EncuestaEstado | null>(null);
+  const [panelEncuesta, setPanelEncuesta] = useState<false | 'usuario' | 'sola'>(false);
+  const ultimaEncuestaRef = useRef<number | null>(null);
   const capturaRef = useRef<CapturaPantalla | null>(null);
   const [chatMessages, setChatMessages] = useState<MensajeChat[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -437,6 +442,9 @@ function App() {
     setPantallaUrl(null);
     setPantallaGrande(false);
     setModoGrupos(false);
+    setEncuesta(null);
+    setPanelEncuesta(false);
+    ultimaEncuestaRef.current = null;
     const tieneSesionEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
     setSesionClase(tieneSesionEnCurso ? espacio.sesion_activa : null);
 
@@ -539,6 +547,16 @@ function App() {
       newAudioClient.configurarZonas(espacio.tipo, esDifusor(data.roles ?? [], espacio.tipo));
     });
     activeSocket.off('modo_grupos');
+    activeSocket.off('encuesta_estado');
+    activeSocket.on('encuesta_estado', (data: EncuestaEstado | null) => {
+      setEncuesta(data);
+      // Una encuesta nueva y abierta se muestra sola, sin quitarle el foco a nadie
+      if (data?.abierta && data.id !== ultimaEncuestaRef.current) setPanelEncuesta((p) => p || 'sola');
+      ultimaEncuestaRef.current = data?.id ?? null;
+    });
+    activeSocket.off('encuesta_rechazada');
+    activeSocket.on('encuesta_rechazada', (data: { motivo: string }) => alert(`⚠️ ${data.motivo}`));
+
     activeSocket.on('modo_grupos', (data: { activo: boolean; por?: string }) => {
       setModoGrupos(data.activo);
       if (data.por) {
@@ -1660,6 +1678,18 @@ function App() {
           </Dialogo>
         )}
 
+        {espacioActivo.tipo === 'aula' && panelEncuesta && (
+          <PanelEncuesta
+            encuesta={encuesta}
+            dirige={isDocente || isAdmin}
+            abiertaSola={panelEncuesta === 'sola'}
+            onCrear={(pregunta, opciones) => socketRef.current?.emit('encuesta_crear', { pregunta, opciones })}
+            onVotar={(opcion) => encuesta && socketRef.current?.emit('encuesta_votar', { encuestaId: encuesta.id, opcion })}
+            onCerrarEncuesta={() => socketRef.current?.emit('encuesta_cerrar')}
+            onClose={() => setPanelEncuesta(false)}
+          />
+        )}
+
         {socket && (
           <Subtitulos
             socket={socket}
@@ -1772,6 +1802,18 @@ function App() {
           {tengoLaPalabra && (
             <button className="boton-pulsar-hablar hablando" onClick={() => socketRef.current?.emit('quitar_palabra')}>
               🎤 Tienes la palabra · Terminar
+            </button>
+          )}
+
+          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin || encuesta) && (
+            <button
+              className={`control-btn ${panelEncuesta ? 'active' : ''}`}
+              onClick={() => setPanelEncuesta(panelEncuesta ? false : 'usuario')}
+              aria-pressed={!!panelEncuesta}
+              title="Encuesta"
+              aria-label="Encuesta"
+            >
+              📊
             </button>
           )}
 
