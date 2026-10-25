@@ -41,6 +41,19 @@ interface UserState {
 }
 
 const activeUsers = new Map<string, UserState>();
+// Sockets que ya mandaron su posición real en el espacio actual: hasta el
+// primer 'move' la de UserState es la provisoria del servidor (DATA-04).
+const conPosicionReal = new Set<string>();
+
+/** Dónde está cada persona conectada, para el mapa de calor. */
+export function posicionesConocidas(): { espacioId: number; x: number; z: number }[] {
+  const posiciones: { espacioId: number; x: number; z: number }[] = [];
+  conPosicionReal.forEach((sid) => {
+    const u = activeUsers.get(sid);
+    if (u) posiciones.push({ espacioId: Number(u.espacioId), x: u.position[0], z: u.position[2] });
+  });
+  return posiciones;
+}
 
 // Aulas con el trabajo en grupos activo (AULA-07): la voz de cada mesa queda
 // en la mesa. Lo activa y desactiva el docente; quien entra recibe el estado.
@@ -195,6 +208,7 @@ export function setupSockets(io: Server) {
             oldSocket.disconnect(true);
           }
           activeUsers.delete(sid);
+          conPosicionReal.delete(sid);
           dejarAula(user.espacioId, sid);
           registrarSalida(user.userId, user.espacioId);
         }
@@ -233,6 +247,7 @@ export function setupSockets(io: Server) {
       };
 
       activeUsers.set(socket.id, userState);
+      conPosicionReal.delete(socket.id);
       socket.join(String(espacioId));
 
       const usersInSpace: { [socketId: string]: UserState } = {};
@@ -279,7 +294,10 @@ export function setupSockets(io: Server) {
     }) => {
       const user = activeUsers.get(socket.id);
       if (!user) return;
-      if (data.position) user.position = data.position;
+      if (data.position) {
+        user.position = data.position;
+        conPosicionReal.add(socket.id);
+      }
       if (data.rotation) user.rotation = data.rotation;
       user.estaSentado = !!data.estaSentado;
 
@@ -572,6 +590,7 @@ export function setupSockets(io: Server) {
         console.log(`🔌 Cliente desconectado: ${user.nombreVisible} (${socket.id})`);
         socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
+        conPosicionReal.delete(socket.id);
         dejarAula(user.espacioId, socket.id);
         // Un trazo a medias se guarda con lo que alcanzó a dibujar
         await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));

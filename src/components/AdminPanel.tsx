@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AdminDashboardTab, { type DashboardData, ROLE_COLORS } from './AdminDashboardTab';
 import { AdminVoiceTour } from './AdminVoiceTour';
+import { MapaCalor } from './MapaCalor';
 
 interface AdminPanelProps {
   token: string;
@@ -72,7 +73,7 @@ interface BitacoraEntry {
   fecha: string;
 }
 
-type Tab = 'dashboard' | 'usuarios' | 'espacios' | 'carreras' | 'asignaturas' | 'reportes';
+type Tab = 'dashboard' | 'usuarios' | 'espacios' | 'carreras' | 'asignaturas' | 'reportes' | 'mapa';
 
 export function AdminPanel({ token, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -269,14 +270,14 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #1e293b', padding: '0 24px', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex' }}>
-            {(['dashboard', 'usuarios', 'espacios', 'carreras', 'asignaturas', 'reportes'] as Tab[]).map(tab => (
+            {(['dashboard', 'usuarios', 'espacios', 'carreras', 'asignaturas', 'reportes', 'mapa'] as Tab[]).map(tab => (
               <button key={tab} onClick={() => { setActiveTab(tab); setShowCreate(false); setEditingItem(null); }} style={{
                 padding: '12px 20px', cursor: 'pointer', border: 'none',
                 borderBottom: activeTab === tab ? '2px solid #3b82f6' : '2px solid transparent',
                 background: 'none', color: activeTab === tab ? '#3b82f6' : '#64748b',
                 fontWeight: activeTab === tab ? 600 : 400, textTransform: 'capitalize', fontSize: 14,
               }}>
-                {tab === 'dashboard' ? 'Dashboard' : tab === 'usuarios' ? 'Usuarios' : tab === 'espacios' ? 'Espacios' : tab === 'carreras' ? 'Carreras' : tab === 'asignaturas' ? 'Asignaturas' : 'Reportes'}
+                {tab === 'dashboard' ? 'Dashboard' : tab === 'usuarios' ? 'Usuarios' : tab === 'espacios' ? 'Espacios' : tab === 'carreras' ? 'Carreras' : tab === 'asignaturas' ? 'Asignaturas' : tab === 'reportes' ? 'Reportes' : 'Mapa de calor'}
               </button>
             ))}
           </div>
@@ -352,6 +353,8 @@ export function AdminPanel({ token, onClose }: AdminPanelProps) {
           )}
 
           {/* ═══ REPORTES TAB ═══ */}
+          {activeTab === 'mapa' && <MapaCalor token={token} />}
+
           {activeTab === 'reportes' && !loading && (
             <ReportesTab token={token} onError={(msg) => notify('error', msg)} />
           )}

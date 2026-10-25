@@ -1298,6 +1298,43 @@ async function runTests() {
 
   sOyente.disconnect();
 
+  // ---------------------------------------------------------------------------
+  // Mapa de calor (DATA-04)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== MAPA DE CALOR ===');
+
+  const tokenAdminMapa = (await tokenDe(ADMIN)).token;
+  await pool.query('DELETE FROM mapa_calor WHERE espacio_id = $1 AND cx = 400', [campusId]);
+  await pool.query(
+    `INSERT INTO mapa_calor (espacio_id, dia, cx, cz, segundos) VALUES
+     ($1, CURRENT_DATE - 3, 400, 1, 600), ($1, CURRENT_DATE - 1, 400, 1, 120), ($1, CURRENT_DATE - 1, 400, 2, 60)`,
+    [campusId]
+  );
+  const mapa = async (query, token = tokenAdminMapa) => {
+    const res = await api(`/api/admin/mapa-calor?${query}`, { token });
+    return { status: res.status, data: res.status === 200 ? await res.json() : null };
+  };
+  const celda = (data, cz) => data.celdas.find(c => c.cx === 400 && c.cz === cz);
+
+  await caso('Mapa de calor: suma los días del rango por celda', async () => {
+    const { status, data } = await mapa(`espacio_id=${campusId}`);
+    return status === 200 && data.tamano_celda === 2 && celda(data, 1).segundos === 720 && celda(data, 2).segundos === 60;
+  });
+
+  await caso('Mapa de calor: el rango de días deja fuera lo anterior', async () => {
+    const desde = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+    const { data } = await mapa(`espacio_id=${campusId}&desde=${desde}`);
+    return celda(data, 1).segundos === 120;
+  });
+
+  await caso('Mapa de calor: sin espacio_id es 400 y un estudiante recibe 403', async () => {
+    const sinEspacio = await mapa('');
+    const estudiante = await mapa(`espacio_id=${campusId}`, ana.token);
+    return sinEspacio.status === 400 && estudiante.status === 403;
+  });
+
+  await pool.query('DELETE FROM mapa_calor WHERE espacio_id = $1 AND cx = 400', [campusId]);
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');
