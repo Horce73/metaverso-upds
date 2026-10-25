@@ -75,5 +75,8 @@ export const CUPOS_SOCKET: Record<string, [max: number, ventanaMs: number]> = {
   pantalla_cuadro: [6, 1_000],
   chat: [10, 10_000],
   // Parciales cada ~300 ms mientras se habla, más las frases finales
-  subtitulo: [50, 10_000]
+  subtitulo: [50, 10_000],
+  // Votar (y cambiar el voto), crear y cerrar encuestas
+  encuestas: [20, 60_000],
+  grabacion: [10, 60_000]
 };

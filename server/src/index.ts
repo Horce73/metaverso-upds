@@ -10,6 +10,7 @@ import dotenv from 'dotenv';
 import { pool, enTransaccion } from './db.js';
 import { setupSockets, registrarPresentesEnAula, posicionesConocidas } from './socketHandler.js';
 import { iniciarMapaCalor, registrarRutasMapaCalor } from './mapaCalorServidor.js';
+import { registrarRutasGrabacion, detenerGrabacionDeSesion } from './grabacionServidor.js';
 import { authenticateJWT, requiereAdmin, requiereRol } from './middleware/auth.js';
 import { registrarAsistencia, bitacora, cerrarTramosDeSesion } from './helpers.js';
 import { aplicarMigraciones } from './migraciones.js';
@@ -93,6 +94,7 @@ registrarRutasMateriales(app, io);
 registrarRutasAsistencia(app);
 registrarRutasBitacora(app);
 registrarRutasMapaCalor(app);
+registrarRutasGrabacion(app);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -697,6 +699,7 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
         [sesionPreviaId]
       );
       await cerrarTramosDeSesion(sesionPreviaId, client);
+      await detenerGrabacionDeSesion(sesionPreviaId);
     }
 
     // 5. Crear sesión de clase en curso
@@ -720,6 +723,8 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
 
     await bitacora(userId, 'crear_curso', `${nombre_curso} (${codigo_curso}) - ${tema}`, req.ip);
     await registrarPresentesEnAula(Number(espacio_id));
+    // La grabación de la clase anterior, si la había, terminó con ella
+    io.to(String(espacio_id)).emit('grabacion_estado', { activa: false });
 
     res.status(201).json({
       message: 'Curso creado e inicio de clase exitoso',
@@ -771,6 +776,8 @@ app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) =>
       [id]
     );
     await cerrarTramosDeSesion(Number(id));
+    await detenerGrabacionDeSesion(Number(id));
+    io.to(String(sesion.espacio_id)).emit('grabacion_estado', { activa: false });
 
     await bitacora(userId, 'fin_clase', sesion.tema || '', req.ip);
     res.json({ message: 'Clase finalizada', sesion: result.rows[0] });

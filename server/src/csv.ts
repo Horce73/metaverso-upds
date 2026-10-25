@@ -24,12 +24,12 @@ export function aCsv(encabezados: string[], filas: Celda[][]): string {
 }
 
 /** Nombre de archivo seguro para Content-Disposition (sin tildes ni separadores). */
-export function nombreArchivo(base: string): string {
+export function nombreArchivo(base: string, extension = 'csv'): string {
   const limpio = base
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^A-Za-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 80);
-  return `${limpio || 'asistencia'}.csv`;
+  return `${limpio || 'asistencia'}.${extension}`;
 }
