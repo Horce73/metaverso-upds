@@ -20,6 +20,7 @@ import {
 import { validarLote, agregarLote, cerrarTrazo, cerrarTrazosDe, trazosVisibles, deshacerTrazo, borrarTodo } from './pizarra.js';
 import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detenerPantalla, pantallaDe } from './pantalla.js';
 import { debeRecibirMovimiento } from './relevanciaPosicion.js';
+import { log } from './registro.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -143,7 +144,7 @@ export function setupSockets(io: Server) {
       socket.data.identidad = identidad;
       next();
     } catch (err) {
-      console.error('Error autenticando socket:', err);
+      log.error('Error autenticando socket', err);
       next(new Error('NO_AUTORIZADO'));
     }
   });
@@ -184,7 +185,7 @@ export function setupSockets(io: Server) {
         if (permitido()) handler(...args);
       });
     };
-    console.log(`🔌 Cliente conectado: ${socket.id} (usuario ${identidad.userId || 'invitado'})`);
+    log.info('socket conectado', { socketId: socket.id, usuarioId: identidad.userId || null });
 
     on('join_space', 'join_space', async (data: any) => {
       const numUserId = identidad.userId;
@@ -211,7 +212,7 @@ export function setupSockets(io: Server) {
       // Limpiar registros o conexiones previas del mismo usuario (Enforzar 1 Sola Sesión Activa)
       activeUsers.forEach((user, sid) => {
         if (sid !== socket.id && (numUserId > 0 && user.userId === numUserId)) {
-          console.log(`⚠️ Cerrando sesión previa de usuario ${numUserId} en socket ${sid}`);
+          log.info('sesión previa cerrada', { usuarioId: numUserId, socketId: sid });
           io.to(sid).emit('session_terminated', {
             reason: 'Se ha iniciado sesión desde otro dispositivo con esta cuenta.'
           });
@@ -241,7 +242,7 @@ export function setupSockets(io: Server) {
       if (prevUser && prevUser.espacioId !== nuevoEspacioId) {
         socket.leave(String(prevUser.espacioId));
         dejarAula(prevUser.espacioId, socket.id);
-        await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
+        await cerrarTrazosDe(socket.id).catch((err) => log.error('Error al cerrar trazos', err));
         socket.to(String(prevUser.espacioId)).emit('user_left', { socketId: socket.id, userId: prevUser.userId });
         // "Salir al Campus" reutiliza el socket: sin esto la asistencia seguía
         // contando minutos hasta el fin de la clase (DATA-01)
@@ -282,7 +283,7 @@ export function setupSockets(io: Server) {
       socket.emit('join_aceptado', { espacioId: nuevoEspacioId, espacioTipo, roles });
       historialDe(nuevoEspacioId)
         .then((mensajes) => socket.emit('chat_historial', { espacioId: nuevoEspacioId, mensajes }))
-        .catch((err) => console.error('Error al leer el historial de chat:', err));
+        .catch((err) => log.error('Error al leer el historial de chat', err));
       socket.emit('space_users', usersInSpace);
       socket.emit('current_users', usersInSpace);
       if (espacioTipo === 'aula') {
@@ -301,7 +302,7 @@ export function setupSockets(io: Server) {
         user: userState
       });
 
-      console.log(`👤 ${nombreVisible} (${numUserId || 'invitado'}) se unió al espacio ${espacioId}`);
+      log.info('unido al espacio', { socketId: socket.id, usuarioId: numUserId || null, espacioId: nuevoEspacioId, tipo: espacioTipo });
 
       if (numUserId > 0) {
         await registrarAsistencia(numUserId, nuevoEspacioId);
@@ -359,7 +360,7 @@ export function setupSockets(io: Server) {
       if (!reenviar) return;
       io.to(String(user.espacioId)).emit('pizarra_trazo', { ...reenviar, autorSocketId: socket.id });
       if (reenviar.fin) {
-        await cerrarTrazo(reenviar.id).catch((err) => console.error('Error al guardar trazo:', err));
+        await cerrarTrazo(reenviar.id).catch((err) => log.error('Error al guardar trazo', err));
       }
     });
 
@@ -372,7 +373,7 @@ export function setupSockets(io: Server) {
           io.to(String(user.espacioId)).emit('pizarra_borrado', { ids: [String(data?.id)] });
         }
       } catch (err) {
-        console.error('Error al deshacer trazo:', err);
+        log.error('Error al deshacer trazo', err);
       }
     });
 
@@ -383,7 +384,7 @@ export function setupSockets(io: Server) {
         await borrarTodo(user.espacioId);
         io.to(String(user.espacioId)).emit('board_cleared');
       } catch (err) {
-        console.error('Error al borrar la pizarra:', err);
+        log.error('Error al borrar la pizarra', err);
       }
     });
 
@@ -395,7 +396,7 @@ export function setupSockets(io: Server) {
       try {
         socket.emit('pizarra_state', { trazos: await trazosVisibles(user.espacioId) });
       } catch (err) {
-        console.error('Error al leer la pizarra:', err);
+        log.error('Error al leer la pizarra', err);
       }
     });
 
@@ -426,7 +427,7 @@ export function setupSockets(io: Server) {
         );
         socket.emit('pizarra_saved_status', { success: true });
       } catch (err) {
-        console.error('Error al guardar pizarra:', err);
+        log.error('Error al guardar pizarra', err);
         socket.emit('pizarra_saved_status', { success: false, error: 'DB_ERROR' });
       }
     });
@@ -439,7 +440,7 @@ export function setupSockets(io: Server) {
       if (identidad.esInvitado) return;
       // Quien solicita es el usuario del token, no el que diga el payload.
       const usuario = { id: identidad.userId, nombre: identidad.nombre };
-      console.log(`📩 Solicitud de acceso recibida de ${usuario.nombre} para el espacio ${data.espacioId}`);
+      log.info('solicitud de acceso al aula', { usuarioId: identidad.userId || null, espacioId: data.espacioId });
       // Emitir a todos los docentes EXCEPTO al propio remitente
       socket.broadcast.emit('nueva_solicitud_acceso', {
         estudianteSocketId: socket.id,
@@ -603,7 +604,7 @@ export function setupSockets(io: Server) {
       aprobado: boolean;
     }) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
-      console.log(`✉️ Docente respondió a solicitud de ${data.estudianteSocketId}: ${data.aprobado ? 'APROBADO' : 'RECHAZADO'}`);
+      log.info('solicitud de acceso respondida', { socketId: data.estudianteSocketId, aprobado: !!data.aprobado });
       io.to(data.estudianteSocketId).emit('respuesta_solicitud_acceso', {
         espacioId: data.espacioId,
         aprobado: data.aprobado,
@@ -612,13 +613,13 @@ export function setupSockets(io: Server) {
 
     on('clase_iniciada', 'clase_iniciada', (sesion: any) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
-      console.log('🎓 Clase iniciada por el docente:', sesion);
+      log.info('clase iniciada', { sesionId: sesion?.id, espacioId: sesion?.espacio_id });
       io.emit('clase_iniciada', sesion);
     });
 
     on('clase_finalizada', 'clase_finalizada', (data: { espacioId: string }) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
-      console.log('🛑 Clase finalizada en espacio:', data.espacioId);
+      log.info('clase finalizada', { espacioId: data.espacioId });
       io.emit('clase_finalizada', data);
     });
 
@@ -638,7 +639,7 @@ export function setupSockets(io: Server) {
       // id: el cliente lo usa para no duplicarlo al recibir el historial.
       // Si la base falla, igual se difunde: el chat en vivo no depende de ella.
       const message: MensajeChat = await guardarMensaje(user.espacioId, identidad.userId || null, identidad.nombre, saneado.texto).catch((err) => {
-        console.error('Error al guardar mensaje de chat:', err);
+        log.error('Error al guardar mensaje de chat', err);
         return { sender: identidad.nombre, text: saneado.texto, enviadoEn: new Date().toISOString() };
       });
       io.to(String(user.espacioId)).emit('chat_message', message);
@@ -671,13 +672,13 @@ export function setupSockets(io: Server) {
     socket.on('disconnect', async () => {
       const user = activeUsers.get(socket.id);
       if (user) {
-        console.log(`🔌 Cliente desconectado: ${user.nombreVisible} (${socket.id})`);
+        log.info('socket desconectado', { socketId: socket.id, usuarioId: user.userId || null, espacioId: user.espacioId });
         socket.to(String(user.espacioId)).emit('user_left', { socketId: socket.id, userId: user.userId });
         activeUsers.delete(socket.id);
         conPosicionReal.delete(socket.id);
         dejarAula(user.espacioId, socket.id);
         // Un trazo a medias se guarda con lo que alcanzó a dibujar
-        await cerrarTrazosDe(socket.id).catch((err) => console.error('Error al cerrar trazos:', err));
+        await cerrarTrazosDe(socket.id).catch((err) => log.error('Error al cerrar trazos', err));
         await registrarSalida(user.userId, user.espacioId);
         if (user.espacioTipo === 'campus') {
           await actualizarUltimaPosicion(user.userId, user.position, user.rotation);

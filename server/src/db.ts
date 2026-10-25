@@ -1,5 +1,6 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { log } from './registro.js';
 
 dotenv.config();
 
@@ -13,6 +14,12 @@ const poolConfig = {
 };
 
 export const pool = new Pool(poolConfig);
+
+// Si la base corta una conexión inactiva (reinicio, corte de red) el pool
+// emite 'error'; sin este listener eso tumba el proceso entero, y con él el
+// chat y la voz. Así se registra, el pool abre otra conexión cuando haga
+// falta y /api/salud/lista avisa mientras la base no conteste.
+pool.on('error', (err) => log.error('Se perdió una conexión inactiva con PostgreSQL', err));
 
 // Ejecuta fn dentro de una transacción con una conexión propia y la devuelve
 // al pool al terminar. Todo lo que no sea parte de la transacción (bitácora,
@@ -35,10 +42,10 @@ export async function enTransaccion<T>(fn: (client: pg.PoolClient) => Promise<T>
 
 pool.connect((err, client, release) => {
   if (err) {
-    console.error('❌ No se pudo conectar a PostgreSQL:', err.message);
+    log.error('❌ No se pudo conectar a PostgreSQL', err);
     process.exit(1);
   } else {
-    console.log('✅ Conexión exitosa a PostgreSQL');
+    log.info('Conexión exitosa a PostgreSQL');
     release();
   }
 });

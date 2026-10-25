@@ -7,6 +7,7 @@ import { authenticateJWT, requiereAdmin } from './middleware/auth.js';
 import { bitacora } from './helpers.js';
 import { aCsv, nombreArchivo } from './csv.js';
 import { fechaHora } from './asistencia.js';
+import { log } from './registro.js';
 
 const ZONA_HORARIA = process.env.ZONA_HORARIA || 'America/La_Paz';
 const POR_PAGINA = 100;
@@ -100,7 +101,7 @@ export function registrarRutasBitacora(app: Express) {
 
       res.json({ filas, siguiente: hayMas ? filas[filas.length - 1].id : null });
     } catch (err) {
-      console.error('Error al obtener bitacora:', err);
+      log.error('Error al obtener bitacora', err);
       res.status(500).json({ error: 'Error de servidor' });
     }
   });
@@ -113,7 +114,7 @@ export function registrarRutasBitacora(app: Express) {
       );
       res.json(rows);
     } catch (err) {
-      console.error('Error al listar eventos de bitacora:', err);
+      log.error('Error al listar eventos de bitacora', err);
       res.status(500).json({ error: 'Error de servidor' });
     }
   });
