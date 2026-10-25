@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "carga:voz": "node pruebas/carga-voz/spike.mjs",
     "carga:trafico": "node pruebas/carga-trafico/medir-trafico.mjs",
+    "carga:render": "node pruebas/carga-render/medir-render.mjs",
     "test:unidad": "node --import ./pruebas/unidad/resolver-ts.mjs --test 'pruebas/unidad/*.test.mjs'"
   },
   "dependencies": {

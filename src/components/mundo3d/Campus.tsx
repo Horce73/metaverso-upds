@@ -2,7 +2,7 @@ import React from 'react';
 import * as THREE from 'three';
 import { Edificio } from './Edificio.js';
 import {
-  Pupitre,
+  PupitresInstanciados,
   Pizarra,
   EscritorioProfesor,
   Sofa,
@@ -12,7 +12,8 @@ import {
   SillaOficina,
   Estanteria,
 } from './Mobiliario.js';
-import { crearTexturaTexto } from './texto3d.js';
+import { Letrero } from './Letrero.js';
+import { useCalidad } from './useCalidad.js';
 
 // Genera una grilla de pupitres (3 columnas x 3 filas) para las aulas
 function generarPupitres(): [number, number, number][] {
@@ -216,13 +217,14 @@ export const Campus: React.FC<CampusProps> = ({ aulas = [], onInteractuarAula })
         <ArbolEstilizado position={[8, 0.04, 5]} />
 
         {/* Letrero de Bienvenida al Campus */}
-        <sprite position={[0, 4.2, -4]} scale={[9, 1.8, 1]}>
-          <spriteMaterial
-            attach="material"
-            map={crearTexturaTexto('🏫 Campus UPDS', { ancho: 1000, alto: 180, fuente: 'bold 64px sans-serif' })}
-            transparent
-          />
-        </sprite>
+        <Letrero
+          texto="🏫 Campus UPDS"
+          position={[0, 4.2, -4]}
+          scale={[9, 1.8, 1]}
+          ancho={1000}
+          alto={180}
+          fuente="bold 64px sans-serif"
+        />
       </group>
 
       {/* 🌉 2. PUENTE CONECTOR ALINEADO ENTRE ISLAS (z: -1 a -12) */}
@@ -292,9 +294,7 @@ export const Campus: React.FC<CampusProps> = ({ aulas = [], onInteractuarAula })
             >
               <Pizarra position={[0, 1.3, -3.8]} />
               <EscritorioProfesor position={[0, 0, -2.8]} />
-              {POSICIONES_PUPITRES.map((pos, j) => (
-                <Pupitre key={j} position={pos} />
-              ))}
+              <PupitresInstanciados posiciones={POSICIONES_PUPITRES} />
             </Edificio>
           );
         })}
@@ -390,6 +390,7 @@ function PuenteConector() {
 
 // Componente de Farola con luz cálida
 function Farola({ position }: { position: [number, number, number] }) {
+  const { lucesPuntuales } = useCalidad();
   return (
     <group position={position}>
       <mesh castShadow>
@@ -400,13 +401,14 @@ function Farola({ position }: { position: [number, number, number] }) {
         <sphereGeometry args={[0.12, 12, 12]} />
         <meshStandardMaterial color="#fef08a" emissive="#fef08a" emissiveIntensity={0.8} />
       </mesh>
-      <pointLight position={[0, 0.65, 0]} intensity={0.6} distance={6} color="#fef08a" />
+      {lucesPuntuales && <pointLight position={[0, 0.65, 0]} intensity={0.6} distance={6} color="#fef08a" />}
     </group>
   );
 }
 
 // Componente de Fuente de Agua (Estructura Monumental con Agua Elevada 3D)
 function FuenteAgua({ position }: { position: [number, number, number] }) {
+  const { lucesPuntuales } = useCalidad();
   return (
     <group position={position}>
       {/* 1. Muro Hueco Exterior de Piedra (Pared de Contención del Estanque) */}
@@ -456,7 +458,7 @@ function FuenteAgua({ position }: { position: [number, number, number] }) {
         <sphereGeometry args={[0.35, 32, 32]} />
         <meshStandardMaterial color="#e0f2fe" emissive="#38bdf8" emissiveIntensity={0.95} transparent opacity={0.85} />
       </mesh>
-      <pointLight position={[0, 1.9, 0]} intensity={0.8} distance={6} color="#38bdf8" />
+      {lucesPuntuales && <pointLight position={[0, 1.9, 0]} intensity={0.8} distance={6} color="#38bdf8" />}
     </group>
   );
 }
