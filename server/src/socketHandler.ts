@@ -1,7 +1,9 @@
 import { Server, Socket } from 'socket.io';
 import { pool } from './db.js';
-import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion } from './helpers.js';
+import { registrarAsistencia, registrarSalida, actualizarUltimaPosicion, bitacora } from './helpers.js';
 import { guardarMensaje, historialDe, type MensajeChat } from './chatPersistencia.js';
+import { validarEncuesta, MAX_OPCIONES } from './encuestas.js';
+import { crearEncuesta, votar, cerrarEncuesta, encuestaVigente } from './encuestasServidor.js';
 import { verificarToken } from './middleware/auth.js';
 import { CUPOS_SOCKET, limitador } from './limites.js';
 import { sanearTextoChat } from './chat.js';
@@ -147,6 +149,23 @@ export function setupSockets(io: Server) {
 
   // Cola de preguntas de un aula (AULA-03), para todos los que están en ella
   const emitirPreguntas = (espacioId: number) => io.to(String(espacioId)).emit('estado_preguntas', estadoPublico(espacioId));
+
+  // Encuesta del aula (AULA-05) a cada uno de los que están: quien la dirige
+  // (docente o administrador) ve el conteo en vivo; el resto, sólo cuántos
+  // votaron hasta que se cierra, y su propio voto.
+  const emitirEncuesta = async (espacioId: number, soloA?: string) => {
+    const vigente = await encuestaVigente(espacioId);
+    activeUsers.forEach((u, sid) => {
+      if (Number(u.espacioId) !== espacioId || (soloA && sid !== soloA)) return;
+      if (!vigente) return void io.to(sid).emit('encuesta_estado', null);
+      const { estado, votosPorUsuario } = vigente;
+      io.to(sid).emit('encuesta_estado', {
+        ...estado,
+        votos: estado.abierta && !esDocenteOAdmin(u.roles) ? null : estado.votos,
+        miVoto: votosPorUsuario.get(u.userId) ?? null,
+      });
+    });
+  };
   const dejarAula = (espacioId: number, socketId: string) => {
     if (salirDelAula(espacioId, socketId)) emitirPreguntas(espacioId);
     // Si estaba compartiendo pantalla (AULA-01), se apaga para todos
@@ -271,6 +290,7 @@ export function setupSockets(io: Server) {
         const pantalla = pantallaDe(nuevoEspacioId);
         socket.emit('pantalla_estado', estadoPantalla(nuevoEspacioId));
         socket.emit('modo_grupos', { activo: aulasEnGrupos.has(nuevoEspacioId) });
+        emitirEncuesta(nuevoEspacioId, socket.id).catch((err) => console.error('Error al enviar la encuesta:', err));
         if (pantalla?.ultimoCuadro) socket.emit('pantalla_cuadro', pantalla.ultimoCuadro);
       }
 
@@ -480,6 +500,44 @@ export function setupSockets(io: Server) {
     });
 
     // Trabajo en grupos (AULA-07): sólo docente o admin, sólo en un aula
+    on('encuesta_crear', 'encuestas', async (data: { pregunta?: unknown; opciones?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      const valida = validarEncuesta(data ?? {});
+      if (!valida.ok) return void socket.emit('encuesta_rechazada', { motivo: valida.motivo });
+      try {
+        await crearEncuesta(user.espacioId, identidad.userId || null, valida.pregunta, valida.opciones);
+        await bitacora(identidad.userId || null, 'crear_encuesta', valida.pregunta.slice(0, 200));
+        await emitirEncuesta(user.espacioId);
+      } catch (err) {
+        console.error('Error al crear encuesta:', err);
+        socket.emit('encuesta_rechazada', { motivo: 'No se pudo crear la encuesta.' });
+      }
+    });
+
+    on('encuesta_votar', 'encuestas', async (data: { encuestaId?: unknown; opcion?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !identidad.userId) return;
+      const encuestaId = Number(data?.encuestaId);
+      const opcion = Number(data?.opcion);
+      if (!Number.isInteger(encuestaId) || !Number.isInteger(opcion) || opcion < 0 || opcion >= MAX_OPCIONES) return;
+      try {
+        if (await votar(user.espacioId, encuestaId, identidad.userId, opcion)) await emitirEncuesta(user.espacioId);
+      } catch (err) {
+        console.error('Error al votar:', err);
+      }
+    });
+
+    on('encuesta_cerrar', 'encuestas', async () => {
+      const user = activeUsers.get(socket.id);
+      if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;
+      try {
+        if (await cerrarEncuesta(user.espacioId)) await emitirEncuesta(user.espacioId);
+      } catch (err) {
+        console.error('Error al cerrar encuesta:', err);
+      }
+    });
+
     on('modo_grupos', 'preguntas', (data: { activo?: unknown }) => {
       const user = activeUsers.get(socket.id);
       if (!user || user.espacioTipo !== 'aula' || !esDocenteOAdmin(identidad.roles)) return;

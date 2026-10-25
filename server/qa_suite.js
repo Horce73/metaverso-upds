@@ -1335,6 +1335,79 @@ async function runTests() {
 
   await pool.query('DELETE FROM mapa_calor WHERE espacio_id = $1 AND cx = 400', [campusId]);
 
+  // ---------------------------------------------------------------------------
+  // Encuestas en vivo (AULA-05)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== ENCUESTAS ===');
+
+  const sDocEnc = await conectar(docente.token);
+  const sAnaEnc = await conectar(ana.token);
+  await entrar(sDocEnc, aulaId);
+  await entrar(sAnaEnc, aulaId);
+  const conEncuesta = (sock, filtro) => esperarEvento(sock, 'encuesta_estado', 3000, d => d && filtro(d));
+  const preguntaQa = `¿QA ${Math.random().toString(36).slice(2, 6)}?`;
+  let encuestaId = null;
+
+  await caso('Un estudiante no puede crear una encuesta', async () => {
+    const llega = esperarEvento(sAnaEnc, 'encuesta_estado', 800, d => d?.pregunta === 'trampa');
+    sAnaEnc.emit('encuesta_crear', { pregunta: 'trampa', opciones: ['a', 'b'] });
+    return (await llega) === null;
+  });
+
+  await caso('Una encuesta inválida se rechaza con motivo', async () => {
+    const rechazo = esperarEvento(sDocEnc, 'encuesta_rechazada', 2000);
+    sDocEnc.emit('encuesta_crear', { pregunta: 'p', opciones: ['sola'] });
+    return Boolean((await rechazo)?.motivo);
+  });
+
+  await caso('El docente crea: el alumno la recibe sin conteo, el docente con conteo', async () => {
+    const alumno = conEncuesta(sAnaEnc, d => d.pregunta === preguntaQa);
+    const doc = conEncuesta(sDocEnc, d => d.pregunta === preguntaQa);
+    sDocEnc.emit('encuesta_crear', { pregunta: preguntaQa, opciones: ['Sí', 'No', 'Más o menos'] });
+    const [a, d] = await Promise.all([alumno, doc]);
+    encuestaId = d?.id;
+    return a?.abierta && a.votos === null && a.miVoto === null && JSON.stringify(d?.votos) === '[0,0,0]';
+  });
+
+  await caso('El alumno vota y puede cambiar su voto: cuenta una sola vez', async () => {
+    sAnaEnc.emit('encuesta_votar', { encuestaId, opcion: 0 });
+    await conEncuesta(sDocEnc, d => d.total === 1);
+    const doc = conEncuesta(sDocEnc, d => d.votos?.[2] === 1);
+    const propio = conEncuesta(sAnaEnc, d => d.miVoto === 2);
+    sAnaEnc.emit('encuesta_votar', { encuestaId, opcion: 2 });
+    const [d, a] = await Promise.all([doc, propio]);
+    return d?.total === 1 && JSON.stringify(d.votos) === '[0,0,1]' && a?.votos === null;
+  });
+
+  await caso('Un voto a una opción que no existe se ignora', async () => {
+    sAnaEnc.emit('encuesta_votar', { encuestaId, opcion: 7 });
+    await new Promise(r => setTimeout(r, 400));
+    const { rows } = await pool.query('SELECT opcion FROM encuesta_votos WHERE encuesta_id = $1 AND usuario_id = $2', [encuestaId, ana.id]);
+    return rows.length === 1 && rows[0].opcion === 2;
+  });
+
+  await caso('Al cerrar, el alumno ve el resultado', async () => {
+    const alumno = conEncuesta(sAnaEnc, d => d.id === encuestaId && !d.abierta);
+    sDocEnc.emit('encuesta_cerrar');
+    const a = await alumno;
+    return JSON.stringify(a?.votos) === '[0,0,1]' && a.miVoto === 2;
+  });
+
+  await caso('Quien entra después recibe la encuesta de la clase con el resultado', async () => {
+    const sMariaEnc = await conectar(maria.token);
+    try {
+      const llega = conEncuesta(sMariaEnc, d => d.id === encuestaId);
+      await entrar(sMariaEnc, aulaId);
+      const m = await llega;
+      return m && !m.abierta && JSON.stringify(m.votos) === '[0,0,1]' && m.miVoto === null;
+    } finally {
+      sMariaEnc.disconnect();
+    }
+  });
+
+  sDocEnc.disconnect();
+  sAnaEnc.disconnect();
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');
