@@ -17,6 +17,7 @@ import { aplicarMigraciones } from './migraciones.js';
 import { registrarRutasMateriales } from './materiales.js';
 import { registrarRutasAsistencia } from './reporteAsistencia.js';
 import { registrarRutasBitacora } from './bitacoraAdmin.js';
+import { registrarRutasSolicitudesDocente } from './solicitudesDocente.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 import { log } from './registro.js';
 import { registrarRutasSalud } from './salud.js';
@@ -116,6 +117,7 @@ setupSockets(io);
 registrarRutasMateriales(app, io);
 registrarRutasAsistencia(app);
 registrarRutasBitacora(app);
+registrarRutasSolicitudesDocente(app);
 registrarRutasMapaCalor(app);
 registrarRutasGrabacion(app);
 
@@ -187,11 +189,16 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
-  const ROLES_AUTORREGISTRABLES = ['estudiante', 'docente'];
-  const userRol = rol || 'estudiante';
-  if (!ROLES_AUTORREGISTRABLES.includes(userRol)) {
-    return res.status(400).json({ error: `Rol inválido para autorregistro. Valores permitidos: ${ROLES_AUTORREGISTRABLES.join(', ')}` });
+  // El registro público sólo crea estudiantes (SEC-07). Quien pide ser
+  // docente queda como estudiante con una solicitud que resuelve un
+  // administrador (solicitudesDocente.ts).
+  const ROLES_SOLICITABLES = ['estudiante', 'docente'];
+  const rolPedido = rol || 'estudiante';
+  if (!ROLES_SOLICITABLES.includes(rolPedido)) {
+    return res.status(400).json({ error: `Rol inválido para autorregistro. Valores permitidos: ${ROLES_SOLICITABLES.join(', ')}` });
   }
+  const userRol = 'estudiante';
+  const pideDocente = rolPedido === 'docente';
 
   try {
     const passwordHash = await bcrypt.hash(password, 10);
@@ -211,11 +218,9 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
         [newUser.id, userRol]
       );
 
-      // Crear perfil segun rol
-      if (userRol === 'estudiante') {
-        await client.query('INSERT INTO perfiles_estudiante (usuario_id) VALUES ($1)', [newUser.id]);
-      } else if (userRol === 'docente') {
-        await client.query('INSERT INTO perfiles_docente (usuario_id) VALUES ($1)', [newUser.id]);
+      await client.query('INSERT INTO perfiles_estudiante (usuario_id) VALUES ($1)', [newUser.id]);
+      if (pideDocente) {
+        await client.query('INSERT INTO solicitudes_docente (usuario_id) VALUES ($1)', [newUser.id]);
       }
 
       await client.query('INSERT INTO datos_personales (usuario_id) VALUES ($1)', [newUser.id]);
@@ -239,13 +244,11 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
       }
 
       // Inscripcion automatica en asignaturas activas (piloto ISW)
-      if (userRol === 'estudiante') {
-        await client.query(
-          `INSERT INTO inscripciones (usuario_id, asignatura_id)
-           SELECT $1, id FROM asignaturas WHERE activa = TRUE`,
-          [newUser.id]
-        );
-      }
+      await client.query(
+        `INSERT INTO inscripciones (usuario_id, asignatura_id)
+         SELECT $1, id FROM asignaturas WHERE activa = TRUE`,
+        [newUser.id]
+      );
 
       const rolRes = await client.query(
         `SELECT r.nombre FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id WHERE ur.usuario_id = $1`,
@@ -255,6 +258,7 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
     });
 
     await bitacora(newUser.id, 'registro', email, req.ip);
+    if (pideDocente) await bitacora(newUser.id, 'solicitar_docente', email, req.ip);
 
     res.status(201).json({
       message: 'Usuario registrado exitosamente',
@@ -265,7 +269,8 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
         apellido: newUser.apellido,
         rol: userRol,
         roles
-      }
+      },
+      solicitud_docente: pideDocente ? 'pendiente' : null
     });
   } catch (err: any) {
     log.error('Error al registrar', err);

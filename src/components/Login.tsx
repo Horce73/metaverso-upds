@@ -138,6 +138,12 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
         throw new Error(data.error || 'Error al registrar usuario');
       }
 
+      // Docente: la cuenta se crea como estudiante hasta que un administrador
+      // apruebe la solicitud (SEC-07)
+      if (data.solicitud_docente === 'pendiente') {
+        alert('Tu cuenta se creó como estudiante. Un administrador revisará tu solicitud de rol docente; cuando la apruebe, vuelve a iniciar sesión.');
+      }
+
       // Tras registro exitoso, iniciar sesión automáticamente
       const loginRes = await fetch('/api/auth/login', {
         method: 'POST',
@@ -353,7 +359,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                       onChange={(e) => setRol(e.target.value as any)}
                     >
                       <option value="estudiante">👨‍🎓 Estudiante</option>
-                      <option value="docente">👨‍🏫 Docente</option>
+                      <option value="docente">👨‍🏫 Docente (lo aprueba un administrador)</option>
                     </select>
                   </div>
                 </div>
