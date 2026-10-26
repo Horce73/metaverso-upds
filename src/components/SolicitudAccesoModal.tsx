@@ -24,6 +24,7 @@ interface SolicitudAccesoModalProps {
     rol?: string;
   };
   socket: Socket | null;
+  token: string;
   onIngresarDirecto: (espacio: any) => void;
   onClose: () => void;
 }
@@ -32,6 +33,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
   espacio,
   usuario,
   socket,
+  token,
   onIngresarDirecto,
   onClose,
 }) => {
@@ -44,7 +46,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
   const [statusMsg, setStatusMsg] = useState('');
 
   const tieneClaseEnCurso = !!espacio.sesion_activa && espacio.sesion_activa.estado === 'en_curso';
-  const codigoRequerido = espacio.asignatura_codigo || `AULA-${espacio.id}`;
+  const [validando, setValidando] = useState(false);
 
   // Escuchar la respuesta del docente en tiempo real a través de Sockets
   useEffect(() => {
@@ -69,18 +71,28 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
     };
   }, [socket, espacio, onIngresarDirecto]);
 
-  // Ingresar usando el código de acceso del curso
-  const handleIngresarPorCodigo = (e: React.FormEvent) => {
+  // Ingresar usando el código de acceso del curso. Lo valida el servidor
+  // (SEC-08), que con un código correcto da el pase para entrar al aula.
+  const handleIngresarPorCodigo = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-
-    const inputLimpio = codigoInput.trim().toUpperCase();
-    const codigoEsperado = (espacio.asignatura_codigo || `SIS-${espacio.id}`).toUpperCase();
-
-    if (inputLimpio === codigoEsperado || inputLimpio === `AULA-${espacio.id}` || inputLimpio === '123456') {
-      onIngresarDirecto(espacio);
-    } else {
-      setErrorMsg(`❌ Código incorrecto. Verifica el código del curso (Ej. ${codigoEsperado}).`);
+    setValidando(true);
+    try {
+      const res = await fetch(`/api/espacios/${espacio.id}/acceso`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ codigo: codigoInput }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        onIngresarDirecto(espacio);
+      } else {
+        setErrorMsg(`❌ ${data.error || 'No se pudo validar el código.'}`);
+      }
+    } catch {
+      setErrorMsg('⚠️ Sin conexión con el servidor. Intenta de nuevo.');
+    } finally {
+      setValidando(false);
     }
   };
 
@@ -210,14 +222,14 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
                   data-foco-inicial
                   type="text"
                   className="form-input"
-                  placeholder={`Ej: ${codigoRequerido}`}
+                  placeholder="Ej: SIS-301"
                   value={codigoInput}
                   onChange={(e) => setCodigoInput(e.target.value)}
-                  disabled={solicitando}
+                  disabled={solicitando || validando}
                   style={{ textTransform: 'uppercase' }}
                 />
-                <button type="submit" className="btn-primary" disabled={solicitando || !codigoInput.trim()} style={{ whiteSpace: 'nowrap' }}>
-                  Entrar
+                <button type="submit" className="btn-primary" disabled={solicitando || validando || !codigoInput.trim()} style={{ whiteSpace: 'nowrap' }}>
+                  {validando ? 'Validando…' : 'Entrar'}
                 </button>
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
@@ -242,14 +254,9 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
                   {solicitando ? '⏳ Esperando Aprobación...' : '📩 Solicitar Acceso en Vivo al Docente'}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => onIngresarDirecto(espacio)}
-                  style={{ padding: '12px' }}
-                >
-                  🚪 Ingresar al Aula Libre
-                </button>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  No hay una clase en curso: para pedirle acceso al docente tiene que haber empezado la clase. Con el código del curso puedes entrar igual.
+                </p>
               )}
 
               <button type="button" className="btn-secondary" onClick={onClose} disabled={solicitando}>

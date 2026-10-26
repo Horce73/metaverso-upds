@@ -149,6 +149,7 @@ function App() {
   // 3D-06: la guia de teclas (WASD/E) no aplica en pantalla tactil, donde el
   // movimiento es el joystick virtual que renderiza MetaversoCanvas.
   const esTactil = useEsTactil();
+  const volverAlCampusRef = useRef<() => void>(() => {});
   // 3D-06: en pantallas <=768px el CSS vuelve la sidebar de chat/usuarios un
   // panel de pantalla completa (@media max-width:768px en .sidebar-panel) y
   // no tenia forma de cerrarla — en celular tapaba el mundo 3D por completo,
@@ -388,8 +389,11 @@ function App() {
       }
     };
 
-    const handleJoinRechazado = (data: { motivo: string }) => {
+    const handleJoinRechazado = (data: { motivo: string; sinAcceso?: boolean }) => {
       alert(`❌ ${data.motivo}`);
+      // Sin pase para el aula (SEC-08), p. ej. al recargar después de que se
+      // reinició el servidor: de vuelta al campus en vez de un aula vacía
+      if (data.sinAcceso) volverAlCampusRef.current();
     };
 
     const handleNuevaSolicitud = (solicitud: any) => {
@@ -798,6 +802,9 @@ function App() {
     if (!campus) return;
     handleJoinSpace(campus, ultimaPosicionCampusRef.current ?? avatar?.ultima_posicion ?? undefined);
   };
+  // Para los handlers de socket, que se registran una vez y verían una
+  // versión vieja de la lista de espacios
+  volverAlCampusRef.current = handleVolverAlCampus;
 
   // Cerrar sesión
   const handleLogout = () => {
@@ -1328,7 +1335,7 @@ function App() {
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Conectados: {Object.keys(remoteUsers).length + 1} usuarios
               </p>
-              {espacioActivo.tipo === 'aula' && (
+              {espacioActivo.tipo === 'aula' && espacioActivo.asignatura_codigo && (
                 <span
                   style={{
                     background: 'rgba(59, 130, 246, 0.15)',
@@ -1341,7 +1348,7 @@ function App() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  🔑 Código: {espacioActivo.asignatura_codigo || `SIS-${espacioActivo.id}`}
+                  🔑 Código: {espacioActivo.asignatura_codigo}
                 </span>
               )}
             </div>
@@ -1450,6 +1457,7 @@ function App() {
             espacio={solicitudAulaModal}
             usuario={user}
             socket={socket}
+            token={token}
             onIngresarDirecto={(espacio) => {
               setSolicitudAulaModal(null);
               handleJoinSpace(espacio);

@@ -17,6 +17,7 @@ import { aplicarMigraciones } from './migraciones.js';
 import { registrarRutasMateriales } from './materiales.js';
 import { registrarRutasAsistencia } from './reporteAsistencia.js';
 import { registrarRutasBitacora } from './bitacoraAdmin.js';
+import { registrarRutasAccesoAula } from './accesoAulaServidor.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 import { log } from './registro.js';
 import { registrarRutasSalud } from './salud.js';
@@ -116,6 +117,7 @@ setupSockets(io);
 registrarRutasMateriales(app, io);
 registrarRutasAsistencia(app);
 registrarRutasBitacora(app);
+registrarRutasAccesoAula(app);
 registrarRutasMapaCalor(app);
 registrarRutasGrabacion(app);
 
@@ -544,7 +546,9 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       escena_url: e.escena_url,
       capacidad_max: e.capacidad_max,
       asignatura: e.asignatura,
-      asignatura_codigo: e.asignatura_codigo,
+      // El código del curso es la llave del aula (SEC-08): sólo lo ven quienes
+      // lo reparten. El estudiante lo recibe de su docente.
+      asignatura_codigo: esAdmin || roles.includes('docente') ? e.asignatura_codigo : null,
       // Docente dueño de la asignatura del aula (independiente de si hay clase en curso),
       // usado por el Campus 3D para agrupar las aulas de un mismo docente.
       docente_id: e.docente_id ?? null,
