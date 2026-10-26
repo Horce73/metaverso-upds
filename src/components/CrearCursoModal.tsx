@@ -74,7 +74,7 @@ export const CrearCursoModal: React.FC<CrearCursoModalProps> = ({
 
   return (
     <div ref={dialogoRef} className="avatar-customizer-3d-wrapper" style={{ zIndex: 2500 }} role="dialog" aria-modal="true" aria-labelledby="titulo-crear-curso">
-      <div className="customizer-card glass-panel" style={{ maxWidth: '500px', width: '92vw', padding: '26px' }}>
+      <div className="customizer-card glass-panel" style={{ maxWidth: '500px', width: '92vw', padding: 'clamp(14px, 4vmin, 26px)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <div>
             <h2 id="titulo-crear-curso" className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>
