@@ -25,6 +25,7 @@ import { ColaPreguntas } from './components/ColaPreguntas.js';
 import { SIN_PREGUNTAS, type EstadoPreguntas } from './components/preguntas.js';
 import { iniciarCaptura, type CapturaPantalla } from './components/compartirPantalla.js';
 import { useEsTactil } from './components/mundo3d/useEsTactil.js';
+import { usePantallaCompleta } from './components/usePantallaCompleta.js';
 
 // 3D-01: estos cuatro arrastran three.js (MetaversoCanvas, CustomAvatar) o son
 // paneles que la mayoria de sesiones nunca abre (AdminPanel, TeacherPanel).
@@ -149,6 +150,21 @@ function App() {
   // 3D-06: la guia de teclas (WASD/E) no aplica en pantalla tactil, donde el
   // movimiento es el joystick virtual que renderiza MetaversoCanvas.
   const esTactil = useEsTactil();
+  const pantallaCompleta = usePantallaCompleta();
+
+  // El alto de la barra superior cambia con el nombre del aula, los botones
+  // del docente y el ancho de pantalla: se publica para que en el celular la
+  // barra de controles se ubique justo debajo (ver index.css).
+  const observadorBarraRef = useRef<ResizeObserver | null>(null);
+  const medirBarraSuperior = useCallback((el: HTMLDivElement | null) => {
+    observadorBarraRef.current?.disconnect();
+    if (!el) return;
+    const medir = () =>
+      document.documentElement.style.setProperty('--fondo-barra-superior', `${Math.round(el.getBoundingClientRect().bottom)}px`);
+    observadorBarraRef.current = new ResizeObserver(medir);
+    observadorBarraRef.current.observe(el);
+    medir();
+  }, []);
   // 3D-06: en pantallas <=768px el CSS vuelve la sidebar de chat/usuarios un
   // panel de pantalla completa (@media max-width:768px en .sidebar-panel) y
   // no tenia forma de cerrarla — en celular tapaba el mundo 3D por completo,
@@ -1206,6 +1222,17 @@ function App() {
               >
                 {theme === 'light' ? '🌙 Oscuro' : '☀️ Claro'}
               </button>
+              {pantallaCompleta.disponible && (
+                <button
+                  className="hamburger-item"
+                  onClick={() => {
+                    setMenuAbierto(false);
+                    pantallaCompleta.alternar();
+                  }}
+                >
+                  {pantallaCompleta.activa ? '🗗 Salir de pantalla completa' : '⛶ Pantalla completa'}
+                </button>
+              )}
               {isAdmin && (
                 <button
                   className="hamburger-item"
@@ -1319,9 +1346,9 @@ function App() {
         )}
 
         {/* Barra superior HUD */}
-        <div className="overlay-panel top-bar glass-panel">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <h2 className="gradient-text" style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>
+        <div ref={medirBarraSuperior} className="overlay-panel top-bar glass-panel">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+            <h2 className="gradient-text top-bar-titulo">
               {espacioActivo.nombre}
             </h2>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
@@ -1347,13 +1374,13 @@ function App() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div className="top-bar-acciones">
             {user.rol === 'docente' && espacioActivo.tipo === 'aula' && (
               <>
                 {!sesionClase ? (
                   <button
                     className="btn-primary"
-                    style={{ margin: 0, padding: '6px 14px', fontSize: '0.85rem', background: 'linear-gradient(135deg, #059669, #10b981)' }}
+                    style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
                     onClick={() => setMostrarCrearCursoModal(true)}
                   >
                     🎓 Ocupar Aula / Iniciar Clase
@@ -1362,7 +1389,7 @@ function App() {
                   <>
                     <button
                       className="btn-primary"
-                      style={{ margin: 0, padding: '6px 12px', fontSize: '0.85rem', background: 'var(--success)' }}
+                      style={{ background: 'var(--success)' }}
                       onClick={fetchAsistenciasReport}
                     >
                       Reporte Asistencia
@@ -1370,9 +1397,6 @@ function App() {
                     <button
                       className="btn-secondary"
                       style={{
-                        margin: 0,
-                        padding: '6px 12px',
-                        fontSize: '0.85rem',
                         background: 'rgba(239, 68, 68, 0.2)',
                         color: '#fca5a5',
                         border: '1px solid rgba(239, 68, 68, 0.4)',
@@ -1461,7 +1485,7 @@ function App() {
         {/* Alerta / Pop-up de Aprobación en Tiempo Real para el Docente */}
         {solicitudesPendientesDocente.length > 0 && (
           <div className="avatar-customizer-3d-wrapper" style={{ zIndex: 3000 }}>
-            <div className="customizer-card glass-panel" style={{ maxWidth: '440px', padding: '24px', textAlign: 'center' }}>
+            <div className="customizer-card glass-panel" style={{ maxWidth: '440px', padding: 'clamp(14px, 4vmin, 24px)', textAlign: 'center' }}>
               <h3 className="gradient-text" style={{ fontSize: '1.3rem', margin: '0 0 8px 0' }}>
                 📩 Solicitud de Ingreso al Aula
               </h3>
@@ -1622,10 +1646,8 @@ function App() {
           onClick={() => setSidebarAbierta((v) => !v)}
           title={sidebarAbierta ? 'Ocultar panel' : 'Mostrar usuarios y chat'}
           aria-label={sidebarAbierta ? 'Ocultar panel' : 'Mostrar usuarios y chat'}
+          className="boton-panel-lateral"
           style={{
-            position: 'fixed',
-            top: '20px',
-            right: '76px',
             width: '46px',
             height: '46px',
             borderRadius: '12px',

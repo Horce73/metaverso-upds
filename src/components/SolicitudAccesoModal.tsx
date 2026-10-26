@@ -109,7 +109,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
 
   return (
     <div ref={dialogoRef} className="avatar-customizer-3d-wrapper" style={{ zIndex: 2000 }} role="dialog" aria-modal="true" aria-labelledby="titulo-solicitud-acceso">
-      <div className="customizer-card glass-panel" style={{ maxWidth: '520px', width: '92vw', padding: '28px' }}>
+      <div className="customizer-card glass-panel" style={{ maxWidth: '520px', width: '92vw', padding: 'clamp(14px, 4vmin, 28px)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
           <div>
             <h2 id="titulo-solicitud-acceso" className="gradient-text" style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>

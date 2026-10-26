@@ -86,6 +86,7 @@ body {
   color: var(--text-primary);
   overflow-x: hidden;
   height: 100vh;
+  height: 100dvh; /* sin contar la barra del navegador del celular */
   width: 100vw;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -94,6 +95,7 @@ body {
 #root {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -101,6 +103,7 @@ body {
 #root .app-layout {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   flex: 1;
 }
 
@@ -108,6 +111,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ===== SCROLLBAR ===== */
@@ -3756,4 +3760,168 @@ main>h2:first-child {
   margin-top: 6px;
   border-radius: 8px;
   border: 1px solid var(--panel-border);
+}
+
+/* ===== CONTROLES EN PANTALLAS TÁCTILES ===== */
+/* Abajo están el joystick (izquierda) y el botón de interactuar (derecha):
+   la barra de controles sube bajo la barra superior y, si no entra (en el
+   aula llega a 11 botones), se desplaza de lado en vez de taparlos.
+   --fondo-barra-superior lo mide App.tsx; 150px es por si aún no midió. */
+@media (pointer: coarse) and (max-width: 768px) {
+  .hud-bottom-controls {
+    top: calc(var(--fondo-barra-superior, 150px) + 8px);
+    bottom: auto;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    justify-content: flex-start;
+    overflow-x: auto;
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  .hud-bottom-controls > * {
+    flex-shrink: 0;
+  }
+
+  .aviso-grabacion {
+    top: calc(var(--fondo-barra-superior, 150px) + 72px);
+  }
+
+  .panel-encuesta {
+    top: calc(var(--fondo-barra-superior, 150px) + 78px);
+  }
+}
+
+/* ===== BARRA SUPERIOR EN EL CELULAR ===== */
+/* Botón de chat y usuarios, a la izquierda del menú */
+.boton-panel-lateral {
+  position: fixed;
+  top: 20px;
+  right: 76px;
+}
+
+.top-bar-titulo {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-bar-acciones {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.top-bar-acciones button {
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+/* Vertical: la barra deja libres los botones de chat y menú de la derecha */
+@media (max-width: 768px) {
+  .top-bar {
+    top: 10px;
+    left: 10px;
+    right: 122px;
+    max-width: none;
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .top-bar-titulo {
+    font-size: 1rem;
+  }
+
+  .top-bar-acciones {
+    gap: 8px;
+  }
+
+  .top-bar-acciones button {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+
+  .hamburger-menu {
+    top: 10px;
+    right: 10px;
+  }
+
+  .boton-panel-lateral {
+    top: 10px;
+    right: 66px;
+  }
+}
+
+/* Horizontal en el celular: poco alto, todo en una fila compacta */
+@media (pointer: coarse) and (max-height: 500px) {
+  .top-bar {
+    top: 8px;
+    left: 8px;
+    max-width: calc(100vw - 140px);
+    padding: 6px 12px;
+    gap: 6px 12px;
+    flex-wrap: nowrap;
+  }
+
+  .top-bar-titulo {
+    font-size: 0.95rem;
+  }
+
+  .top-bar-acciones {
+    flex-wrap: nowrap;
+  }
+
+  .top-bar-acciones button {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+  }
+
+  .hamburger-menu {
+    top: 8px;
+    right: 8px;
+  }
+
+  .boton-panel-lateral {
+    top: 8px;
+    right: 64px;
+  }
+
+  .hamburger-item {
+    padding: 7px 10px;
+  }
+}
+
+/* El menú y los modales nunca más altos que la pantalla: se desplazan */
+.hamburger-dropdown {
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Centrado "seguro": si el contenido es más alto que la pantalla, empieza
+   arriba y se desplaza, en vez de cortarse por los dos lados */
+.avatar-customizer-3d-wrapper {
+  display: flex;
+  height: 100dvh;
+}
+
+.avatar-customizer-3d-wrapper > * {
+  margin: auto;
+}
+
+@media (max-height: 500px), (max-width: 480px) {
+  .avatar-customizer-3d-wrapper {
+    padding: 10px;
+  }
+
+  .customizer-card {
+    gap: 10px;
+  }
 }
