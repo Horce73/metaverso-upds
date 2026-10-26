@@ -17,10 +17,10 @@ import { aplicarMigraciones } from './migraciones.js';
 import { registrarRutasMateriales } from './materiales.js';
 import { registrarRutasAsistencia } from './reporteAsistencia.js';
 import { registrarRutasBitacora } from './bitacoraAdmin.js';
-import { registrarRutasAccesoAula } from './accesoAulaServidor.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 import { log } from './registro.js';
 import { registrarRutasSalud } from './salud.js';
+import { registrarRutasAccesoAula } from './accesoAulaServidor.js';
 
 dotenv.config();
 
@@ -117,9 +117,9 @@ setupSockets(io);
 registrarRutasMateriales(app, io);
 registrarRutasAsistencia(app);
 registrarRutasBitacora(app);
-registrarRutasAccesoAula(app);
 registrarRutasMapaCalor(app);
 registrarRutasGrabacion(app);
+registrarRutasAccesoAula(app);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de

@@ -149,7 +149,6 @@ function App() {
   // 3D-06: la guia de teclas (WASD/E) no aplica en pantalla tactil, donde el
   // movimiento es el joystick virtual que renderiza MetaversoCanvas.
   const esTactil = useEsTactil();
-  const volverAlCampusRef = useRef<() => void>(() => {});
   // 3D-06: en pantallas <=768px el CSS vuelve la sidebar de chat/usuarios un
   // panel de pantalla completa (@media max-width:768px en .sidebar-panel) y
   // no tenia forma de cerrarla — en celular tapaba el mundo 3D por completo,
@@ -797,6 +796,7 @@ function App() {
 
   // Volver al campus desde un aula, en la última posición conocida (de esta sesión, o si no
   // la hay -p. ej. se restauró directo en un aula tras F5- la que quedó guardada en la BD).
+  const volverAlCampusRef = useRef<() => void>(() => {});
   const handleVolverAlCampus = () => {
     const campus = espacios.find((e) => e.tipo === 'campus');
     if (!campus) return;
