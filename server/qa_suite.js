@@ -756,13 +756,56 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   console.log('\n=== PILAR 6: Roles y sesiones de clase ===');
 
-  await api('/api/auth/register', {
+  const curso = (token, body) => api('/api/clases/crear-curso', { method: 'POST', token, body });
+
+  await caso('Registrarse como docente crea un estudiante con solicitud pendiente, y sólo el admin la aprueba (SEC-07)', async () => {
+    const email = `qa.pide.docente.${Date.now().toString(36)}@upds.edu.bo`;
+    try {
+      const reg = await api('/api/auth/register', {
+        method: 'POST',
+        ip: ipAleatoria(),
+        body: { email, password: CLAVE_DESECHABLE, nombre: 'Pide', apellido: 'Docente', rol: 'docente' },
+      });
+      const datos = await reg.json();
+      if (reg.status !== 201 || datos.solicitud_docente !== 'pendiente' || datos.user.roles.join() !== 'estudiante') return false;
+      const pide = await tokenDe({ email, password: CLAVE_DESECHABLE });
+      // Mientras tanto no puede actuar como docente
+      const crear = await curso(pide.token, { espacio_id: aulaId, nombre_curso: 'X', codigo_curso: 'QA-X', tema: 't' });
+      if (crear.status !== 403) return false;
+      const resolver = (token, body) => api(`/api/admin/solicitudes-docente/${pide.id}`, { method: 'POST', token, body });
+      if ((await resolver(pide.token, { aprobar: true })).status !== 403) return false;
+      const lista = await (await api('/api/admin/solicitudes-docente', { token: tokenAdmin })).json();
+      if (!lista.some((s) => s.usuario_id === pide.id)) return false;
+      if ((await resolver(tokenAdmin, { aprobar: true })).status !== 200) return false;
+      if ((await resolver(tokenAdmin, { aprobar: true })).status !== 404) return false; // ya resuelta
+      const roles = (await (await login({ email, password: CLAVE_DESECHABLE })).json()).user.roles;
+      return roles.join() === 'docente';
+    } finally {
+      await pool.query('DELETE FROM usuarios WHERE email = $1', [email]);
+    }
+  });
+
+  await caso('Un rol que no sea estudiante o docente no se puede pedir en el registro (400)', async () => {
+    const res = await api('/api/auth/register', {
+      method: 'POST',
+      ip: ipAleatoria(),
+      body: { email: `qa.admin.${Date.now().toString(36)}@upds.edu.bo`, password: CLAVE_DESECHABLE, nombre: 'X', apellido: 'Y', rol: 'administrador' },
+    });
+    return res.status === 400;
+  });
+
+  // Segundo docente: se registra como docente y el admin lo aprueba (SEC-07).
+  // En corridas posteriores ya existe (409) y su solicitud ya está resuelta.
+  const regDocente2 = await api('/api/auth/register', {
     method: 'POST',
     body: { ...DOCENTE_2, nombre: 'Docente', apellido: 'QA', rol: 'docente' }
-  }); // 409 en corridas posteriores: ya existe
+  });
+  if (regDocente2.status === 201) {
+    const { user } = await regDocente2.json();
+    await api(`/api/admin/solicitudes-docente/${user.id}`, { method: 'POST', token: tokenAdmin, body: { aprobar: true } });
+  }
   const docente2 = await tokenDe(DOCENTE_2);
 
-  const curso = (token, body) => api('/api/clases/crear-curso', { method: 'POST', token, body });
   const docenteDeAsignatura = async codigo =>
     (await pool.query('SELECT docente_id FROM asignaturas WHERE codigo = $1', [codigo])).rows[0]?.docente_id;
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AdminDashboardTab, { type DashboardData, ROLE_COLORS } from './AdminDashboardTab';
 import { AdminVoiceTour } from './AdminVoiceTour';
 import { MapaCalor } from './MapaCalor';
+import { SolicitudesDocente } from './SolicitudesDocente';
 
 interface AdminPanelProps {
   token: string;
@@ -521,6 +522,8 @@ function UsuariosTab({ usuarios, showCreate, setShowCreate, token, onCreated, on
           </div>
         </form>
       )}
+
+      <SolicitudesDocente token={token} onResuelta={onCreated} />
 
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
