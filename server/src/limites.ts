@@ -38,6 +38,15 @@ export const limiteInvitado = rateLimit({
   ...respuesta('Demasiados ingresos como invitado desde tu red. Intenta en unos minutos.')
 });
 
+// Códigos de aula (SEC-08): sólo cuentan los fallidos. Un código de curso es
+// corto; sin este freno se podría adivinar probando en bucle.
+export const limiteCodigoAula = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 60,
+  skipSuccessfulRequests: true,
+  ...respuesta('Demasiados códigos incorrectos desde tu red. Intenta en unos minutos.')
+});
+
 // Limitador de ventana fija para eventos de un socket: devuelve true mientras
 // quede cupo en la ventana actual. Cada socket tiene los suyos.
 export function limitador(max: number, ventanaMs: number): () => boolean {

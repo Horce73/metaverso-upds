@@ -21,6 +21,7 @@ import { registrarRutasSolicitudesDocente } from './solicitudesDocente.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 import { log } from './registro.js';
 import { registrarRutasSalud } from './salud.js';
+import { registrarRutasAccesoAula } from './accesoAulaServidor.js';
 
 dotenv.config();
 
@@ -120,6 +121,7 @@ registrarRutasBitacora(app);
 registrarRutasSolicitudesDocente(app);
 registrarRutasMapaCalor(app);
 registrarRutasGrabacion(app);
+registrarRutasAccesoAula(app);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -549,7 +551,9 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       escena_url: e.escena_url,
       capacidad_max: e.capacidad_max,
       asignatura: e.asignatura,
-      asignatura_codigo: e.asignatura_codigo,
+      // El código del curso es la llave del aula (SEC-08): sólo lo ven quienes
+      // lo reparten. El estudiante lo recibe de su docente.
+      asignatura_codigo: esAdmin || roles.includes('docente') ? e.asignatura_codigo : null,
       // Docente dueño de la asignatura del aula (independiente de si hay clase en curso),
       // usado por el Campus 3D para agrupar las aulas de un mismo docente.
       docente_id: e.docente_id ?? null,

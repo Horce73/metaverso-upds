@@ -404,8 +404,11 @@ function App() {
       }
     };
 
-    const handleJoinRechazado = (data: { motivo: string }) => {
+    const handleJoinRechazado = (data: { motivo: string; sinAcceso?: boolean }) => {
       alert(`❌ ${data.motivo}`);
+      // Sin pase para el aula (SEC-08), p. ej. al recargar después de que se
+      // reinició el servidor: de vuelta al campus en vez de un aula vacía
+      if (data.sinAcceso) volverAlCampusRef.current();
     };
 
     const handleNuevaSolicitud = (solicitud: any) => {
@@ -809,11 +812,15 @@ function App() {
 
   // Volver al campus desde un aula, en la última posición conocida (de esta sesión, o si no
   // la hay -p. ej. se restauró directo en un aula tras F5- la que quedó guardada en la BD).
+  const volverAlCampusRef = useRef<() => void>(() => {});
   const handleVolverAlCampus = () => {
     const campus = espacios.find((e) => e.tipo === 'campus');
     if (!campus) return;
     handleJoinSpace(campus, ultimaPosicionCampusRef.current ?? avatar?.ultima_posicion ?? undefined);
   };
+  // Para los handlers de socket, que se registran una vez y verían una
+  // versión vieja de la lista de espacios
+  volverAlCampusRef.current = handleVolverAlCampus;
 
   // Cerrar sesión
   const handleLogout = () => {
@@ -1355,7 +1362,7 @@ function App() {
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Conectados: {Object.keys(remoteUsers).length + 1} usuarios
               </p>
-              {espacioActivo.tipo === 'aula' && (
+              {espacioActivo.tipo === 'aula' && espacioActivo.asignatura_codigo && (
                 <span
                   style={{
                     background: 'rgba(59, 130, 246, 0.15)',
@@ -1368,7 +1375,7 @@ function App() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  🔑 Código: {espacioActivo.asignatura_codigo || `SIS-${espacioActivo.id}`}
+                  🔑 Código: {espacioActivo.asignatura_codigo}
                 </span>
               )}
             </div>
@@ -1474,6 +1481,7 @@ function App() {
             espacio={solicitudAulaModal}
             usuario={user}
             socket={socket}
+            token={token}
             onIngresarDirecto={(espacio) => {
               setSolicitudAulaModal(null);
               handleJoinSpace(espacio);

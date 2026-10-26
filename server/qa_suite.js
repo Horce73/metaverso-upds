@@ -122,6 +122,18 @@ async function entrar(socket, espacioId, extra = {}) {
   return (await ack) || { ok: false, motivo: 'sin respuesta' };
 }
 
+// Pase para un aula (SEC-08) por la vía que no depende del código del curso:
+// el estudiante pide acceso y el docente lo aprueba.
+async function aprobarAcceso(sEstudiante, sDocente, espacioId) {
+  const llega = esperarEvento(sDocente, 'nueva_solicitud_acceso', 3000, (d) => d?.estudianteSocketId === sEstudiante.id);
+  sEstudiante.emit('solicitar_acceso_aula', { espacioId });
+  const solicitud = await llega;
+  if (!solicitud) return false;
+  const respuesta = esperarEvento(sEstudiante, 'respuesta_solicitud_acceso', 3000);
+  sDocente.emit('responder_solicitud_acceso', { estudianteSocketId: solicitud.estudianteSocketId, espacioId, aprobado: true });
+  return (await respuesta)?.aprobado === true;
+}
+
 async function tokenDe(credenciales) {
   const res = await login(credenciales);
   const data = await res.json();
@@ -439,8 +451,69 @@ async function runTests() {
   const sDocente = await conectar(docente.token);
   await entrar(sDocente, aulaId);
   const sMaria = await conectar(maria.token);
-  await entrar(sMaria, otraAulaId);
   const sAna = await conectar(ana.token);
+
+  // SEC-08: al aula sólo se entra con pase (código del curso o aprobación)
+  const acceso = (token, espacioId, codigo) =>
+    api(`/api/espacios/${espacioId}/acceso`, { method: 'POST', token, ip: ipAleatoria(), body: { codigo } });
+  const codigoAula = (await pool.query(
+    'SELECT a.codigo FROM espacios e JOIN asignaturas a ON a.id = e.asignatura_id WHERE e.id = $1', [aulaId]
+  )).rows[0].codigo;
+
+  await caso('Sin pase, un estudiante no entra al aula aunque mande join_space', async () => {
+    const r = await entrar(sAna, aulaId);
+    return r.ok === false && r.sinAcceso === true;
+  });
+
+  await caso('Un código incorrecto, o el viejo comodín 123456, no da acceso (403)', async () => {
+    const [mal, comodin] = await Promise.all([acceso(ana.token, aulaId, 'NO-ES'), acceso(ana.token, aulaId, '123456')]);
+    return mal.status === 403 && comodin.status === 403 && !(await entrar(sAna, aulaId)).ok;
+  });
+
+  await caso('Un invitado no obtiene pase con el código', async () => {
+    const { token } = await (await api('/api/auth/guest', { method: 'POST' })).json();
+    return (await acceso(token, aulaId, codigoAula)).status === 403;
+  });
+
+  await caso('Con el código del curso (sin importar mayúsculas) el estudiante entra', async () => {
+    const res = await acceso(ana.token, aulaId, ` ${codigoAula.toLowerCase()} `);
+    return res.status === 200 && (await entrar(sAna, aulaId)).ok;
+  });
+
+  await caso('El estudiante no recibe el código del curso en la lista de espacios; el docente sí', async () => {
+    const deAna = await (await api('/api/espacios', { token: ana.token })).json();
+    const delDocente = await (await api('/api/espacios', { token: docente.token })).json();
+    const aulaDe = (lista) => lista.find((e) => e.id === aulaId);
+    return aulaDe(deAna)?.asignatura_codigo === null && aulaDe(delDocente)?.asignatura_codigo === codigoAula;
+  });
+
+  await caso('Si el docente aprueba la solicitud, el estudiante entra; el pase es para esa aula', async () => {
+    if (!(await aprobarAcceso(sMaria, sDocente, otraAulaId))) return false;
+    return (await entrar(sMaria, otraAulaId)).ok;
+  });
+
+  await caso('Un estudiante no puede aprobarse a sí mismo una solicitud', async () => {
+    const sLuis = await conectar((await tokenDe(ESTUDIANTE_3)).token);
+    try {
+      sLuis.emit('responder_solicitud_acceso', { estudianteSocketId: sLuis.id, espacioId: aulaId, aprobado: true });
+      await new Promise((r) => setTimeout(r, 300));
+      return !(await entrar(sLuis, aulaId)).ok;
+    } finally {
+      sLuis.disconnect();
+    }
+  });
+
+  // Pases para el resto de la suite
+  for (const [sEst, espacioId] of [[sMaria, aulaId], [sAna, otraAulaId]]) {
+    await aprobarAcceso(sEst, sDocente, espacioId);
+  }
+  {
+    const sLuis = await conectar((await tokenDe(ESTUDIANTE_3)).token);
+    await aprobarAcceso(sLuis, sDocente, aulaId);
+    await aprobarAcceso(sLuis, sDocente, otraAulaId);
+    sLuis.disconnect();
+  }
+  await entrar(sMaria, otraAulaId);
 
   await caso('join_space con user.id falsificado anuncia al usuario del token, no al suplantado', async () => {
     const anuncio = esperarEvento(sDocente, 'user_joined', 3000);

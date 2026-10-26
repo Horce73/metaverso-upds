@@ -21,6 +21,7 @@ import { validarLote, agregarLote, cerrarTrazo, cerrarTrazosDe, trazosVisibles, 
 import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detenerPantalla, pantallaDe } from './pantalla.js';
 import { debeRecibirMovimiento } from './relevanciaPosicion.js';
 import { log } from './registro.js';
+import { pases } from './accesoAula.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -205,6 +206,15 @@ export function setupSockets(io: Server) {
       const espacioTipo: 'campus' | 'aula' = espacioRes.rows[0].tipo;
       if (espacioTipo === 'aula' && identidad.esInvitado) {
         socket.emit('join_rechazado', { motivo: 'Los invitados solo pueden acceder al campus.' });
+        return;
+      }
+      // SEC-08: al aula entra el docente o el admin, o quien tiene un pase
+      // (código del curso o solicitud aprobada por el docente)
+      if (espacioTipo === 'aula' && !esDocenteOAdmin(identidad.roles) && !pases.tiene(identidad.userId, nuevoEspacioId)) {
+        socket.emit('join_rechazado', {
+          motivo: 'Para entrar a esta aula necesitas el código del curso o que el docente apruebe tu solicitud.',
+          sinAcceso: true,
+        });
         return;
       }
       const espacioId = String(nuevoEspacioId);
@@ -605,6 +615,13 @@ export function setupSockets(io: Server) {
     }) => {
       if (!esDocenteOAdmin(identidad.roles)) return;
       log.info('solicitud de acceso respondida', { socketId: data.estudianteSocketId, aprobado: !!data.aprobado });
+      // El pase es para el usuario de ese socket según su token, no según el
+      // payload: el docente aprueba a una persona, no a un número de socket
+      const estudiante: Identidad | undefined = io.sockets.sockets.get(data.estudianteSocketId)?.data.identidad;
+      const espacioId = Number(data.espacioId);
+      if (data.aprobado === true && estudiante?.userId && Number.isInteger(espacioId)) {
+        pases.otorgar(estudiante.userId, espacioId);
+      }
       io.to(data.estudianteSocketId).emit('respuesta_solicitud_acceso', {
         espacioId: data.espacioId,
         aprobado: data.aprobado,
