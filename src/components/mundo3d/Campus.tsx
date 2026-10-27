@@ -1,508 +1,159 @@
 import React from 'react';
 import * as THREE from 'three';
-import { Edificio } from './Edificio.js';
-import {
-  PupitresInstanciados,
-  Pizarra,
-  EscritorioProfesor,
-  Sofa,
-  MesaRedonda,
-  MaquinaExpendedora,
-  EscritorioDecano,
-  SillaOficina,
-  Estanteria,
-} from './Mobiliario.js';
+import { Sky } from '@react-three/drei';
 import { Letrero } from './Letrero.js';
 import { useCalidad } from './useCalidad.js';
+import { EdificioAntiguo, EdificioNuevo } from './EdificiosUPDS.js';
+import { DecoradoCampus } from './DecoradoCampus.js';
+import type { PlanoCampus, PuertaAula } from './planoCampus.js';
 
-// Genera una grilla de pupitres (3 columnas x 3 filas) para las aulas
-function generarPupitres(): [number, number, number][] {
-  const pupitres: [number, number, number][] = [];
-  for (let fila = 0; fila < 3; fila++) {
-    for (let col = 0; col < 3; col++) {
-      pupitres.push([col * 1.1 - 1.1, 0, fila * 1.1 - 0.8]);
-    }
-  }
-  return pupitres;
-}
-const POSICIONES_PUPITRES = generarPupitres();
+// Campus UPDS (CAMPUS-01): la manzana de la universidad en vez de las islas
+// flotantes. Se llega por la vereda, se entra por la recepción del edificio
+// antiguo o por el hall del nuevo, y las aulas son puertas de madera en las
+// galerías del patio. El plano (planoCampus.ts) decide dónde va cada cosa;
+// acá sólo se dibuja.
 
 export interface AulaCampus {
   id: number | string;
   nombre: string;
-  // Docente dueño de la asignatura del aula (independiente de si hay clase en
-  // curso). Se usa para agrupar en el mismo bloque todas las aulas de un
-  // mismo docente.
+  // Docente dueño de la asignatura del aula: sus aulas quedan juntas en la galería
   docenteId?: string | number | null;
   docenteNombre?: string | null;
   sesion_activa?: { tema?: string; docente?: string | null } | null;
 }
 
 interface CampusProps {
+  plano: PlanoCampus;
   aulas?: AulaCampus[];
   onInteractuarAula?: (aula: AulaCampus) => void;
 }
 
-// --- Distribución de aulas por bloques de docente -------------------------
-// En vez de una grilla ciega, las aulas de un mismo docente se agrupan en un
-// bloque contiguo que crece "hacia los lados" (eje X, alejándose del centro)
-// a medida que ese docente tiene más clases. Los bloques de distintos
-// docentes se reparten alternando derecha/izquierda desde el camino central,
-// así el camino nunca queda tapado sin importar cuántas aulas existan. Si un
-// bloque no entra en el ancho disponible de la isla, se pasa a una fila
-// nueva más al fondo (igual que antes).
-export const ANCHO_AULA = 8;
-export const ESPACIO_ENTRE_AULAS = 1.5; // separación entre aulas del mismo docente
-export const ESPACIO_ENTRE_DOCENTES = 4; // separación entre bloques de distinto docente
-export const DESPEJE_CAMINO_CENTRAL = 4.5; // distancia mínima al camino central (x=0)
-// Ancho lateral (por lado) que un bloque puede alcanzar antes de saltar a una
-// fila nueva más al fondo. Generoso a propósito: la isla se ensancha sola
-// (ver anchoIsla en <Campus>) para acompañar el crecimiento lateral, así que
-// este límite solo actúa como salvaguarda ante un docente con muchísimas
-// clases simultáneas.
-export const LIMITE_LATERAL = 45;
-export const ESPACIADO_FILA = 11;
-export const Z_PRIMERA_FILA = 6;
-// Ancho lateral mínimo de la Isla 2 (igual al original) para que, con pocas
-// aulas, el campus se vea exactamente como antes.
-export const ANCHO_MINIMO_ISLA = 19;
-export const MARGEN_ISLA = 3;
-// Offset Z del grupo <Isla 2> respecto al origen del mundo (ver <group
-// position={[0, 0, ISLA_2_OFFSET_Z]}> más abajo). Se exporta para que otros
-// componentes (colisión del avatar, detección de aula cercana) puedan
-// convertir las posiciones locales de las aulas a coordenadas de mundo.
-export const ISLA_2_OFFSET_Z = -27;
+// Sol de media mañana de Sucre: alto y algo de costado, para que las fachadas
+// a la calle reciban luz y el patio tenga sombra de las galerías
+const SOL = new THREE.Vector3(45, 70, 38);
 
-// Mitad del ancho real que ocupa la Isla 2 dado cuánto se extienden los
-// bloques de aulas hacia los lados; única fuente de verdad tanto para el
-// tamaño visual del terreno como para el límite de colisión del avatar.
-export function calcularMitadAnchoIsla(extentoLateral: number): number {
-  return Math.max(ANCHO_MINIMO_ISLA, extentoLateral + MARGEN_ISLA);
-}
-
-interface BloqueDocente {
-  clave: string;
-  etiqueta: string;
-  aulas: AulaCampus[];
-}
-
-// Agrupa las aulas por docente dueño de la asignatura; las aulas sin docente
-// asignado quedan cada una en su propio bloque de tamaño 1.
-function agruparAulasPorDocente(aulas: AulaCampus[]): BloqueDocente[] {
-  const bloques = new Map<string, BloqueDocente>();
-  aulas.forEach((aula) => {
-    const clave = aula.docenteId != null ? `docente-${aula.docenteId}` : `aula-${aula.id}`;
-    if (!bloques.has(clave)) {
-      bloques.set(clave, { clave, etiqueta: aula.docenteNombre || String(aula.id), aulas: [] });
-    }
-    bloques.get(clave)!.aulas.push(aula);
-  });
-  // Orden alfabético por docente para que la disposición sea estable entre
-  // recargas, sin depender del orden en que llegan las aulas del backend.
-  return Array.from(bloques.values()).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta));
-}
-
-interface BordeLado {
-  fila: number;
-  borde: number; // distancia acumulada desde x=0 hasta el próximo espacio libre
-}
-
-export interface LayoutAulas {
-  posiciones: Map<string, [number, number, number]>;
-  filas: number;
-  // Distancia máxima desde x=0 hasta el borde exterior de algún edificio;
-  // permite ensanchar el terreno de la isla para que ningún edificio quede
-  // flotando fuera del césped al crecer un bloque hacia los lados.
-  extentoLateral: number;
-}
-
-// Calcula la posición 3D de cada aula agrupando por docente y expandiendo
-// cada bloque hacia los lados, alternando derecha/izquierda del camino
-// central conforme aparecen nuevos docentes.
-export function calcularLayoutAulas(aulas: AulaCampus[]): LayoutAulas {
-  const posiciones = new Map<string, [number, number, number]>();
-  const bloques = agruparAulasPorDocente(aulas);
-
-  const ladoDerecho: BordeLado = { fila: 0, borde: DESPEJE_CAMINO_CENTRAL };
-  const ladoIzquierdo: BordeLado = { fila: 0, borde: DESPEJE_CAMINO_CENTRAL };
-  let usarDerecha = true;
-  let extentoLateral = 0;
-
-  bloques.forEach((bloque) => {
-    const n = bloque.aulas.length;
-    const anchoBloque = n * ANCHO_AULA + (n - 1) * ESPACIO_ENTRE_AULAS;
-    const lado = usarDerecha ? ladoDerecho : ladoIzquierdo;
-
-    if (lado.borde + anchoBloque > LIMITE_LATERAL) {
-      lado.fila += 1;
-      lado.borde = DESPEJE_CAMINO_CENTRAL;
-    }
-
-    const signo = usarDerecha ? 1 : -1;
-    const z = Z_PRIMERA_FILA - lado.fila * ESPACIADO_FILA;
-
-    bloque.aulas.forEach((aula, indice) => {
-      const centro = lado.borde + indice * (ANCHO_AULA + ESPACIO_ENTRE_AULAS) + ANCHO_AULA / 2;
-      posiciones.set(String(aula.id), [signo * centro, 0, z]);
-    });
-
-    lado.borde += anchoBloque + ESPACIO_ENTRE_DOCENTES;
-    extentoLateral = Math.max(extentoLateral, lado.borde - ESPACIO_ENTRE_DOCENTES);
-    usarDerecha = !usarDerecha;
-  });
-
-  const filas = Math.max(ladoDerecho.fila, ladoIzquierdo.fila) + 1;
-  return { posiciones, filas, extentoLateral };
-}
-
-export const Campus: React.FC<CampusProps> = ({ aulas = [], onInteractuarAula }) => {
-  const {
-    posiciones: posicionesAulas,
-    filas: filasDeAulas,
-    extentoLateral,
-  } = React.useMemo(() => calcularLayoutAulas(aulas), [aulas]);
-  // Los edificios de servicio se ubican siempre después de la última fila de
-  // aulas para que nunca se superpongan, sin importar cuántas aulas existan.
-  const zEdificiosServicio = Z_PRIMERA_FILA - filasDeAulas * ESPACIADO_FILA - 8;
-
-  // El ancho de la Isla 2 acompaña el crecimiento lateral de los bloques de
-  // aulas: con pocas aulas se ve igual que antes (ANCHO_MINIMO_ISLA), y
-  // crece hacia los lados a medida que un docente acumula más clases.
-  const anchoIsla = calcularMitadAnchoIsla(extentoLateral) * 2;
-  const factorIsla = anchoIsla / (ANCHO_MINIMO_ISLA * 2);
-
+const Iluminacion: React.FC<{ centro: [number, number] }> = ({ centro }) => {
+  const { sombras, tamanoSombra } = useCalidad();
+  const objetivo = React.useMemo(() => new THREE.Object3D(), []);
   return (
-    <group>
-      {/* 🏝️ 1. ISLA 1: PLAZA SOCIAL Y BIENVENIDA (Límites z: -1 a 15, x: -11 a 11) */}
-      <group position={[0, 0, 7]}>
-        {/* Base Rocosa 3D Flotante Bajo Isla 1 */}
-        <mesh position={[0, -0.6, 0]} receiveShadow castShadow>
-          <boxGeometry args={[22, 1.2, 16]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.9} />
-        </mesh>
-        <mesh position={[0, -2.0, 0]} receiveShadow castShadow>
-          <boxGeometry args={[17, 1.8, 12]} />
-          <meshStandardMaterial color="#0f172a" roughness={0.95} />
-        </mesh>
-        <mesh position={[0, -4.2, 0]} rotation={[Math.PI, 0, 0]} castShadow>
-          <coneGeometry args={[5.5, 3.8, 6]} />
-          <meshStandardMaterial color="#020617" roughness={1.0} />
-        </mesh>
+    <>
+      <Sky sunPosition={SOL.toArray()} turbidity={3} rayleigh={0.9} mieCoefficient={0.004} mieDirectionalG={0.8} />
+      <fog attach="fog" args={['#c8d9ea', 90, 260]} />
+      <hemisphereLight args={['#dbeafe', '#cfc6b4', 1.15]} />
+      {/* Relleno suave: bajo las galerías y en los pasillos no llega el sol */}
+      <ambientLight intensity={0.35} color="#fff8ee" />
+      <primitive object={objetivo} position={[centro[0], 0, centro[1]]} />
+      <directionalLight
+        // key: el mapa de sombra no cambia de tamaño sin recrear la luz
+        key={tamanoSombra}
+        position={[centro[0] + SOL.x, SOL.y, centro[1] + SOL.z]}
+        target={objetivo}
+        intensity={2.4}
+        color="#fff3e0"
+        castShadow={sombras}
+        shadow-mapSize={[tamanoSombra * 2, tamanoSombra * 2]}
+        shadow-camera-left={-60}
+        shadow-camera-right={60}
+        shadow-camera-top={60}
+        shadow-camera-bottom={-60}
+        shadow-camera-near={10}
+        shadow-camera-far={220}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.04}
+      />
+    </>
+  );
+};
 
-        {/* Césped Isla 1 */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
-          <planeGeometry args={[21.6, 15.6]} />
-          <meshStandardMaterial color="#166534" roughness={0.7} />
-        </mesh>
-
-        {/* Plaza Central de Mármol/Piedra */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
-          <circleGeometry args={[6.2, 32]} />
-          <meshStandardMaterial color="#e2e8f0" roughness={0.4} />
-        </mesh>
-
-        {/* Fuente Central de Agua Iluminada */}
-        <FuenteAgua position={[0, 0.04, 0]} />
-
-        {/* Zona Social de Sofás */}
-        <Sofa position={[-4.2, 0.04, 2]} color="#0284c7" />
-        <Sofa position={[4.2, 0.04, 2]} rotation={[0, Math.PI, 0]} color="#0d9488" />
-        <MesaRedonda position={[-4.2, 0.04, 0]} />
-        <MesaRedonda position={[4.2, 0.04, 0]} />
-
-        {/* Árboles Decorativos Isla Social */}
-        <ArbolEstilizado position={[-8, 0.04, -5]} />
-        <ArbolEstilizado position={[8, 0.04, -5]} />
-        <ArbolEstilizado position={[-8, 0.04, 5]} />
-        <ArbolEstilizado position={[8, 0.04, 5]} />
-
-        {/* Letrero de Bienvenida al Campus */}
-        <Letrero
-          texto="🏫 Campus UPDS"
-          position={[0, 4.2, -4]}
-          scale={[9, 1.8, 1]}
-          ancho={1000}
-          alto={180}
-          fuente="bold 64px sans-serif"
+/** Puerta de madera de un aula, con su placa y el aviso de clase en curso. */
+const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractuar?: () => void }> = ({ puerta, aula, onInteractuar }) => {
+  const enClase = !!aula.sesion_activa;
+  // La puerta del ala de la calle mira al patio por -z; la del fondo, por +z
+  const giro = puerta.lado === 'calle' ? Math.PI : 0;
+  return (
+    <group position={[puerta.x, 0, puerta.z]} rotation={[0, giro, 0]}>
+      {/* Marco y hoja de madera */}
+      <mesh position={[0, 1.25, 0.04]} castShadow>
+        <boxGeometry args={[1.5, 2.5, 0.08]} />
+        <meshStandardMaterial color="#7a4a22" roughness={0.6} />
+      </mesh>
+      <mesh position={[0, 1.15, 0.09]}>
+        <boxGeometry args={[1.15, 2.25, 0.05]} />
+        <meshStandardMaterial color="#b0743a" roughness={0.55} />
+      </mesh>
+      <mesh position={[0.42, 1.1, 0.13]}>
+        <boxGeometry args={[0.06, 0.2, 0.04]} />
+        <meshStandardMaterial color="#d4d4d8" metalness={0.8} roughness={0.3} />
+      </mesh>
+      {/* Lámpara de estado: verde si hay clase, apagada si no */}
+      <mesh position={[0, 2.75, 0.08]}>
+        <boxGeometry args={[0.5, 0.12, 0.08]} />
+        <meshStandardMaterial
+          color={enClase ? '#34d399' : '#475569'}
+          emissive={enClase ? '#10b981' : '#000000'}
+          emissiveIntensity={enClase ? 1.6 : 0}
         />
-      </group>
-
-      {/* 🌉 2. PUENTE CONECTOR ALINEADO ENTRE ISLAS (z: -1 a -12) */}
-      <PuenteConector />
-
-      {/* 🎓 3. ISLA 2: ZONA ACADÉMICA Y AULAS (Límites z: -12 a -42, x: dinámico según aulas por docente) */}
-      <group position={[0, 0, ISLA_2_OFFSET_Z]}>
-        {/* Base Rocosa 3D Flotante Bajo Isla 2 (el ancho acompaña el crecimiento lateral de las aulas) */}
-        <mesh position={[0, -0.6, 0]} receiveShadow castShadow>
-          <boxGeometry args={[anchoIsla, 1.2, 30]} />
-          <meshStandardMaterial color="#1e293b" roughness={0.9} />
-        </mesh>
-        <mesh position={[0, -2.4, 0]} receiveShadow castShadow>
-          <boxGeometry args={[30 * factorIsla, 2.4, 23]} />
-          <meshStandardMaterial color="#0f172a" roughness={0.95} />
-        </mesh>
-        <mesh position={[0, -5.5, 0]} rotation={[Math.PI, 0, 0]} castShadow>
-          <coneGeometry args={[9.5 * factorIsla, 5.2, 7]} />
-          <meshStandardMaterial color="#020617" roughness={1.0} />
-        </mesh>
-
-        {/* Césped Isla 2 */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]} receiveShadow>
-          <planeGeometry args={[anchoIsla - 0.4, 29.6]} />
-          <meshStandardMaterial color="#15803d" roughness={0.7} />
-        </mesh>
-
-        {/* Caminos de Adoquines hacia Edificios */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]} receiveShadow>
-          <planeGeometry args={[5, 26]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
-        </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 6]} receiveShadow>
-          <planeGeometry args={[28 * factorIsla, 4.5]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
-        </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, -10]} receiveShadow>
-          <planeGeometry args={[28 * factorIsla, 4.5]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
-        </mesh>
-
-        {/* Árboles Isla Académica (se recorren hacia el nuevo borde de la isla) */}
-        <ArbolEstilizado position={[-16 * factorIsla, 0.04, 12]} />
-        <ArbolEstilizado position={[16 * factorIsla, 0.04, 12]} />
-        <ArbolEstilizado position={[-16 * factorIsla, 0.04, -12]} />
-        <ArbolEstilizado position={[16 * factorIsla, 0.04, -12]} />
-
-        {/* Edificios de Aula: uno por cada espacio tipo 'aula' que exista en este momento,
-            agrupados por docente y expandidos hacia los lados sin tapar el camino central.
-            Todas miran hacia el mismo lado (sur, +Z: el camino de acceso desde la plaza) en
-            vez de "hacia el centro"; si miraran al centro, la puerta de un aula del bloque
-            terminaría apuntando contra la pared trasera de la aula vecina, tapando el paso. */}
-        {aulas.map((aula) => {
-          const posicion = posicionesAulas.get(String(aula.id)) ?? [0, 0, Z_PRIMERA_FILA];
-          return (
-            <Edificio
-              key={aula.id}
-              posicion={posicion}
-              mirarHacia={[posicion[0], 0, posicion[2] + 10]}
-              ancho={8}
-              profundidad={8}
-              nombre={aula.nombre}
-              tieneClaseEnCurso={!!aula.sesion_activa}
-              temaClase={aula.sesion_activa?.tema}
-              docenteClase={aula.sesion_activa?.docente ?? undefined}
-              onInteractuar={onInteractuarAula ? () => onInteractuarAula(aula) : undefined}
-            >
-              <Pizarra position={[0, 1.3, -3.8]} />
-              <EscritorioProfesor position={[0, 0, -2.8]} />
-              <PupitresInstanciados posiciones={POSICIONES_PUPITRES} />
-            </Edificio>
-          );
-        })}
-
-        {/* Edificio: Sala de Descanso */}
-        <Edificio
-          posicion={[-12, 0, zEdificiosServicio]}
-          mirarHacia={[0, 0, zEdificiosServicio]}
-          ancho={8}
-          profundidad={8}
-          colorPared="#f1f5f9"
-          colorTecho="#0f766e"
-          nombre="Sala de Descanso"
+      </mesh>
+      <Letrero
+        texto={aula.nombre}
+        position={[0, 3.25, 0.25]}
+        scale={[2.6, 0.55, 1]}
+        ancho={520}
+        alto={110}
+        fondo="rgba(15,23,42,0.85)"
+        fuente="bold 40px sans-serif"
+      />
+      {enClase && (
+        <Letrero
+          texto={`● En clase: ${aula.sesion_activa?.tema || 'clase en curso'}`}
+          position={[0, 3.8, 0.25]}
+          scale={[2.6, 0.42, 1]}
+          ancho={620}
+          alto={100}
+          fondo="#065f46"
+          fuente="bold 34px sans-serif"
+        />
+      )}
+      {onInteractuar && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, 0.04, 3]}
+          onClick={(e) => {
+            e.stopPropagation();
+            onInteractuar();
+          }}
         >
-          <Sofa position={[-2.5, 0, -3]} color="#e11d48" />
-          <Sofa position={[2.5, 0, -3]} rotation={[0, Math.PI, 0]} color="#2563eb" />
-          <MesaRedonda position={[0, 0, -1.8]} />
-          <MaquinaExpendedora position={[3.2, 0.85, 3]} />
-        </Edificio>
-
-        {/* Edificio: Sala de Decanos */}
-        <Edificio
-          posicion={[12, 0, zEdificiosServicio]}
-          mirarHacia={[0, 0, zEdificiosServicio]}
-          ancho={8}
-          profundidad={8}
-          colorPared="#e2e8f0"
-          colorTecho="#7c2d12"
-          colorPiso="#a16207"
-          nombre="Sala de Decanos"
-        >
-          <EscritorioDecano position={[0, 0, -2.6]} />
-          <SillaOficina position={[0, 0, -1.8]} rotation={[0, Math.PI, 0]} />
-          <SillaOficina position={[-1.2, 0, -0.8]} />
-          <SillaOficina position={[1.2, 0, -0.8]} />
-          <Estanteria position={[0, 0, -3.6]} />
-        </Edificio>
-      </group>
-
-      {/* 🌌 4. ISLOTES ROCOSOS MENORES DECORATIVOS EN EL VACÍO */}
-      <IsloteDecorativo position={[-22, -3, 2]} escala={0.8} />
-      <IsloteDecorativo position={[22, -4, -4]} escala={1.1} />
-      <IsloteDecorativo position={[-28, -5, -30]} escala={1.3} />
-      <IsloteDecorativo position={[28, -3, -24]} escala={0.9} />
+          <ringGeometry args={[0.55, 0.85, 28]} />
+          <meshBasicMaterial color={enClase ? '#34d399' : '#60a5fa'} transparent opacity={0.65} side={THREE.DoubleSide} />
+        </mesh>
+      )}
     </group>
   );
 };
 
-// Componente del Puente Conector Alineado entre Isla 1 (z = -1) e Isla 2 (z = -12)
-function PuenteConector() {
+export const Campus: React.FC<CampusProps> = ({ plano, aulas = [], onInteractuarAula }) => {
+  const porId = React.useMemo(() => new Map(aulas.map((a) => [String(a.id), a])), [aulas]);
+  const centro: [number, number] = [(plano.edificioNuevo.x0 + plano.xFin) / 2, -12];
   return (
-    <group position={[0, 0, -6.5]}>
-      {/* Tablero Principal de Madera del Puente */}
-      <mesh position={[0, 0.08, 0]} receiveShadow castShadow>
-        <boxGeometry args={[4.2, 0.25, 11]} />
-        <meshStandardMaterial color="#78350f" roughness={0.6} />
-      </mesh>
-
-      {/* Vigas de Soporte Estructural Bajo el Puente */}
-      {[-4, 0, 4].map((zPos, i) => (
-        <group key={i} position={[0, -1.0, zPos]}>
-          <mesh position={[-1.9, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.18, 0.18, 2.2, 10]} />
-            <meshStandardMaterial color="#1e293b" />
-          </mesh>
-          <mesh position={[1.9, 0, 0]} castShadow>
-            <cylinderGeometry args={[0.18, 0.18, 2.2, 10]} />
-            <meshStandardMaterial color="#1e293b" />
-          </mesh>
-        </group>
-      ))}
-
-      {/* Barandillas Laterales */}
-      <mesh position={[-2.0, 0.5, 0]} castShadow>
-        <boxGeometry args={[0.1, 0.6, 11]} />
-        <meshStandardMaterial color="#451a03" />
-      </mesh>
-      <mesh position={[2.0, 0.5, 0]} castShadow>
-        <boxGeometry args={[0.1, 0.6, 11]} />
-        <meshStandardMaterial color="#451a03" />
-      </mesh>
-
-      {/* Farolas Iluminadas a lo largo del puente */}
-      {[-4.5, 0, 4.5].map((zPos, idx) => (
-        <group key={`farola-${idx}`} position={[0, 0, zPos]}>
-          <Farola position={[-2.0, 0.8, 0]} />
-          <Farola position={[2.0, 0.8, 0]} />
-        </group>
-      ))}
+    <group>
+      <Iluminacion centro={centro} />
+      <DecoradoCampus plano={plano} />
+      <EdificioNuevo plano={plano} />
+      <EdificioAntiguo plano={plano} />
+      {plano.puertas.map((puerta) => {
+        const aula = porId.get(puerta.id);
+        if (!aula) return null;
+        return (
+          <PuertaDeAula
+            key={puerta.id}
+            puerta={puerta}
+            aula={aula}
+            onInteractuar={onInteractuarAula ? () => onInteractuarAula(aula) : undefined}
+          />
+        );
+      })}
     </group>
   );
-}
-
-// Componente de Farola con luz cálida
-function Farola({ position }: { position: [number, number, number] }) {
-  const { lucesPuntuales } = useCalidad();
-  return (
-    <group position={position}>
-      <mesh castShadow>
-        <cylinderGeometry args={[0.04, 0.06, 1.2, 8]} />
-        <meshStandardMaterial color="#1e293b" />
-      </mesh>
-      <mesh position={[0, 0.65, 0]}>
-        <sphereGeometry args={[0.12, 12, 12]} />
-        <meshStandardMaterial color="#fef08a" emissive="#fef08a" emissiveIntensity={0.8} />
-      </mesh>
-      {lucesPuntuales && <pointLight position={[0, 0.65, 0]} intensity={0.6} distance={6} color="#fef08a" />}
-    </group>
-  );
-}
-
-// Componente de Fuente de Agua (Estructura Monumental con Agua Elevada 3D)
-function FuenteAgua({ position }: { position: [number, number, number] }) {
-  const { lucesPuntuales } = useCalidad();
-  return (
-    <group position={position}>
-      {/* 1. Muro Hueco Exterior de Piedra (Pared de Contención del Estanque) */}
-      <mesh castShadow receiveShadow position={[0, 0.3, 0]}>
-        <cylinderGeometry args={[2.45, 2.65, 0.6, 48, 1, true]} />
-        <meshStandardMaterial color="#475569" roughness={0.4} side={THREE.DoubleSide} />
-      </mesh>
-
-      {/* Borde redondeado superior del muro (Remate de Piedra) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.6, 0]} castShadow receiveShadow>
-        <torusGeometry args={[2.45, 0.12, 16, 64]} />
-        <meshStandardMaterial color="#64748b" roughness={0.4} />
-      </mesh>
-
-      {/* 2. Fondo Interior Oscuro del Estanque */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} receiveShadow>
-        <circleGeometry args={[2.42, 48]} />
-        <meshStandardMaterial color="#0f172a" roughness={0.9} />
-      </mesh>
-
-      {/* 3. Superficie de Agua Azul Cristalina Resplandeciente */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.54, 0]}>
-        <circleGeometry args={[2.42, 64]} />
-        <meshStandardMaterial
-          color="#38bdf8"
-          emissive="#0284c7"
-          emissiveIntensity={0.5}
-          roughness={0.05}
-          metalness={0.2}
-          transparent
-          opacity={0.9}
-        />
-      </mesh>
-
-      {/* 4. Pedestal Central Escalonado y Columna de Fuente */}
-      <mesh position={[0, 0.75, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.7, 0.85, 0.5, 32]} />
-        <meshStandardMaterial color="#334155" roughness={0.5} />
-      </mesh>
-      <mesh position={[0, 1.35, 0]} castShadow>
-        <cylinderGeometry args={[0.38, 0.48, 0.8, 24]} />
-        <meshStandardMaterial color="#1e293b" roughness={0.4} />
-      </mesh>
-
-      {/* 5. Cúspide Resplandeciente con Chorro de Agua */}
-      <mesh position={[0, 1.9, 0]}>
-        <sphereGeometry args={[0.35, 32, 32]} />
-        <meshStandardMaterial color="#e0f2fe" emissive="#38bdf8" emissiveIntensity={0.95} transparent opacity={0.85} />
-      </mesh>
-      {lucesPuntuales && <pointLight position={[0, 1.9, 0]} intensity={0.8} distance={6} color="#38bdf8" />}
-    </group>
-  );
-}
-
-// Árbol geométrico estilizado
-function ArbolEstilizado({ position }: { position: [number, number, number] }) {
-  return (
-    <group position={position}>
-      {/* Tronco */}
-      <mesh castShadow position={[0, 0.7, 0]}>
-        <cylinderGeometry args={[0.15, 0.25, 1.4, 8]} />
-        <meshStandardMaterial color="#78350f" roughness={0.8} />
-      </mesh>
-      {/* Copa del Árbol (Niveles Cónicos) */}
-      <mesh castShadow position={[0, 1.8, 0]}>
-        <coneGeometry args={[1.2, 1.5, 7]} />
-        <meshStandardMaterial color="#15803d" roughness={0.6} />
-      </mesh>
-      <mesh castShadow position={[0, 2.6, 0]}>
-        <coneGeometry args={[0.9, 1.3, 7]} />
-        <meshStandardMaterial color="#16a34a" roughness={0.6} />
-      </mesh>
-    </group>
-  );
-}
-
-// Islote rocoso decorativo flotando en el vacío
-function IsloteDecorativo({ position, escala = 1 }: { position: [number, number, number]; escala?: number }) {
-  return (
-    <group position={position} scale={escala}>
-      <mesh position={[0, 0, 0]} receiveShadow castShadow>
-        <boxGeometry args={[4, 1, 4]} />
-        <meshStandardMaterial color="#334155" roughness={0.9} />
-      </mesh>
-      <mesh rotation={[-Math.PI, 0, 0]} position={[0, -1.8, 0]} castShadow>
-        <coneGeometry args={[2.2, 2.6, 5]} />
-        <meshStandardMaterial color="#0f172a" roughness={0.9} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.51, 0]} receiveShadow>
-        <planeGeometry args={[3.8, 3.8]} />
-        <meshStandardMaterial color="#166534" roughness={0.7} />
-      </mesh>
-    </group>
-  );
-}
+};
 
 export default Campus;
