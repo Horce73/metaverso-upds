@@ -6,15 +6,8 @@ import * as THREE from 'three';
 import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
-import {
-  Campus,
-  calcularLayoutAulas,
-  calcularMitadAnchoIsla,
-  ANCHO_AULA,
-  ISLA_2_OFFSET_Z,
-  type AulaCampus,
-} from './mundo3d/Campus.js';
-import type { ZonaBloqueada } from './mundo3d/AvatarModel.js';
+import { Campus, type AulaCampus } from './mundo3d/Campus.js';
+import { calcularPlanoCampus, esTransitable, puertaCercana, type PlanoCampus } from './mundo3d/planoCampus.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
@@ -74,8 +67,7 @@ const LocalPlayerController: React.FC<{
   spawnPosicion?: SpawnPosicion | null;
   estaSentado: boolean;
   posicionSentadoTarget: AsientoInteractive | null;
-  zonasBloqueadasCampus: ZonaBloqueada[];
-  mitadAnchoIslaAcademica: number;
+  planoCampus: PlanoCampus;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
 }> = ({
   socket,
@@ -88,8 +80,7 @@ const LocalPlayerController: React.FC<{
   spawnPosicion,
   estaSentado,
   posicionSentadoTarget,
-  zonasBloqueadasCampus,
-  mitadAnchoIslaAcademica,
+  planoCampus,
   onMove,
 }) => {
   const ultimoEnvioRef = useRef(0);
@@ -133,7 +124,7 @@ const LocalPlayerController: React.FC<{
     }
   };
 
-  const initialPos: [number, number, number] = spawnPosicion?.position ?? (isAula ? [0, 0, 3] : [0, 0, 11]);
+  const initialPos: [number, number, number] = spawnPosicion?.position ?? (isAula ? [0, 0, 3] : planoCampus.aparicion.position);
   const initialRot: [number, number, number] = spawnPosicion?.rotation ?? [0, Math.PI, 0]; // Rotación inicial de 180° por defecto
 
   return (
@@ -146,8 +137,7 @@ const LocalPlayerController: React.FC<{
       isAula={isAula}
       estaSentado={estaSentado}
       posicionSentado={posicionSentadoTarget}
-      zonasBloqueadasCampus={zonasBloqueadasCampus}
-      mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
+      planoCampus={isAula ? undefined : planoCampus}
       onUpdatePosicion={handleUpdatePosicion}
       nivelVoz={audioClient ? () => audioClient.nivelLocal() : undefined}
     />
@@ -482,33 +472,21 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     [espacios]
   );
 
-  // Mismo cálculo de posiciones (por bloques de docente) que usa <Campus>, para
-  // que la detección de "aula más cercana" con la tecla E, la colisión del
-  // avatar y el tamaño de la Isla 2 coincidan siempre con lo que el jugador ve
-  // renderizado (sin importar cuántas aulas/docentes haya).
-  const { posiciones: posicionesAulas, extentoLateral } = React.useMemo(
-    () => calcularLayoutAulas(aulas),
-    [aulas]
-  );
+  // Plano del campus (CAMPUS-01): la misma fuente para lo que se dibuja, la
+  // colisión del avatar y la puerta que abre la tecla E.
+  const plano = React.useMemo(() => calcularPlanoCampus(aulas), [aulas]);
+  const planoRef = useRef(plano);
+  planoRef.current = plano;
 
-  const mitadAnchoIslaAcademica = React.useMemo(
-    () => calcularMitadAnchoIsla(extentoLateral),
-    [extentoLateral]
-  );
-
-  // Zonas bloqueadas para la colisión del avatar en el campus: el cuerpo de
-  // cada edificio de aula, en coordenadas de mundo (la Isla 2 está desplazada
-  // ISLA_2_OFFSET_Z respecto al origen).
-  const zonasBloqueadasAulas = React.useMemo<ZonaBloqueada[]>(
-    () =>
-      Array.from(posicionesAulas.values()).map(([x, , z]) => ({
-        x,
-        z: z + ISLA_2_OFFSET_Z,
-        mitadX: ANCHO_AULA / 2 + 0.5,
-        mitadZ: ANCHO_AULA / 2 + 0.5,
-      })),
-    [posicionesAulas]
-  );
+  // Dónde aparece el avatar. En el campus, una última posición guardada que
+  // ya no es transitable (era del campus anterior, de islas) se descarta y
+  // se aparece en la vereda, frente a la recepción.
+  const spawnEfectivo = React.useMemo<SpawnPosicion | null>(() => {
+    if (isAula) return spawnPosicion ?? null;
+    const p = spawnPosicion?.position;
+    if (p && esTransitable(planoRef.current, p[0], p[2])) return spawnPosicion!;
+    return planoRef.current.aparicion;
+  }, [isAula, spawnPosicion]);
 
   // Campus/E-key solo conocen la forma recortada (AulaCampus); al interactuar
   // resolvemos de vuelta el espacio completo para que el padre (SolicitudAccesoModal, etc.)
@@ -522,21 +500,21 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   );
 
   const avatarEstadoRef = useRef<AvatarEstadoRef>({
-    posicion: spawnPosicion ? new THREE.Vector3(...spawnPosicion.position) : new THREE.Vector3(0, 0, isAula ? 3 : 11),
-    angulo: spawnPosicion ? spawnPosicion.rotation[1] : Math.PI, // Spawn inicial con 180° de rotación por defecto
+    posicion: spawnEfectivo ? new THREE.Vector3(...spawnEfectivo.position) : new THREE.Vector3(0, 0, 3),
+    angulo: spawnEfectivo ? spawnEfectivo.rotation[1] : Math.PI, // Spawn inicial con 180° de rotación por defecto
     solicitarSnapCamara: true,
   });
 
   useEffect(() => {
-    if (spawnPosicion) {
-      avatarEstadoRef.current.posicion.set(...spawnPosicion.position);
-      avatarEstadoRef.current.angulo = spawnPosicion.rotation[1];
+    if (spawnEfectivo) {
+      avatarEstadoRef.current.posicion.set(...spawnEfectivo.position);
+      avatarEstadoRef.current.angulo = spawnEfectivo.rotation[1];
     } else {
-      avatarEstadoRef.current.posicion.set(0, 0, isAula ? 3 : 11);
+      avatarEstadoRef.current.posicion.set(0, 0, 3);
       avatarEstadoRef.current.angulo = Math.PI;
     }
     avatarEstadoRef.current.solicitarSnapCamara = true;
-  }, [isAula, spawnPosicion]);
+  }, [spawnEfectivo]);
 
   const [panelCustomizerAbierto, setPanelCustomizerAbierto] = useState(false);
   const [personalizacion, setPersonalizacion] = useState<PersonalizacionAvatar>(() => {
@@ -657,24 +635,25 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     const pos = avatarEstadoRef.current.posicion;
     if (!pos) return;
 
-    let aulaCercana: AulaCampus | null = null;
-    let distMin = Infinity;
-    aulas.forEach((aula) => {
-      const posicion = posicionesAulas.get(String(aula.id));
-      if (!posicion) return;
-      const [x, , z] = posicion;
-      const d = Math.hypot(pos.x - x, pos.z - (z + ISLA_2_OFFSET_Z));
-      if (d < distMin) {
-        distMin = d;
-        aulaCercana = aula;
-      }
-    });
+    const puerta = puertaCercana(plano, pos.x, pos.z);
+    const aula = puerta && aulas.find((a) => String(a.id) === puerta.id);
+    if (aula) handleInteractuarAula(aula);
+  }, [isAula, estaSentado, asientoCercano, aulas, plano, onInteractuarAula, handleInteractuarAula]);
 
-    const MAX_DISTANCIA = 9.0;
-    if (aulaCercana && distMin < MAX_DISTANCIA) {
-      handleInteractuarAula(aulaCercana);
+  // Puerta frente a la que está parado el avatar: ahí se muestra el aviso de la tecla E
+  const [puertaFrente, setPuertaFrente] = useState<string | null>(null);
+  useEffect(() => {
+    if (isAula) {
+      setPuertaFrente(null);
+      return;
     }
-  }, [isAula, estaSentado, asientoCercano, aulas, posicionesAulas, onInteractuarAula, handleInteractuarAula]);
+    const intervalo = setInterval(() => {
+      const pos = avatarEstadoRef.current.posicion;
+      setPuertaFrente(puertaCercana(planoRef.current, pos.x, pos.z)?.id ?? null);
+    }, 200);
+    return () => clearInterval(intervalo);
+  }, [isAula]);
+  const puertaAviso = puertaFrente ? plano.puertas.find((p) => p.id === puertaFrente) : undefined;
 
   useEffect(() => {
     const TECLAS_MOVIMIENTO = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
@@ -727,25 +706,32 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
             }}
           />
           <color attach="background" args={['#87ceeb']} />
-          {ajustesCalidad.estrellas > 0 && (
-            <Stars radius={100} depth={50} count={ajustesCalidad.estrellas} factor={4} saturation={0} fade speed={1} />
-          )}
-
-          <ambientLight intensity={isAula ? 0.9 : 0.7} color="#ffffff" />
-          <directionalLight
-            key={ajustesCalidad.tamanoSombra}
-            position={[10, 20, 10]}
-            intensity={1.3}
-            castShadow={!isAula && ajustesCalidad.sombras}
-            shadow-mapSize={[ajustesCalidad.tamanoSombra, ajustesCalidad.tamanoSombra]}
-          />
 
           {isAula ? (
-            <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} modoGrupos={modoGrupos} />
+            <>
+              {ajustesCalidad.estrellas > 0 && (
+                <Stars radius={100} depth={50} count={ajustesCalidad.estrellas} factor={4} saturation={0} fade speed={1} />
+              )}
+              <ambientLight intensity={0.9} color="#ffffff" />
+              <directionalLight position={[10, 20, 10]} intensity={1.3} />
+              <EscenarioAula socket={socket} pantallaUrl={pantallaUrl} modoGrupos={modoGrupos} />
+            </>
           ) : (
-            <group>
-              <Campus aulas={aulas} onInteractuarAula={handleInteractuarAula} />
-            </group>
+            // El campus trae su propio cielo, niebla y sol
+            <Campus plano={plano} aulas={aulas} onInteractuarAula={handleInteractuarAula} />
+          )}
+
+          {puertaAviso && (
+            <Letrero
+              texto="Presiona [E] o toca 🚪 para entrar"
+              position={[puertaAviso.frente[0], 3.6, puertaAviso.frente[1]]}
+              scale={[3.4, 0.62, 1]}
+              ancho={560}
+              alto={100}
+              fondo="#0f172a"
+              color="#7dd3fc"
+              fuente="bold 32px sans-serif"
+            />
           )}
 
           {isAula && asientoCercano && !estaSentado && (
@@ -769,11 +755,10 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
             personalizacion={personalizacion}
             avatarEstadoRef={avatarEstadoRef}
             isAula={isAula}
-            spawnPosicion={spawnPosicion}
+            spawnPosicion={spawnEfectivo}
             estaSentado={estaSentado}
             posicionSentadoTarget={posicionSentadoTarget}
-            zonasBloqueadasCampus={zonasBloqueadasAulas}
-            mitadAnchoIslaAcademica={mitadAnchoIslaAcademica}
+            planoCampus={plano}
             onMove={(pos, rot) => onPositionChange?.(pos, rot)}
           />
 

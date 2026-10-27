@@ -115,18 +115,6 @@ export const PupitresInstanciados: React.FC<{ posiciones: Vec3[] }> = ({ posicio
   );
 };
 
-export const Pizarra: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
-  position,
-  rotation = [0, 0, 0],
-}) => {
-  return (
-    <mesh position={position} rotation={rotation} castShadow scale={[2.2, 2.2, 2.2]}>
-      <boxGeometry args={[2.6, 1.1, 0.06]} />
-      <meshStandardMaterial color="#1b3a2f" />
-    </mesh>
-  );
-};
-
 export const EscritorioProfesor: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
   position,
   rotation = [0, 0, 0],
@@ -163,80 +151,6 @@ export const Sofa: React.FC<{ position: [number, number, number]; rotation?: [nu
       <mesh castShadow position={[0, 0.6, -0.26]}>
         <boxGeometry args={[1.6, 0.5, 0.14]} />
         <meshStandardMaterial color={color} />
-      </mesh>
-    </group>
-  );
-};
-
-export const MesaRedonda: React.FC<{ position: [number, number, number]; color?: string }> = ({
-  position,
-  color = '#8d6e4a',
-}) => {
-  return (
-    <group position={position} scale={[2.2, 2.2, 2.2]}>
-      <mesh castShadow position={[0, 0.4, 0]}>
-        <cylinderGeometry args={[0.5, 0.5, 0.06, 20]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      <mesh castShadow position={[0, 0.2, 0]}>
-        <cylinderGeometry args={[0.06, 0.06, 0.4, 12]} />
-        <meshStandardMaterial color="#333333" />
-      </mesh>
-    </group>
-  );
-};
-
-export const MaquinaExpendedora: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
-  position,
-  rotation = [0, 0, 0],
-}) => {
-  return (
-    <mesh position={position} rotation={rotation} castShadow scale={[2.2, 2.2, 2.2]}>
-      <boxGeometry args={[0.8, 1.7, 0.6]} />
-      <meshStandardMaterial color="#2980b9" />
-    </mesh>
-  );
-};
-
-export const EscritorioDecano: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
-  position,
-  rotation = [0, 0, 0],
-}) => {
-  return (
-    <group position={position} rotation={rotation} scale={[2.3, 2.3, 2.3]}>
-      <mesh castShadow position={[0, 0.45, 0]}>
-        <boxGeometry args={[1.8, 0.08, 0.8]} />
-        <meshStandardMaterial color="#3b2417" />
-      </mesh>
-      <mesh castShadow position={[-0.75, 0.22, 0]}>
-        <boxGeometry args={[0.1, 0.45, 0.75]} />
-        <meshStandardMaterial color="#2a1a10" />
-      </mesh>
-      <mesh castShadow position={[0.75, 0.22, 0]}>
-        <boxGeometry args={[0.1, 0.45, 0.75]} />
-        <meshStandardMaterial color="#2a1a10" />
-      </mesh>
-    </group>
-  );
-};
-
-export const SillaOficina: React.FC<{ position: [number, number, number]; rotation?: [number, number, number] }> = ({
-  position,
-  rotation = [0, 0, 0],
-}) => {
-  return (
-    <group position={position} rotation={rotation} scale={[2.2, 2.2, 2.2]}>
-      <mesh castShadow position={[0, 0.45, 0]}>
-        <boxGeometry args={[0.45, 0.5, 0.08]} />
-        <meshStandardMaterial color="#1b1b1b" />
-      </mesh>
-      <mesh castShadow position={[0, 0.2, 0.15]}>
-        <boxGeometry args={[0.42, 0.06, 0.38]} />
-        <meshStandardMaterial color="#1b1b1b" />
-      </mesh>
-      <mesh castShadow position={[0, 0.05, 0.15]}>
-        <cylinderGeometry args={[0.04, 0.04, 0.1, 8]} />
-        <meshStandardMaterial color="#444444" />
       </mesh>
     </group>
   );

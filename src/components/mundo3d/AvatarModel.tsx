@@ -8,6 +8,7 @@ import { estadoRemoto, registrarMovimiento } from './posicionesRemotas.js';
 import { Letrero } from './Letrero.js';
 import { useCalidad } from './useCalidad.js';
 import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './personalizacion.js';
+import { esTransitable, type PlanoCampus } from './planoCampus.js';
 
 export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
 
@@ -16,14 +17,6 @@ const ROTACION_LERP = 10;
 const FRECUENCIA_CAMINAR = 9;
 const AMPLITUD_CAMINAR = 0.6;
 
-// Rectángulo de colisión (en coordenadas de mundo) que bloquea el paso del
-// avatar en el campus — un edificio de aula, por ejemplo.
-export interface ZonaBloqueada {
-  x: number;
-  z: number;
-  mitadX: number;
-  mitadZ: number;
-}
 
 interface AvatarModelProps {
   nombre: string;
@@ -34,11 +27,8 @@ interface AvatarModelProps {
   isAula?: boolean;
   estaSentado?: boolean;
   posicionSentado?: { x: number; y: number; z: number; angulo: number } | null;
-  // Zonas de colisión del campus (edificios de aula) calculadas en vivo a
-  // partir del layout real, y mitad del ancho actual de la Isla 2 — ambos
-  // acompañan el crecimiento lateral de los bloques de aulas por docente.
-  zonasBloqueadasCampus?: ZonaBloqueada[];
-  mitadAnchoIslaAcademica?: number;
+  /** Plano del campus (CAMPUS-01): por dónde se puede caminar fuera del aula. */
+  planoCampus?: PlanoCampus;
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
   /** Nivel de voz actual (0..1) de esta persona; enciende el anillo de "está hablando". */
   nivelVoz?: () => number;
@@ -257,8 +247,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   isAula = false,
   estaSentado = false,
   posicionSentado,
-  zonasBloqueadasCampus,
-  mitadAnchoIslaAcademica,
+  planoCampus,
   onUpdatePosicion,
   nivelVoz,
   socketId,
@@ -447,15 +436,15 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           const posActual = grupoRef.current.position;
           const posDeseada = posActual.clone().add(mover);
 
-          if (esPosicionValida(posDeseada, isAula, zonasBloqueadasCampus, mitadAnchoIslaAcademica)) {
+          if (esPosicionValida(posDeseada, isAula, planoCampus)) {
             grupoRef.current.position.copy(posDeseada);
           } else {
             const posPruebaX = posActual.clone().add(new THREE.Vector3(mover.x, 0, 0));
-            if (esPosicionValida(posPruebaX, isAula, zonasBloqueadasCampus, mitadAnchoIslaAcademica)) {
+            if (esPosicionValida(posPruebaX, isAula, planoCampus)) {
               grupoRef.current.position.copy(posPruebaX);
             } else {
               const posPruebaZ = posActual.clone().add(new THREE.Vector3(0, 0, mover.z));
-              if (esPosicionValida(posPruebaZ, isAula, zonasBloqueadasCampus, mitadAnchoIslaAcademica)) {
+              if (esPosicionValida(posPruebaZ, isAula, planoCampus)) {
                 grupoRef.current.position.copy(posPruebaZ);
               }
             }
@@ -857,8 +846,7 @@ function Etiqueta({ nombre }: { nombre: string }) {
 function esPosicionValida(
   pos: THREE.Vector3,
   isAula: boolean = false,
-  zonasBloqueadasCampus?: ZonaBloqueada[],
-  mitadAnchoIslaAcademica?: number
+  planoCampus?: PlanoCampus
 ): boolean {
   const x = pos.x;
   const z = pos.z;
@@ -888,29 +876,9 @@ function esPosicionValida(
     return true;
   }
 
-  // El límite de la Isla 2 acompaña el ancho real calculado por
-  // calcularMitadAnchoIsla (crece junto con los bloques de aulas); si no se
-  // provee (avatares remotos, por ejemplo) se usa el ancho mínimo original.
-  const mitadIslaAcademica = mitadAnchoIslaAcademica ?? 18.5;
-  const enIslaSocial = Math.abs(x) <= 10.5 && z >= -0.8 && z <= 14.8;
-  const enIslaAcademica = Math.abs(x) <= mitadIslaAcademica && z >= -41.8 && z <= -12.2;
-  const enPuente = Math.abs(x) <= 1.9 && z >= -12.2 && z <= -0.8;
-
-  if (!enIslaSocial && !enIslaAcademica && !enPuente) return false;
-
-  const distFuente = Math.hypot(x - 0, z - 7);
-  if (distFuente < 2.3) return false;
-
-  // Cuerpo de cada edificio de aula, calculado en vivo a partir del layout
-  // real (agrupado por docente) en vez de rectángulos fijos que asumían la
-  // vieja grilla de 4 columnas.
-  if (zonasBloqueadasCampus) {
-    for (const zona of zonasBloqueadasCampus) {
-      if (Math.abs(x - zona.x) < zona.mitadX && Math.abs(z - zona.z) < zona.mitadZ) return false;
-    }
-  }
-
-  return true;
+  // Campus: dentro de lo transitable del plano (vereda, patio, cancha…) y
+  // fuera de edificios, escalera, columnas y vehículos
+  return !planoCampus || esTransitable(planoCampus, x, z);
 }
 
 export default AvatarModel;
