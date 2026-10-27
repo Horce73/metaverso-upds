@@ -147,7 +147,7 @@ export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
     const anchos = [12, 9, 14, 10, 13, 8, 11];
     const altos = [7, 10, 6.5, 9, 7.5, 11, 8];
     const colores = ['#ffffff', '#f6e7c8', '#ffffff', '#f3d9c4', '#fffaf0', '#e9eef2', '#ffffff'];
-    let x = xIni;
+    let x = X_INICIO_CALLE;
     for (let i = 0; x < xFinCalle; i++) {
       const w = anchos[i % anchos.length];
       lista.push({ x: [x, x + w - 0.3], alto: altos[i % altos.length], color: colores[i % colores.length] });

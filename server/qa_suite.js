@@ -460,14 +460,25 @@ async function runTests() {
     'SELECT a.codigo FROM espacios e JOIN asignaturas a ON a.id = e.asignatura_id WHERE e.id = $1', [aulaId]
   )).rows[0].codigo;
 
+  // Los pases viven en la memoria del backend: un estudiante recién creado
+  // garantiza que no tenga uno de una corrida anterior de la suite
+  const correoNuevo = `qa.sinpase.${Date.now().toString(36)}@upds.edu.bo`;
+  await api('/api/auth/register', {
+    method: 'POST',
+    ip: ipAleatoria(),
+    body: { email: correoNuevo, password: CLAVE_DESECHABLE, nombre: 'Sin', apellido: 'Pase' },
+  });
+  const nuevo = await tokenDe({ email: correoNuevo, password: CLAVE_DESECHABLE });
+  const sNuevo = await conectar(nuevo.token);
+
   await caso('Sin pase, un estudiante no entra al aula aunque mande join_space', async () => {
-    const r = await entrar(sAna, aulaId);
+    const r = await entrar(sNuevo, aulaId);
     return r.ok === false && r.sinAcceso === true;
   });
 
   await caso('Un código incorrecto, o el viejo comodín 123456, no da acceso (403)', async () => {
-    const [mal, comodin] = await Promise.all([acceso(ana.token, aulaId, 'NO-ES'), acceso(ana.token, aulaId, '123456')]);
-    return mal.status === 403 && comodin.status === 403 && !(await entrar(sAna, aulaId)).ok;
+    const [mal, comodin] = await Promise.all([acceso(nuevo.token, aulaId, 'NO-ES'), acceso(nuevo.token, aulaId, '123456')]);
+    return mal.status === 403 && comodin.status === 403 && !(await entrar(sNuevo, aulaId)).ok;
   });
 
   await caso('Un invitado no obtiene pase con el código', async () => {
@@ -493,13 +504,13 @@ async function runTests() {
   });
 
   await caso('Un estudiante no puede aprobarse a sí mismo una solicitud', async () => {
-    const sLuis = await conectar((await tokenDe(ESTUDIANTE_3)).token);
     try {
-      sLuis.emit('responder_solicitud_acceso', { estudianteSocketId: sLuis.id, espacioId: aulaId, aprobado: true });
+      sNuevo.emit('responder_solicitud_acceso', { estudianteSocketId: sNuevo.id, espacioId: aulaId, aprobado: true });
       await new Promise((r) => setTimeout(r, 300));
-      return !(await entrar(sLuis, aulaId)).ok;
+      return !(await entrar(sNuevo, aulaId)).ok;
     } finally {
-      sLuis.disconnect();
+      sNuevo.disconnect();
+      await pool.query('DELETE FROM usuarios WHERE email = $1', [correoNuevo]);
     }
   });
 
@@ -523,6 +534,20 @@ async function runTests() {
     });
     const data = await anuncio;
     return r.ok && data?.user?.userId === ana.id && data.user.nombreVisible !== 'Maria F.';
+  });
+
+  await caso('La apariencia que llega al espacio va saneada (AVATAR-01)', async () => {
+    const anuncio = esperarEvento(sDocente, 'user_joined', 3000, (d) => d?.user?.userId === ana.id);
+    await entrar(sAna, aulaId, { apariencia: { piel: '#d9a066', ropa: { superior: 'saco' }, basura: 'x'.repeat(5000), 'mala clave': 1 } });
+    const ap = (await anuncio)?.user?.apariencia;
+    return ap?.piel === '#d9a066' && ap?.ropa?.superior === 'saco' && !('basura' in ap) && !('mala clave' in ap);
+  });
+
+  await caso('Un cambio de apariencia lo ven al instante los demás del espacio', async () => {
+    const llega = esperarEvento(sDocente, 'apariencia_actualizada', 3000, (d) => d?.socketId === sAna.id);
+    sAna.emit('apariencia', { cabello: { estilo: 'afro', color: '#6f4a2f' }, lista: [1, 2] });
+    const data = await llega;
+    return data?.apariencia?.cabello?.estilo === 'afro' && !('lista' in data.apariencia);
   });
 
   await caso('join_aceptado trae los roles de la base, no los que diga el cliente', async () => {

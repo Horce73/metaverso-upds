@@ -551,6 +551,7 @@ function App() {
     activeSocket.off('user_joined');
     activeSocket.off('user_left');
     activeSocket.off('user_moved');
+    activeSocket.off('apariencia_actualizada');
     activeSocket.off('chat_msg_received');
     activeSocket.off('pizarra_actualizada');
     activeSocket.off('clase_iniciada');
@@ -724,6 +725,11 @@ function App() {
       });
     });
 
+    // Alguien cambió su apariencia desde el panel ✨ (AVATAR-01)
+    activeSocket.on('apariencia_actualizada', (data: { socketId: string; apariencia: unknown }) => {
+      setRemoteUsers((prev) => (prev[data.socketId] ? { ...prev, [data.socketId]: { ...prev[data.socketId], apariencia: data.apariencia } } : prev));
+    });
+
     // Sin setState: la posición va directo al buffer que lee cada avatar en
     // su useFrame, y a la voz espacial. remoteUsers guarda sólo quién está.
     activeSocket.on('user_moved', (data: any) => {
@@ -804,6 +810,24 @@ function App() {
 
   // Rastrea la posición actual del avatar mientras está en el campus (no en aulas),
   // para que "Salir al Campus" pueda volver ahí sin depender de una ida y vuelta al servidor.
+  // Cambios desde el panel ✨ (AVATAR-01): se avisan al espacio y se guardan
+  // en la base, agrupados, para no mandar uno por cada color que se prueba.
+  const publicarAparienciaRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publicarApariencia = (nueva: unknown) => {
+    if (publicarAparienciaRef.current) clearTimeout(publicarAparienciaRef.current);
+    publicarAparienciaRef.current = setTimeout(() => {
+      socketRef.current?.emit('apariencia', nueva);
+      if (!token || user?.isGuest) return;
+      fetch('/api/avatar/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ nombre_visible: avatar?.nombre_visible || `${user?.nombre ?? ''}`.trim() || 'Estudiante UPDS', apariencia: nueva }),
+      }).catch(() => {
+        // Sin conexión: queda en este navegador y se guarda con el próximo cambio
+      });
+    }, 700);
+  };
+
   const handleAvatarPositionChange = (pos: [number, number, number], rot: [number, number, number]) => {
     if (espacioActivo?.tipo === 'campus') {
       ultimaPosicionCampusRef.current = { position: pos, rotation: rot };
@@ -1201,6 +1225,7 @@ function App() {
               if (updated) localStorage.setItem('avatar', JSON.stringify(updated));
               return updated;
             });
+            publicarApariencia(nuevaApariencia);
           }}
         />
         </Suspense>

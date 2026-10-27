@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect, useCallback } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKeyboardControls } from './useKeyboardControls.js';
@@ -7,7 +7,9 @@ import { posicionEn, VELOCIDAD_CAMINAR } from './interpolacion.js';
 import { estadoRemoto, registrarMovimiento } from './posicionesRemotas.js';
 import { Letrero } from './Letrero.js';
 import { useCalidad } from './useCalidad.js';
-import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './personalizacion.js';
+import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO, normalizarApariencia, claveApariencia } from './personalizacion.js';
+import { CuerpoAvatar } from './CuerpoAvatar.js';
+import { texturaRostro } from './rostroAvatar.js';
 import { esTransitable, type PlanoCampus } from './planoCampus.js';
 
 export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
@@ -44,195 +46,6 @@ function lerpAngulo(actual: number, objetivo: number, alpha: number): number {
   if (diff < -Math.PI) diff += Math.PI * 2;
   if (diff > Math.PI) diff -= Math.PI * 2;
   return actual + diff * alpha;
-}
-
-// ---------------------------------------------------------------------
-// 🎨 GENERADOR DINÁMICO DE TEXTURE ATLAS PARA ROSTROS
-// ---------------------------------------------------------------------
-let textureAtlasGlobal: THREE.CanvasTexture | null = null;
-
-function obtenerTextureAtlasRostro(): THREE.CanvasTexture {
-  if (textureAtlasGlobal) return textureAtlasGlobal;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  if (ctx) {
-    ctx.clearRect(0, 0, 512, 512);
-
-    const dibujarCelda = (
-      col: number,
-      row: number,
-      tipoOjos: 'abierto' | 'guino' | 'cerrado' | 'sorprendido',
-      tipoBoca: 'sonrisa' | 'seria' | 'sorprendida'
-    ) => {
-      const offsetX = col * 128;
-      const offsetY = row * 256;
-
-      ctx.save();
-      ctx.translate(offsetX, offsetY);
-
-      if (tipoOjos === 'cerrado') {
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(36, 85, 14, Math.PI * 0.1, Math.PI * 0.9, false);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.ellipse(36, 85, 14, 18, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#0f172a';
-        ctx.beginPath();
-        ctx.ellipse(36, 87, 9, 12, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(32, 81, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      if (tipoOjos === 'guino' || tipoOjos === 'cerrado') {
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(92, 85, 14, Math.PI * 0.1, Math.PI * 0.9, false);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.ellipse(92, 85, 14, 18, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#0f172a';
-        ctx.beginPath();
-        ctx.ellipse(92, 87, 9, 12, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(88, 81, 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.fillStyle = '#1e1b18';
-      if (tipoBoca === 'seria') {
-        ctx.fillRect(22, 58, 28, 6);
-        ctx.fillRect(78, 58, 28, 6);
-      } else {
-        ctx.fillRect(22, 55, 28, 6);
-        ctx.fillRect(78, 55, 28, 6);
-      }
-
-      ctx.fillStyle = 'rgba(244, 63, 94, 0.45)';
-      ctx.beginPath();
-      ctx.arc(22, 115, 10, 0, Math.PI * 2);
-      ctx.arc(106, 115, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (tipoBoca === 'sonrisa') {
-        ctx.fillStyle = '#991b1b';
-        ctx.beginPath();
-        ctx.arc(64, 145, 18, 0, Math.PI, false);
-        ctx.fill();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(52, 145, 24, 6);
-      } else if (tipoBoca === 'sorprendida') {
-        ctx.fillStyle = '#7f1d1d';
-        ctx.beginPath();
-        ctx.ellipse(64, 150, 10, 14, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.fillStyle = '#450a0a';
-        ctx.fillRect(48, 148, 32, 6);
-      }
-
-      ctx.restore();
-    };
-
-    dibujarCelda(0, 0, 'abierto', 'sonrisa');
-    dibujarCelda(1, 0, 'guino', 'sonrisa');
-    dibujarCelda(2, 0, 'abierto', 'seria');
-    dibujarCelda(3, 0, 'sorprendido', 'sorprendida');
-
-    dibujarCelda(0, 1, 'cerrado', 'sonrisa');
-    dibujarCelda(1, 1, 'cerrado', 'seria');
-    dibujarCelda(2, 1, 'cerrado', 'sorprendida');
-    dibujarCelda(3, 1, 'abierto', 'sonrisa');
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(0.25, 0.5);
-  texture.needsUpdate = true;
-  textureAtlasGlobal = texture;
-  return textureAtlasGlobal;
-}
-
-// ---------------------------------------------------------------------
-// 👕 HOOK DE MATERIAL DE ROPA DUAL
-// ---------------------------------------------------------------------
-function useMaterialRopaDual(colPrimarioHex: string, colSecundarioHex: string) {
-  const material = useMemo(() => {
-    const mat = new THREE.MeshStandardMaterial({
-      color: colPrimarioHex,
-      roughness: 0.4,
-    });
-
-    const cPrim = new THREE.Color(colPrimarioHex);
-    const cSec = new THREE.Color(colSecundarioHex);
-
-    mat.onBeforeCompile = (shader: any) => {
-      shader.uniforms.uColorPrimario = { value: cPrim };
-      shader.uniforms.uColorSecundario = { value: cSec };
-      mat.userData.uniforms = shader.uniforms;
-
-      shader.vertexShader = `
-        varying vec3 vPosLocal;
-        ${shader.vertexShader}
-      `.replace(
-        '#include <begin_vertex>',
-        `
-        #include <begin_vertex>
-        vPosLocal = position;
-        `
-      );
-
-      shader.fragmentShader = `
-        varying vec3 vPosLocal;
-        uniform vec3 uColorPrimario;
-        uniform vec3 uColorSecundario;
-        ${shader.fragmentShader}
-      `.replace(
-        '#include <color_fragment>',
-        `
-        #include <color_fragment>
-        float franja = step(0.12, vPosLocal.y);
-        vec3 colResultante = mix(uColorPrimario, uColorSecundario, franja);
-        diffuseColor = vec4(colResultante, 1.0);
-        `
-      );
-    };
-
-    return mat;
-  }, []);
-
-  useEffect(() => {
-    material.color.set(colPrimarioHex);
-    if (material.userData.uniforms) {
-      material.userData.uniforms.uColorPrimario.value.set(colPrimarioHex);
-      material.userData.uniforms.uColorSecundario.value.set(colSecundarioHex);
-    }
-  }, [material, colPrimarioHex, colSecundarioHex]);
-
-  return material;
 }
 
 // ---------------------------------------------------------------------
@@ -278,28 +91,20 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   const piernaIzqRef = useRef<THREE.Group>(null);
   const piernaDerRef = useRef<THREE.Group>(null);
 
-  const colorPiel = personalizacion.colorPiel || PERSONALIZACION_POR_DEFECTO.colorPiel!;
-  const colorPrimarioRopa = personalizacion.ropa?.colorPrimario || personalizacion.colorRopa || '#3498db';
-  const colorSecundarioRopa = personalizacion.ropa?.colorSecundario || oscurecerHex(colorPrimarioRopa, 0.7);
+  // Apariencia completa y válida (AVATAR-01), venga de la versión que venga.
+  // La clave evita recalcular cuando llega el mismo objeto con otra identidad.
+  const clave = claveApariencia(normalizarApariencia(personalizacion));
+  const apariencia = useMemo(() => normalizarApariencia(JSON.parse(clave)), [clave]);
+  const escala = apariencia.cuerpo.altura;
 
-  const estiloCabello = personalizacion.cabello?.estilo || personalizacion.estiloCabello || 'corto';
-  const colorCabello = personalizacion.cabello?.color || personalizacion.colorCabello || '#2c1d11';
-
-  const estiloVelloFacial = personalizacion.velloFacial?.estilo || 'ninguno';
-  const colorVelloFacial = personalizacion.velloFacial?.color || colorCabello;
-
-  const expresionRostro = personalizacion.expresionRostro || 'alegre';
-  const escala = personalizacion.escala ?? 1;
-  const accesorios = personalizacion.accesorios;
-
-  const materialTorso = useMaterialRopaDual(colorPrimarioRopa, colorSecundarioRopa);
-  const materialPiernas = useMaterialRopaDual('#1e293b', '#0f172a');
-
-  const faceTextureAtlas = useMemo(() => {
-    const atlas = obtenerTextureAtlasRostro().clone();
-    atlas.needsUpdate = true;
-    return atlas;
-  }, []);
+  // Cara: la textura se comparte entre avatares iguales; el clon permite que
+  // cada uno mueva su offset para pestañear por su cuenta
+  const rostro = useMemo(() => {
+    const t = texturaRostro(apariencia).clone();
+    t.needsUpdate = true;
+    return t;
+  }, [apariencia]);
+  useEffect(() => () => rostro.dispose(), [rostro]);
 
   // Posición/rotación inicial: se aplica una única vez al montar. A partir de
   // ahí useFrame es la única fuente de verdad (lerp local por teclado, lerp/snap
@@ -339,34 +144,6 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     }
   }, [estaSentado, posicionSentado, onUpdatePosicion]);
 
-  const aplicarExpresionUV = useCallback(
-    (expr: string) => {
-      if (!faceTextureAtlas) return;
-      let col = 0;
-      let row = 0;
-
-      if (expr === 'pestaneo') {
-        col = 0;
-        row = 1;
-      } else if (expr === 'guiño') {
-        col = 1;
-        row = 0;
-      } else if (expr === 'serio') {
-        col = 2;
-        row = 0;
-      } else if (expr === 'sorprendido') {
-        col = 3;
-        row = 0;
-      } else {
-        col = 0;
-        row = 0;
-      }
-
-      faceTextureAtlas.offset.set(col * 0.25, row === 0 ? 0.5 : 0.0);
-    },
-    [faceTextureAtlas]
-  );
-
   const aplicarNivelDetalle = (grupo: THREE.Group, lejos: boolean) => {
     if (!lodRef.current) {
       const detalles: THREE.Object3D[] = [];
@@ -402,7 +179,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
       estaPestaneandoRef.current = false;
     }
 
-    aplicarExpresionUV(estaPestaneandoRef.current ? 'pestaneo' : expresionRostro);
+    rostro.offset.x = estaPestaneandoRef.current ? 0.5 : 0;
 
     let estaCaminando = false;
 
@@ -551,75 +328,11 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   return (
     <group ref={grupoRef}>
       <group ref={cuerpoRef} scale={escala}>
-        {/* Piernas y Calzado */}
-        <group ref={piernaDerRef} position={[-0.14, 1.05, 0]}>
-          <mesh castShadow position={[0, -0.4, 0]} material={materialPiernas}>
-            <boxGeometry args={[0.22, 0.8, 0.24]} />
-          </mesh>
-          <mesh castShadow position={[0, -0.85, 0.05]} userData={{ detalle: true }}>
-            <boxGeometry args={[0.24, 0.12, 0.32]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.4} />
-          </mesh>
-        </group>
-        <group ref={piernaIzqRef} position={[0.14, 1.05, 0]}>
-          <mesh castShadow position={[0, -0.4, 0]} material={materialPiernas}>
-            <boxGeometry args={[0.22, 0.8, 0.24]} />
-          </mesh>
-          <mesh castShadow position={[0, -0.85, 0.05]} userData={{ detalle: true }}>
-            <boxGeometry args={[0.24, 0.12, 0.32]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.4} />
-          </mesh>
-        </group>
-
-        {/* Torso */}
-        <mesh castShadow position={[0, 1.35, 0]} material={materialTorso}>
-          <boxGeometry args={[0.55, 0.7, 0.32]} />
-        </mesh>
-
-        {/* Brazos */}
-        <group ref={brazoDerRef} position={[-0.33, 1.62, 0]}>
-          <mesh castShadow position={[0, -0.35, 0]} material={materialTorso}>
-            <boxGeometry args={[0.18, 0.7, 0.18]} />
-          </mesh>
-          <mesh castShadow position={[0, -0.72, 0]} userData={{ detalle: true }}>
-            <sphereGeometry args={[0.1, 12, 12]} />
-            <meshStandardMaterial color={colorPiel} />
-          </mesh>
-        </group>
-        <group ref={brazoIzqRef} position={[0.33, 1.62, 0]}>
-          <mesh castShadow position={[0, -0.35, 0]} material={materialTorso}>
-            <boxGeometry args={[0.18, 0.7, 0.18]} />
-          </mesh>
-          <mesh castShadow position={[0, -0.72, 0]} userData={{ detalle: true }}>
-            <sphereGeometry args={[0.1, 12, 12]} />
-            <meshStandardMaterial color={colorPiel} />
-          </mesh>
-        </group>
-
-        {/* Cabeza Base y Rostro Ultra-Optimizado (1 Draw Call via Atlas UV) */}
-        <group>
-          <mesh castShadow position={[0, 2.05, 0]}>
-            <sphereGeometry args={[0.26, 24, 24]} />
-            <meshStandardMaterial color={colorPiel} roughness={0.5} />
-          </mesh>
-
-          <mesh position={[0, 2.05, 0.261]} userData={{ detalle: true }}>
-            <planeGeometry args={[0.44, 0.44]} />
-            <meshBasicMaterial map={faceTextureAtlas} transparent alphaTest={0.05} />
-          </mesh>
-
-          <group userData={{ detalle: true }}>
-            <VelloFacial estilo={estiloVelloFacial} color={colorVelloFacial} />
-            <Cabello estilo={estiloCabello} color={colorCabello} />
-          </group>
-        </group>
-
-        {/* Accesorios */}
-        <group userData={{ detalle: true }}>
-          {accesorios?.sombrero && <Sombrero />}
-          {accesorios?.gafas && <Gafas />}
-          {accesorios?.mochila && <Mochila color={oscurecerColor(colorPrimarioRopa)} />}
-        </group>
+        <CuerpoAvatar
+          a={apariencia}
+          rostro={rostro}
+          refs={{ brazoDer: brazoDerRef, brazoIzq: brazoIzqRef, piernaDer: piernaDerRef, piernaIzq: piernaIzqRef }}
+        />
       </group>
 
       {nivelVoz && <AnilloVoz nivelVoz={nivelVoz} />}
@@ -664,179 +377,6 @@ function AnilloVoz({ nivelVoz }: { nivelVoz: () => number }) {
       <meshBasicMaterial ref={materialRef} color="#22c55e" transparent opacity={0} depthWrite={false} />
     </mesh>
   );
-}
-
-// Componente de Vello Facial Low-Poly
-function VelloFacial({ estilo, color }: { estilo: string; color: string }) {
-  if (!estilo || estilo === 'ninguno') return null;
-
-  return (
-    <group position={[0, 2.05, 0]}>
-      {(estilo === 'bigote' || estilo === 'candado') && (
-        <mesh position={[0, -0.06, 0.25]}>
-          <boxGeometry args={[0.16, 0.035, 0.02]} />
-          <meshStandardMaterial color={color} roughness={0.7} />
-        </mesh>
-      )}
-
-      {(estilo === 'perilla' || estilo === 'candado') && (
-        <mesh position={[0, -0.16, 0.23]}>
-          <boxGeometry args={[0.08, 0.08, 0.03]} />
-          <meshStandardMaterial color={color} roughness={0.7} />
-        </mesh>
-      )}
-
-      {estilo === 'barba' && (
-        <group>
-          <mesh position={[0, -0.12, 0.12]}>
-            <cylinderGeometry args={[0.265, 0.24, 0.18, 16, 1, false, -Math.PI / 1.8, Math.PI * 1.1]} />
-            <meshStandardMaterial color={color} roughness={0.8} />
-          </mesh>
-          <mesh position={[0, -0.06, 0.25]}>
-            <boxGeometry args={[0.16, 0.035, 0.02]} />
-            <meshStandardMaterial color={color} roughness={0.7} />
-          </mesh>
-        </group>
-      )}
-    </group>
-  );
-}
-
-// Componente de Cabello Dinámico
-function Cabello({ estilo = 'corto', color = '#2c1d11' }: { estilo: string; color: string }) {
-  if (estilo === 'calvo') return null;
-
-  return (
-    <group position={[0, 2.05, 0]}>
-      {estilo === 'corto' && (
-        <group>
-          <mesh castShadow position={[0, 0.12, -0.02]}>
-            <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-          <mesh castShadow position={[0, 0.2, 0.16]} rotation={[0.4, 0, 0]}>
-            <boxGeometry args={[0.34, 0.08, 0.12]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-        </group>
-      )}
-
-      {estilo === 'tupe' && (
-        <group>
-          <mesh castShadow position={[0, 0.12, -0.02]}>
-            <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.8]} />
-            <meshStandardMaterial color={color} roughness={0.5} />
-          </mesh>
-          <mesh castShadow position={[0, 0.27, 0.1]} rotation={[-0.2, 0, 0]}>
-            <boxGeometry args={[0.3, 0.16, 0.22]} />
-            <meshStandardMaterial color={color} roughness={0.5} />
-          </mesh>
-        </group>
-      )}
-
-      {estilo === 'largo' && (
-        <group>
-          <mesh castShadow position={[0, 0.12, -0.02]}>
-            <sphereGeometry args={[0.275, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-          <mesh castShadow position={[-0.22, -0.15, 0.02]}>
-            <boxGeometry args={[0.1, 0.42, 0.26]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-          <mesh castShadow position={[0.22, -0.15, 0.02]}>
-            <boxGeometry args={[0.1, 0.42, 0.26]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-          <mesh castShadow position={[0, -0.18, -0.16]}>
-            <boxGeometry args={[0.44, 0.46, 0.12]} />
-            <meshStandardMaterial color={color} roughness={0.6} />
-          </mesh>
-        </group>
-      )}
-
-      {estilo === 'rizado' && (
-        <group>
-          {[
-            [0, 0.22, 0],
-            [-0.14, 0.2, 0.08],
-            [0.14, 0.2, 0.08],
-            [-0.16, 0.18, -0.1],
-            [0.16, 0.18, -0.1],
-            [0, 0.24, 0.12],
-            [0, 0.22, -0.16],
-          ].map((pos, idx) => (
-            <mesh key={idx} castShadow position={pos as [number, number, number]}>
-              <sphereGeometry args={[0.14, 12, 12]} />
-              <meshStandardMaterial color={color} roughness={0.8} />
-            </mesh>
-          ))}
-        </group>
-      )}
-
-      {estilo === 'bun' && (
-        <group>
-          <mesh castShadow position={[0, 0.12, -0.02]}>
-            <sphereGeometry args={[0.27, 20, 20, 0, Math.PI * 2, 0, Math.PI / 1.7]} />
-            <meshStandardMaterial color={color} roughness={0.5} />
-          </mesh>
-          <mesh castShadow position={[0, 0.28, -0.18]}>
-            <sphereGeometry args={[0.13, 14, 14]} />
-            <meshStandardMaterial color={color} roughness={0.5} />
-          </mesh>
-        </group>
-      )}
-    </group>
-  );
-}
-
-function Sombrero() {
-  return (
-    <group position={[0, 2.45, 0]}>
-      <mesh castShadow>
-        <coneGeometry args={[0.3, 0.36, 16]} />
-        <meshStandardMaterial color="#7a3b12" />
-      </mesh>
-      <mesh position={[0, -0.16, 0]} castShadow>
-        <cylinderGeometry args={[0.4, 0.4, 0.06, 16]} />
-        <meshStandardMaterial color="#7a3b12" />
-      </mesh>
-    </group>
-  );
-}
-
-function Gafas() {
-  return (
-    <mesh castShadow position={[0, 2.08, 0.24]}>
-      <boxGeometry args={[0.42, 0.1, 0.05]} />
-      <meshStandardMaterial color="#111111" />
-    </mesh>
-  );
-}
-
-function Mochila({ color }: { color: THREE.Color }) {
-  return (
-    <mesh castShadow position={[0, 1.4, -0.24]}>
-      <boxGeometry args={[0.4, 0.5, 0.2]} />
-      <meshStandardMaterial color={color} />
-    </mesh>
-  );
-}
-
-function oscurecerHex(hex: string, factor = 0.6): string {
-  try {
-    const col = new THREE.Color(hex);
-    col.multiplyScalar(factor);
-    return `#${col.getHexString()}`;
-  } catch {
-    return hex;
-  }
-}
-
-function oscurecerColor(hex: string): THREE.Color {
-  const color = new THREE.Color(hex);
-  color.multiplyScalar(0.6);
-  return color;
 }
 
 function Etiqueta({ nombre }: { nombre: string }) {
