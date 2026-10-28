@@ -3,10 +3,16 @@ import * as THREE from 'three';
 import { Sky } from '@react-three/drei';
 import { Letrero } from './Letrero.js';
 import { useCalidad } from './useCalidad.js';
-import { EdificioAntiguo, EdificioNuevo } from './EdificiosUPDS.js';
+import { EdificioAntiguo, EdificioNuevo, ALTO_ANTIGUO, ALTO_NUEVO } from './EdificiosUPDS.js';
 import { DecoradoCampus } from './DecoradoCampus.js';
 import { Fusionar } from './Fusionar.js';
-import type { PlanoCampus, PuertaAula } from './planoCampus.js';
+import { recortarVista, definirVolumenes } from './recorteVista.js';
+import type { PlanoCampus, PuertaAula, Rect } from './planoCampus.js';
+
+/** Caja de un edificio para el recorte de la vista: un poco más ancha, por letreros y cornisas. */
+function volumen(r: Rect, alto: number): THREE.Box3 {
+  return new THREE.Box3(new THREE.Vector3(r.x0 - 0.6, 0, r.z0 - 0.6), new THREE.Vector3(r.x1 + 0.6, alto, r.z1 + 0.6));
+}
 
 // Campus UPDS (CAMPUS-01): la manzana de la universidad en vez de las islas
 // flotantes. Se llega por la vereda, se entra por la recepción del edificio
@@ -135,8 +141,23 @@ const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractu
 export const Campus: React.FC<CampusProps> = ({ plano, aulas = [], onInteractuarAula }) => {
   const porId = React.useMemo(() => new Map(aulas.map((a) => [String(a.id), a])), [aulas]);
   const centro: [number, number] = [(plano.edificioNuevo.x0 + plano.xFin) / 2, -12];
+  const raiz = React.useRef<THREE.Group>(null);
+  // Después de que Fusionar armó sus mallas (sus efectos corren antes que
+  // este), y otra vez si cambian el plano o las puertas de las aulas
+  React.useLayoutEffect(() => {
+    if (raiz.current) recortarVista(raiz.current);
+  }, [plano.xFin, aulas]);
+  React.useEffect(() => {
+    // Con el techo: la cámara puede mirar desde arriba
+    definirVolumenes([
+      volumen(plano.alaCalle, ALTO_ANTIGUO + 3),
+      volumen(plano.alaFondo, ALTO_ANTIGUO + 3),
+      volumen(plano.edificioNuevo, ALTO_NUEVO + 1),
+    ]);
+    return () => definirVolumenes([]);
+  }, [plano]);
   return (
-    <group>
+    <group ref={raiz}>
       <Iluminacion centro={centro} />
       {/* Todo lo que no se mueve, fusionado por material (PERF-01); el largo
           del edificio (xFin) es lo único del plano que cambia su forma */}

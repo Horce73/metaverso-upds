@@ -15,6 +15,7 @@ const PB = 3.6; // alto de la planta baja del antiguo
 const PISO = 3.2;
 const PISOS_ARRIBA = 3;
 const ALTO_ANTIGUO = PB + PISO * PISOS_ARRIBA; // 13,2
+const ALTO_NUEVO = 19.2;
 
 const FACHADA: Cara = { textura: 'fachadaAntigua', modulo: [4.5, PISO] };
 const PLANTA_BAJA: Cara = { textura: 'plantaBaja', modulo: [4.5, PB] };
@@ -160,7 +161,7 @@ const EscaleraPatio: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
 
 export const EdificioNuevo: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
   const { edificioNuevo: r, hallNuevo: hall, conexionNuevo: con } = plano;
-  const ALTO = 19.2;
+  const ALTO = ALTO_NUEVO;
   const BASE = 3.8;
   const BANDA = 5.0;
   const VIDRIO: Cara = { textura: 'vidrio', modulo: [4, 4], rugosidad: 0.15, metalicidad: 0.5 };
@@ -200,4 +201,4 @@ export const EdificioNuevo: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
   );
 };
 
-export { ALTO_ANTIGUO, PB };
+export { ALTO_ANTIGUO, ALTO_NUEVO, PB };
