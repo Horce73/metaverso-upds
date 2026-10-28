@@ -22,6 +22,7 @@ import { estadoPantalla, iniciarPantalla, esCuadroValido, guardarCuadro, detener
 import { debeRecibirMovimiento } from './relevanciaPosicion.js';
 import { log } from './registro.js';
 import { pases } from './accesoAula.js';
+import { sanearApariencia } from './apariencia.js';
 
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
@@ -191,7 +192,8 @@ export function setupSockets(io: Server) {
     on('join_space', 'join_space', async (data: any) => {
       const numUserId = identidad.userId;
       const nombreVisible = identidad.nombre;
-      const apariencia = data?.apariencia || data?.user?.apariencia || {};
+      // Se retransmite a todo el espacio: sólo lo que parece una apariencia (AVATAR-01)
+      const apariencia = sanearApariencia(data?.apariencia || data?.user?.apariencia);
       const peerId = String(data?.peerId || data?.user?.peerId || '');
 
       // El espacio y su tipo salen de la base, no del cliente.
@@ -317,6 +319,15 @@ export function setupSockets(io: Server) {
       if (numUserId > 0) {
         await registrarAsistencia(numUserId, nuevoEspacioId);
       }
+    });
+
+    // Cambio de apariencia en vivo (AVATAR-01): los demás del espacio lo ven
+    // sin esperar a que vuelva a entrar
+    on('apariencia', 'apariencia', (data: unknown) => {
+      const user = activeUsers.get(socket.id);
+      if (!user) return;
+      user.apariencia = sanearApariencia(data);
+      socket.to(String(user.espacioId)).emit('apariencia_actualizada', { socketId: socket.id, apariencia: user.apariencia });
     });
 
     on('move', 'move', (data: {

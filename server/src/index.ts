@@ -20,6 +20,7 @@ import { registrarRutasBitacora } from './bitacoraAdmin.js';
 import { registrarRutasSolicitudesDocente } from './solicitudesDocente.js';
 import { limiteApi, limiteLogin, limiteRegistro, limiteInvitado } from './limites.js';
 import { log } from './registro.js';
+import { sanearApariencia } from './apariencia.js';
 import { registrarRutasSalud } from './salud.js';
 import { registrarRutasAccesoAula } from './accesoAulaServidor.js';
 
@@ -228,8 +229,8 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
       await client.query('INSERT INTO datos_personales (usuario_id) VALUES ($1)', [newUser.id]);
 
       // Crear avatar (RF-01)
-      const aparienciaData = req.body.apariencia || { colorRopa: '#3b82f6', colorPiel: '#e0ac69', colorCabello: '#2c1d11', estiloCabello: 'corto', expresionRostro: 'alegre', escala: 1, accesorios: { sombrero: false, gafas: false, mochila: false } };
-      const aparienciaStr = typeof aparienciaData === 'string' ? aparienciaData : JSON.stringify(aparienciaData);
+      // Sin apariencia ({}), el cliente dibuja la de por defecto (AVATAR-01)
+      const aparienciaStr = JSON.stringify(sanearApariencia(req.body.apariencia));
       const nombreVis = req.body.nombre_visible || `${nombre} ${apellido.charAt(0)}.`;
       await client.query(
         'INSERT INTO avatares (usuario_id, nombre_visible, apariencia) VALUES ($1, $2, $3)',
@@ -583,7 +584,7 @@ app.post('/api/avatar/custom', authenticateJWT, async (req: any, res) => {
   const { nombre_visible, modelo_url, apariencia } = req.body;
 
   try {
-    const aparienciaObj = parseApariencia(apariencia);
+    const aparienciaObj = sanearApariencia(apariencia);
     const result = await pool.query(
       `INSERT INTO avatares (usuario_id, nombre_visible, modelo_url, apariencia)
        VALUES ($1, $2, $3, $4)

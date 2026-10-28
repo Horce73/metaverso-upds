@@ -87,5 +87,7 @@ export const CUPOS_SOCKET: Record<string, [max: number, ventanaMs: number]> = {
   subtitulo: [50, 10_000],
   // Votar (y cambiar el voto), crear y cerrar encuestas
   encuestas: [20, 60_000],
-  grabacion: [10, 60_000]
+  grabacion: [10, 60_000],
+  // Cambios de apariencia desde el panel ✨ (el cliente los agrupa)
+  apariencia: [20, 60_000]
 };

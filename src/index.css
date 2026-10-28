@@ -3925,3 +3925,142 @@ main>h2:first-child {
     gap: 10px;
   }
 }
+
+/* ===== EDITOR DE APARIENCIA DEL AVATAR (AVATAR-01) ===== */
+.editor-avatar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  color: var(--text-primary);
+}
+
+.editor-avatar-pestanas {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.editor-avatar-pestanas button {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.editor-avatar-pestanas button.activa {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.editor-avatar-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.editor-avatar-grupo {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-avatar-grupo legend {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+.editor-avatar-opciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.editor-avatar-opciones button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.editor-avatar-opciones button.activa {
+  background: rgba(37, 99, 235, 0.35);
+  border-color: #60a5fa;
+}
+
+.editor-avatar-colores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.editor-avatar-colores button,
+.editor-avatar-otro {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.editor-avatar-colores button.activa,
+.editor-avatar-otro.activa {
+  box-shadow: 0 0 0 3px #60a5fa;
+}
+
+.editor-avatar-otro {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#ef4444, #eab308, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444);
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 0 3px #000;
+  overflow: hidden;
+}
+
+.editor-avatar-otro input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.editor-avatar-otro:focus-within {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.editor-avatar-interruptor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.editor-avatar-rango {
+  width: 100%;
+  accent-color: #3b82f6;
+}
