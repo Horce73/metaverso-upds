@@ -65,8 +65,9 @@ await pagina.goto(`${base}/#/metaverso`);
 await pagina.waitForTimeout(8000);
 // Al docente que entra a un aula sin clase le aparece el modal de crear curso
 if (await pagina.locator('#titulo-crear-curso').count()) await pagina.getByLabel('Cerrar').first().click();
+// PANEL=1 deja abierto el panel de chat y usuarios, como lo ve una persona
 const ocultar = pagina.getByLabel('Ocultar panel');
-if (await ocultar.count()) await ocultar.click();
+if (!process.env.PANEL && (await ocultar.count())) await ocultar.click();
 
 let n = 0;
 for (const paso of pasos) {
@@ -86,6 +87,10 @@ for (const paso of pasos) {
     await pagina.mouse.up();
   } else if (accion === 'clic') {
     await pagina.getByText(valor).first().click();
+  } else if (accion === 'clicescena') {
+    await pagina.mouse.click(500, 400);
+  } else if (accion === 'foco') {
+    console.log('FOCO', await pagina.evaluate(() => `${document.activeElement?.tagName} ${document.activeElement?.className || ''} ${document.activeElement?.getAttribute('aria-label') || ''}`));
   } else if (accion === 'esperar') {
     await pagina.waitForTimeout(Number(valor));
   } else if (accion === 'fps') {
