@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { actualizarRecorte } from './recorteVista.js';
 
 const LERP_CAMARA = 5;
 const MARGEN_PARED = 0.35;
@@ -147,6 +148,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
 
     puntoMira.current.set(posicion.x, posicion.y + 1.4, posicion.z);
     camera.lookAt(puntoMira.current);
+    actualizarRecorte(posicion, camera.position, delta);
   });
 
   return null;
