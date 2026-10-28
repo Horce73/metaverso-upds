@@ -44,7 +44,7 @@ export const AvatarCustomizer3D: React.FC<AvatarCustomizer3DProps> = ({
             <Canvas camera={{ position: [0, 1.15, 2.8], fov: 42 }} style={{ background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)', borderRadius: '14px' }}>
               <ambientLight intensity={0.9} />
               <directionalLight position={[5, 8, 5]} intensity={1.3} castShadow />
-              <pointLight position={[-5, 5, -5]} intensity={0.5} />
+              <hemisphereLight args={['#dbeafe', '#334155', 0.6]} />
 
               <group position={[0, -0.9, 0]}>
                 <AvatarModel

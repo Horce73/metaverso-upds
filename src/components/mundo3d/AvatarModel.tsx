@@ -9,6 +9,7 @@ import { Letrero } from './Letrero.js';
 import { useCalidad } from './useCalidad.js';
 import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO, normalizarApariencia, claveApariencia } from './personalizacion.js';
 import { CuerpoAvatar } from './CuerpoAvatar.js';
+import { fueFusionada } from './reemplazadas.js';
 import { texturaRostro } from './rostroAvatar.js';
 import { esTransitable, type PlanoCampus } from './planoCampus.js';
 
@@ -84,6 +85,8 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   const estaPestaneandoRef = useRef(false);
 
   const forwardCamara = useRef(new THREE.Vector3());
+  const moverRef = useRef(new THREE.Vector3());
+  const pruebaRef = useRef(new THREE.Vector3());
   const rightCamara = useRef(new THREE.Vector3());
 
   const brazoIzqRef = useRef<THREE.Group>(null);
@@ -149,6 +152,8 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
       const detalles: THREE.Object3D[] = [];
       const conSombra: THREE.Mesh[] = [];
       grupo.traverse((o) => {
+        // Piezas ya fusionadas (Fusionar): quedan ocultas, las reemplaza la malla fusionada
+        if (fueFusionada(o)) return;
         if (o.userData.detalle) detalles.push(o);
         // Se anota la primera vez: al volver a recorrer (cambio de apariencia
         // estando lejos) las mallas viejas ya tienen castShadow apagado.
@@ -160,7 +165,10 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     const lod = lodRef.current;
     if (lod.lejos === lejos) return;
     lod.lejos = lejos;
-    lod.detalles.forEach((o) => (o.visible = !lejos));
+    // Las piezas que Fusionar reemplazó siguen ocultas aunque estén en la lista
+    lod.detalles.forEach((o) => {
+      if (!fueFusionada(o)) o.visible = !lejos;
+    });
     lod.conSombra.forEach((m) => (m.castShadow = !lejos));
   };
 
@@ -168,7 +176,9 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     if (!grupoRef.current) return;
     const remoto = isLocal || !socketId ? undefined : estadoRemoto(socketId);
     const sentado = remoto ? remoto.estaSentado : estaSentado;
-    const tiempoGlobal = state.clock.getElapsedTime();
+    // elapsedTime y no getElapsedTime(): éste llama a getDelta() y le acorta
+    // el delta del cuadro siguiente a todo el resto de la escena
+    const tiempoGlobal = state.clock.elapsedTime;
 
     // 1. Pestañeo Aleatorio
     if (tiempoGlobal > proximoPestaneoRef.current) {
@@ -194,7 +204,9 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
         const entradaAdelante = (adelante ? 1 : 0) - (atras ? 1 : 0);
         const entradaLateral = (derecha ? 1 : 0) - (izquierda ? 1 : 0);
 
-        const mover = new THREE.Vector3();
+        // Vectores reutilizados: crear objetos en cada cuadro es basura que el
+        // recolector junta con pausas que se notan como tirones
+        const mover = moverRef.current.set(0, 0, 0);
         estaCaminando = entradaAdelante !== 0 || entradaLateral !== 0;
 
         if (estaCaminando) {
@@ -211,23 +223,18 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
             .multiplyScalar(VELOCIDAD * delta);
 
           const posActual = grupoRef.current.position;
-          const posDeseada = posActual.clone().add(mover);
+          const prueba = pruebaRef.current;
 
-          if (esPosicionValida(posDeseada, isAula, planoCampus)) {
-            grupoRef.current.position.copy(posDeseada);
-          } else {
-            const posPruebaX = posActual.clone().add(new THREE.Vector3(mover.x, 0, 0));
-            if (esPosicionValida(posPruebaX, isAula, planoCampus)) {
-              grupoRef.current.position.copy(posPruebaX);
-            } else {
-              const posPruebaZ = posActual.clone().add(new THREE.Vector3(0, 0, mover.z));
-              if (esPosicionValida(posPruebaZ, isAula, planoCampus)) {
-                grupoRef.current.position.copy(posPruebaZ);
-              }
-            }
+          // Si el paso choca, se intenta deslizar sólo en x o sólo en z
+          if (esPosicionValida(prueba.copy(posActual).add(mover), isAula, planoCampus)) {
+            posActual.copy(prueba);
+          } else if (esPosicionValida(prueba.set(posActual.x + mover.x, posActual.y, posActual.z), isAula, planoCampus)) {
+            posActual.copy(prueba);
+          } else if (esPosicionValida(prueba.set(posActual.x, posActual.y, posActual.z + mover.z), isAula, planoCampus)) {
+            posActual.copy(prueba);
           }
 
-          direccionActual.current.lerp(mover.clone().normalize(), 0.3);
+          direccionActual.current.lerp(prueba.copy(mover).normalize(), 0.3);
           const anguloObjetivo = Math.atan2(direccionActual.current.x, direccionActual.current.z);
           grupoRef.current.rotation.y = lerpAngulo(
             grupoRef.current.rotation.y,

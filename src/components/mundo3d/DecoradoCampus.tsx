@@ -2,7 +2,6 @@ import React from 'react';
 import { Bloque, Piso, TechoDosAguas } from './piezas.js';
 import { textura } from './texturasCampus.js';
 import type { PlanoCampus } from './planoCampus.js';
-import { useCalidad } from './useCalidad.js';
 
 const X_INICIO_CALLE = -60;
 
@@ -135,7 +134,6 @@ const Aro: React.FC<{ x: number; z: number; sentido: 1 | -1 }> = ({ x, z, sentid
 );
 
 export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
-  const { lucesPuntuales } = useCalidad();
   const { xFin, calleAncho, cancha, arboles, autos, motos } = plano;
   const xIni = X_INICIO_CALLE;
   const xFinCalle = xFin + 50;
@@ -201,7 +199,6 @@ export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
       <Aro x={cancha.x1 - 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={-1} />
 
       <Cerros />
-      {lucesPuntuales && <pointLight position={[plano.pasoRecepcion.x0 + 2, 3, 1.2]} intensity={1.2} distance={8} color="#fff1d0" />}
     </group>
   );
 };

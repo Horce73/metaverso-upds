@@ -5,6 +5,7 @@ import { Letrero } from './Letrero.js';
 import { useCalidad } from './useCalidad.js';
 import { EdificioAntiguo, EdificioNuevo } from './EdificiosUPDS.js';
 import { DecoradoCampus } from './DecoradoCampus.js';
+import { Fusionar } from './Fusionar.js';
 import type { PlanoCampus, PuertaAula } from './planoCampus.js';
 
 // Campus UPDS (CAMPUS-01): la manzana de la universidad en vez de las islas
@@ -137,9 +138,13 @@ export const Campus: React.FC<CampusProps> = ({ plano, aulas = [], onInteractuar
   return (
     <group>
       <Iluminacion centro={centro} />
-      <DecoradoCampus plano={plano} />
-      <EdificioNuevo plano={plano} />
-      <EdificioAntiguo plano={plano} />
+      {/* Todo lo que no se mueve, fusionado por material (PERF-01); el largo
+          del edificio (xFin) es lo único del plano que cambia su forma */}
+      <Fusionar clave={`${plano.xFin}`}>
+        <DecoradoCampus plano={plano} />
+        <EdificioNuevo plano={plano} />
+        <EdificioAntiguo plano={plano} />
+      </Fusionar>
       {plano.puertas.map((puerta) => {
         const aula = porId.get(puerta.id);
         if (!aula) return null;

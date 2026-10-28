@@ -22,6 +22,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
   const raycaster = useRef(new THREE.Raycaster());
   const origenRayo = useRef(new THREE.Vector3());
   const direccionRayo = useRef(new THREE.Vector3());
+  const paredesRef = useRef<{ lista: THREE.Object3D[]; edad: number }>({ lista: [], edad: Infinity });
 
   const yawRef = useRef(0); // Ángulo horizontal de órbita de cámara (Mouse)
   const pitchRef = useRef(0.22); // Ángulo vertical inicial (~12.6 grados)
@@ -114,12 +115,17 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
       raycaster.current.set(origenRayo.current, direccionRayo.current);
       raycaster.current.far = distanciaObjetivo;
 
-      const paredes: THREE.Object3D[] = [];
-      scene.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh && obj.userData?.esPared) {
-          paredes.push(obj);
-        }
-      });
+      // Las paredes se buscan una vez por segundo, no en cada cuadro: recorrer
+      // toda la escena 60 veces por segundo cuesta más que el rayo mismo
+      paredesRef.current.edad += delta;
+      if (paredesRef.current.edad > 1) {
+        const lista: THREE.Object3D[] = [];
+        scene.traverseVisible((obj) => {
+          if ((obj as THREE.Mesh).isMesh && obj.userData?.esPared) lista.push(obj);
+        });
+        paredesRef.current = { lista, edad: 0 };
+      }
+      const paredes = paredesRef.current.lista;
 
       if (paredes.length > 0) {
         const intersecciones = raycaster.current.intersectObjects(paredes, false);
