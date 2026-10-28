@@ -17,7 +17,6 @@ test('cada nivel cuesta menos que el de arriba', () => {
     assert.ok(menor.dpr <= mayor.dpr);
     assert.ok(menor.estrellas <= mayor.estrellas);
     assert.ok(menor.distanciaDetalle <= mayor.distanciaDetalle);
-    assert.ok(!menor.lucesPuntuales || mayor.lucesPuntuales);
     assert.ok(!menor.sombras || mayor.sombras);
   }
   assert.equal(baja.sombras, false);

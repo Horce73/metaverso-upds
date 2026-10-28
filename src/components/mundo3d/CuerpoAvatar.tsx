@@ -1,6 +1,7 @@
 import React from 'react';
 import * as THREE from 'three';
 import type { Apariencia } from './personalizacion.js';
+import { Fusionar } from './Fusionar.js';
 
 // Cuerpo del avatar (AVATAR-01): low-poly de sombreado plano, proporciones de
 // persona en vez de bloques. Las articulaciones quedan donde estaban (cadera a
@@ -65,6 +66,8 @@ export interface RefsCuerpo {
 
 export const CuerpoAvatar: React.FC<{ a: Apariencia; refs: RefsCuerpo; rostro: THREE.Texture }> = ({ a, refs, rostro }) => {
   const w = ANCHO[a.cuerpo.complexion];
+  // Cambia la apariencia: se vuelven a fusionar las piezas
+  const clave = React.useMemo(() => JSON.stringify(a), [a]);
   const piel = mat(a.piel, 0.6);
   const prenda = mat(a.ropa.colorPrimario, 0.8);
   const detalleRopa = mat(a.ropa.colorSecundario, 0.8);
@@ -80,28 +83,35 @@ export const CuerpoAvatar: React.FC<{ a: Apariencia; refs: RefsCuerpo; rostro: T
         [refs.piernaIzq, 0.12],
       ] as const).map(([ref, x]) => (
         <group key={x} ref={ref} position={[x * w, 1.0, 0]}>
-          {piernaDesnuda < 1 && (
-            <M g={cil(0.1 * w, 0.075 * w, 0.86 * (1 - piernaDesnuda))} m={pantalon} position={[0, -0.43 * (1 - piernaDesnuda), 0]} sombra />
-          )}
-          {piernaDesnuda > 0 && (
-            <M g={cil(0.075 * w, 0.065 * w, 0.86 * piernaDesnuda)} m={piel} position={[0, -0.86 + 0.43 * piernaDesnuda, 0]} sombra />
-          )}
-          {a.ropa.inferior === 'buzo' && (
-            <M g={caja(0.02, 0.84, 0.03)} m={detalleRopa} position={[x > 0 ? 0.09 * w : -0.09 * w, -0.43, 0]} detalle />
-          )}
-          <Calzado a={a} />
+          <Fusionar clave={clave} colores>
+            {piernaDesnuda < 1 && (
+              <M g={cil(0.1 * w, 0.075 * w, 0.86 * (1 - piernaDesnuda))} m={pantalon} position={[0, -0.43 * (1 - piernaDesnuda), 0]} sombra />
+            )}
+            {piernaDesnuda > 0 && (
+              <M g={cil(0.075 * w, 0.065 * w, 0.86 * piernaDesnuda)} m={piel} position={[0, -0.86 + 0.43 * piernaDesnuda, 0]} sombra />
+            )}
+            {a.ropa.inferior === 'buzo' && (
+              <M g={caja(0.02, 0.84, 0.03)} m={detalleRopa} position={[x > 0 ? 0.09 * w : -0.09 * w, -0.43, 0]} detalle />
+            )}
+            <Calzado a={a} />
+          </Fusionar>
         </group>
       ))}
 
-      {/* Cadera y falda */}
-      <M g={cil(0.2 * w, 0.21 * w, 0.2)} m={a.ropa.inferior === 'falda' ? mat(a.ropa.colorInferior, 0.85) : pantalon} position={[0, 1.02, 0]} scale={[1, 1, 0.7]} sombra />
-      {a.ropa.inferior === 'falda' && (
-        <M g={cil(0.21 * w, 0.33 * w, 0.42, 9)} m={mat(a.ropa.colorInferior, 0.85)} position={[0, 0.82, 0]} scale={[1, 1, 0.78]} sombra />
-      )}
+      {/* Cuerpo, cabeza y accesorios: una sola parte rígida (PERF-01) */}
+      <Fusionar clave={clave} colores>
+        {/* Cadera y falda */}
+        <M g={cil(0.2 * w, 0.21 * w, 0.2)} m={a.ropa.inferior === 'falda' ? mat(a.ropa.colorInferior, 0.85) : pantalon} position={[0, 1.02, 0]} scale={[1, 1, 0.7]} sombra />
+        {a.ropa.inferior === 'falda' && (
+          <M g={cil(0.21 * w, 0.33 * w, 0.42, 9)} m={mat(a.ropa.colorInferior, 0.85)} position={[0, 0.82, 0]} scale={[1, 1, 0.78]} sombra />
+        )}
 
-      {/* Torso y prenda de arriba */}
-      <M g={cil(0.25 * w, 0.2 * w, 0.62, 8)} m={prenda} position={[0, 1.33, 0]} scale={[1, 1, 0.64]} sombra />
-      <PrendaSuperior a={a} w={w} />
+        {/* Torso y prenda de arriba */}
+        <M g={cil(0.25 * w, 0.2 * w, 0.62, 8)} m={prenda} position={[0, 1.33, 0]} scale={[1, 1, 0.64]} sombra />
+        <PrendaSuperior a={a} w={w} />
+        <Cabeza a={a} rostro={rostro} piel={piel} />
+        <Accesorios a={a} w={w} />
+      </Fusionar>
 
       {/* Brazos: pivote en el hombro */}
       {([
@@ -109,25 +119,24 @@ export const CuerpoAvatar: React.FC<{ a: Apariencia; refs: RefsCuerpo; rostro: T
         [refs.brazoIzq, 1],
       ] as const).map(([ref, lado]) => (
         <group key={lado} ref={ref} position={[lado * 0.3 * w, 1.6, 0]}>
-          <M g={ico(0.085 * w)} m={prenda} position={[0, -0.02, 0]} />
-          {manga === 'larga' ? (
-            <M g={cil(0.078 * w, 0.066 * w, 0.6)} m={prenda} position={[0, -0.3, 0]} sombra />
-          ) : (
-            <>
-              <M g={cil(0.08 * w, 0.075 * w, 0.24)} m={prenda} position={[0, -0.12, 0]} sombra />
-              <M g={cil(0.064 * w, 0.058 * w, 0.38)} m={piel} position={[0, -0.42, 0]} sombra />
-            </>
-          )}
-          {a.ropa.superior === 'deportiva' && <M g={caja(0.03, 0.56, 0.03)} m={detalleRopa} position={[lado * 0.07 * w, -0.3, 0]} detalle />}
-          {(a.ropa.superior === 'chompa' || a.ropa.superior === 'camisa') && (
-            <M g={cil(0.072 * w, 0.072 * w, 0.06)} m={a.ropa.superior === 'chompa' ? detalleRopa : prenda} position={[0, -0.58, 0]} detalle />
-          )}
-          <M g={ico(0.072)} m={piel} position={[0, -0.67, 0]} scale={[1, 1.15, 0.85]} />
+          <Fusionar clave={clave} colores>
+            <M g={ico(0.085 * w)} m={prenda} position={[0, -0.02, 0]} />
+            {manga === 'larga' ? (
+              <M g={cil(0.078 * w, 0.066 * w, 0.6)} m={prenda} position={[0, -0.3, 0]} sombra />
+            ) : (
+              <>
+                <M g={cil(0.08 * w, 0.075 * w, 0.24)} m={prenda} position={[0, -0.12, 0]} sombra />
+                <M g={cil(0.064 * w, 0.058 * w, 0.38)} m={piel} position={[0, -0.42, 0]} sombra />
+              </>
+            )}
+            {a.ropa.superior === 'deportiva' && <M g={caja(0.03, 0.56, 0.03)} m={detalleRopa} position={[lado * 0.07 * w, -0.3, 0]} detalle />}
+            {(a.ropa.superior === 'chompa' || a.ropa.superior === 'camisa') && (
+              <M g={cil(0.072 * w, 0.072 * w, 0.06)} m={a.ropa.superior === 'chompa' ? detalleRopa : prenda} position={[0, -0.58, 0]} detalle />
+            )}
+            <M g={ico(0.072)} m={piel} position={[0, -0.67, 0]} scale={[1, 1.15, 0.85]} />
+          </Fusionar>
         </group>
       ))}
-
-      <Cabeza a={a} rostro={rostro} piel={piel} />
-      <Accesorios a={a} w={w} />
     </group>
   );
 };

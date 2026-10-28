@@ -12,6 +12,7 @@
 //   npm run carga:render -- --espacio aula --id 2 --n 30
 //   npm run carga:render -- --espacio campus --n 30 --ventana 10
 //   npm run carga:render -- --calidad baja
+//   npm run carga:render -- --espacio aula --id 11 --codigo DEMO-101   (SEC-08: aulas con pase)
 //   CHROME_PATH=/ruta/a/chrome npm run carga:render
 import { chromium } from 'playwright-core';
 import { randomUUID } from 'node:crypto';
@@ -33,6 +34,8 @@ const ID_ESPACIO = arg('id', TIPO_ESPACIO === 'aula' ? '2' : undefined);
 const TASA_MOVE_MS = 33;
 // Fija el nivel de calidad de arranque (3D-05); sin esto lo elige la app.
 const CALIDAD = arg('calidad', undefined);
+// Código del curso del aula: desde SEC-08 sin pase no se entra (docs/demo.md)
+const CODIGO = arg('codigo', undefined);
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -63,6 +66,30 @@ async function loginRegistrado() {
   return login.json();
 }
 const login = () => (TIPO_ESPACIO === 'aula' ? loginRegistrado() : loginInvitado());
+
+async function pedirPase(token, espacioId) {
+  if (!CODIGO) return;
+  const res = await fetch(`${BACKEND_URL}/api/espacios/${espacioId}/acceso`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Forwarded-For': ipAleatoria() },
+    body: JSON.stringify({ codigo: CODIGO }),
+  });
+  if (!res.ok) throw new Error(`el código del aula respondió ${res.status}`);
+}
+
+// Apariencias variadas (AVATAR-01): el peor caso realista lleva sombrero,
+// gafas, mochila y peinados con muchas piezas
+const SOMBREROS = ['ninguno', 'gorra', 'chullo', 'sombrero', 'boina'];
+const PEINADOS = ['corto', 'rizado', 'trenzas', 'coleta', 'afro', 'largo'];
+const ARRIBA = ['polera', 'camisa', 'chompa', 'deportiva', 'saco'];
+const ABAJO = ['jean', 'falda', 'buzo', 'short', 'pantalon'];
+const aparienciaDe = (i) => ({
+  version: 2,
+  cabello: { estilo: PEINADOS[i % PEINADOS.length], color: '#2c1d11' },
+  ropa: { superior: ARRIBA[i % ARRIBA.length], colorPrimario: ['#dc2626', '#0033a0', '#65a30d', '#eab308'][i % 4], colorSecundario: '#f8fafc', inferior: ABAJO[(i + 2) % ABAJO.length], colorInferior: '#1e293b', calzado: 'zapatillas', colorCalzado: '#f8fafc' },
+  accesorios: { sombrero: SOMBREROS[i % SOMBREROS.length], colorSombrero: '#be185d', gafas: i % 3 ? 'redondas' : 'ninguna', mochila: i % 2 === 0, colorMochila: '#14b8a6', bufanda: i % 4 === 1, audifonos: false },
+  velloFacial: { estilo: i % 5 === 0 ? 'barba' : 'ninguno', color: '#2c1d11' },
+});
 
 async function obtenerEspacio(token) {
   const res = await fetch(`${BACKEND_URL}/api/espacios`, { headers: { Authorization: `Bearer ${token}` } });
@@ -111,10 +138,12 @@ async function main() {
   console.log(`Midiendo render en ${TIPO_ESPACIO} con N=${N} (1 navegador + ${N - 1} simulados), ventana=${VENTANA_S}s`);
   const local = await login();
   const espacio = await obtenerEspacio(local.token);
+  await pedirPase(local.token, espacio.id);
 
   const bots = [];
   for (let i = 0; i < N - 1; i++) {
     const { token } = await login();
+    await pedirPase(token, espacio.id);
     const socket = await conectar(token);
     await new Promise((resolve, reject) => {
       socket.once('join_rechazado', (d) => reject(new Error(`join rechazado: ${d?.motivo}`)));
@@ -123,7 +152,7 @@ async function main() {
       socket.emit('join_space', {
         espacioId: espacio.id,
         espacioTipo: espacio.tipo,
-        user: { id: null, nombreVisible: `bot_${i}`, peerId: '', apariencia: {} },
+        user: { id: null, nombreVisible: `bot_${i}`, peerId: '', apariencia: aparienciaDe(i) },
       });
     });
     // Repartidos alrededor del origen, dentro del radio de relevancia del

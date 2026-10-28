@@ -37,6 +37,9 @@ export function crearTexturaTexto(texto: string, opciones: OpcionesTexto = {}): 
   }
 
   const textura = new THREE.CanvasTexture(canvas);
+  // Los colores del canvas están en sRGB: sin esto el texto y los fondos de
+  // los letreros salen lavados, más claros de lo que se pidieron
+  textura.colorSpace = THREE.SRGBColorSpace;
   textura.needsUpdate = true;
   return textura;
 }

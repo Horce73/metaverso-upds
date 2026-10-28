@@ -10,17 +10,15 @@ export interface AjustesCalidad {
   dpr: number;
   sombras: boolean;
   tamanoSombra: number;
-  /** Luces puntuales decorativas (lámparas, farolas): cada una encarece todos los materiales. */
-  lucesPuntuales: boolean;
   estrellas: number;
   /** Más allá de esta distancia a la cámara, un avatar se dibuja simplificado y sin sombra. */
   distanciaDetalle: number;
 }
 
 export const AJUSTES_CALIDAD: Record<NivelCalidad, AjustesCalidad> = {
-  alta: { dpr: 1.5, sombras: true, tamanoSombra: 1024, lucesPuntuales: true, estrellas: 1200, distanciaDetalle: 16 },
-  media: { dpr: 1, sombras: true, tamanoSombra: 512, lucesPuntuales: false, estrellas: 600, distanciaDetalle: 11 },
-  baja: { dpr: 0.75, sombras: false, tamanoSombra: 512, lucesPuntuales: false, estrellas: 0, distanciaDetalle: 7 },
+  alta: { dpr: 1.5, sombras: true, tamanoSombra: 1024, estrellas: 1200, distanciaDetalle: 16 },
+  media: { dpr: 1, sombras: true, tamanoSombra: 512, estrellas: 600, distanciaDetalle: 11 },
+  baja: { dpr: 0.75, sombras: false, tamanoSombra: 512, estrellas: 0, distanciaDetalle: 7 },
 };
 
 const ORDEN: NivelCalidad[] = ['baja', 'media', 'alta'];

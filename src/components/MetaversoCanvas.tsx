@@ -273,7 +273,7 @@ const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; mod
   pantallaUrl,
   modoGrupos,
 }) => {
-  const { sombras, tamanoSombra, lucesPuntuales } = useCalidad();
+  const { sombras, tamanoSombra } = useCalidad();
   return (
     <group>
       <ambientLight intensity={0.95} color="#ffffff" />
@@ -401,13 +401,13 @@ const EscenarioAula: React.FC<{ socket: Socket; pantallaUrl?: string | null; mod
 
       {[-10, 0, 10].map((x) =>
         [-12, -4, 4, 12].map((z) => (
-          <group key={`luz-${x}-${z}`} position={[x, 7.8, z]}>
-            <mesh>
-              <boxGeometry args={[3, 0.1, 3]} />
-              <meshStandardMaterial color="#ffffff" emissive="#fef08a" emissiveIntensity={0.8} />
-            </mesh>
-            {lucesPuntuales && <pointLight intensity={0.3} distance={10} color="#fef08a" />}
-          </group>
+          // Sólo el panel encendido: una luz puntual de intensidad 0,3 (las
+          // luces puntuales van en candelas) no iluminaba nada y cada una
+          // encarecía todos los materiales del aula
+          <mesh key={`luz-${x}-${z}`} position={[x, 7.8, z]}>
+            <boxGeometry args={[3, 0.1, 3]} />
+            <meshStandardMaterial color="#ffffff" emissive="#fef08a" emissiveIntensity={0.8} />
+          </mesh>
         ))
       )}
     </group>

@@ -37,22 +37,38 @@ export interface BloqueProps {
 
 const LISO: Cara = { color: '#e5e1d8' };
 
-function MaterialCara({ cara, ancho, alto, indice }: { cara: Cara; ancho: number; alto: number; indice: number }) {
-  const mapa =
-    cara.mapa ??
-    (cara.textura ? textura(cara.textura, ancho / (cara.modulo?.[0] ?? ancho), alto / (cara.modulo?.[1] ?? alto)) : undefined);
-  return (
-    <meshStandardMaterial
-      attach={`material-${indice}`}
-      map={mapa}
-      color={cara.color ?? '#ffffff'}
-      emissive={cara.emisivo ?? '#000000'}
-      emissiveMap={cara.mapaEmisivo}
-      emissiveIntensity={cara.intensidadEmisiva ?? 1}
-      roughness={cara.rugosidad ?? 0.85}
-      metalness={cara.metalicidad ?? 0}
-    />
-  );
+// Materiales compartidos: dos caras que se ven igual usan el mismo objeto.
+// Además de ahorrar memoria y compilaciones, un bloque cuyas seis caras son
+// iguales se dibuja con un solo material, en una llamada de dibujo en vez de
+// seis (con un material por cara, three hace una llamada por cada grupo).
+const materiales = new Map<string, THREE.MeshStandardMaterial>();
+
+function materialDe(cara: Cara, ancho: number, alto: number): THREE.MeshStandardMaterial {
+  const rx = cara.textura ? ancho / (cara.modulo?.[0] ?? ancho) : 1;
+  const ry = cara.textura ? alto / (cara.modulo?.[1] ?? alto) : 1;
+  const clave = [
+    cara.mapa?.uuid ?? (cara.textura ? `${cara.textura}:${rx.toFixed(3)}:${ry.toFixed(3)}` : ''),
+    cara.color ?? '#ffffff',
+    cara.emisivo ?? '#000000',
+    cara.intensidadEmisiva ?? 1,
+    cara.mapaEmisivo?.uuid ?? '',
+    cara.rugosidad ?? 0.85,
+    cara.metalicidad ?? 0,
+  ].join('|');
+  let m = materiales.get(clave);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({
+      map: cara.mapa ?? (cara.textura ? textura(cara.textura, rx, ry) : null),
+      color: cara.color ?? '#ffffff',
+      emissive: cara.emisivo ?? '#000000',
+      emissiveMap: cara.mapaEmisivo ?? null,
+      emissiveIntensity: cara.intensidadEmisiva ?? 1,
+      roughness: cara.rugosidad ?? 0.85,
+      metalness: cara.metalicidad ?? 0,
+    });
+    materiales.set(clave, m);
+  }
+  return m;
 }
 
 export const Bloque: React.FC<BloqueProps> = ({ x, y, z, todas = LISO, frente, fondo, derecha, izquierda, arriba, pared, sombra = true }) => {
@@ -60,25 +76,24 @@ export const Bloque: React.FC<BloqueProps> = ({ x, y, z, todas = LISO, frente, f
   const h = y[1] - y[0];
   const d = z[1] - z[0];
   // Orden de caras de BoxGeometry: +x, -x, +y, -y, +z, -z
-  const caras: [Cara, number, number][] = [
-    [derecha ?? todas, d, h],
-    [izquierda ?? todas, d, h],
-    [arriba ?? todas, w, d],
-    [todas, w, d],
-    [frente ?? todas, w, h],
-    [fondo ?? todas, w, h],
+  const porCara = [
+    materialDe(derecha ?? todas, d, h),
+    materialDe(izquierda ?? todas, d, h),
+    materialDe(arriba ?? todas, w, d),
+    materialDe(todas, w, d),
+    materialDe(frente ?? todas, w, h),
+    materialDe(fondo ?? todas, w, h),
   ];
+  const material = porCara.every((m) => m === porCara[0]) ? porCara[0] : porCara;
   return (
     <mesh
       position={[(x[0] + x[1]) / 2, (y[0] + y[1]) / 2, (z[0] + z[1]) / 2]}
       castShadow={sombra}
       receiveShadow
+      material={material}
       userData={pared ? { esPared: true } : undefined}
     >
       <boxGeometry args={[w, h, d]} />
-      {caras.map(([cara, a, b], i) => (
-        <MaterialCara key={i} cara={cara} ancho={a} alto={b} indice={i} />
-      ))}
     </mesh>
   );
 };
