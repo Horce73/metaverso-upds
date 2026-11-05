@@ -169,7 +169,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
               {esDocente
                 ? 'Como docente, puedes ingresar al aula y configurar el curso para iniciar la clase de hoy.'
-                : 'Puedes ingresar libremente o verificar con tu código de aula cuando el docente inicie la sesión.'}
+                : 'Estás inscrito en esta asignatura: puedes entrar al aula aunque no haya clase.'}
             </p>
           )}
         </div>
@@ -211,6 +211,20 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
           </div>
         ) : (
           <>
+            {/* El campus sólo le muestra al estudiante las aulas de las
+                asignaturas en las que está inscrito, y con eso entra (el
+                servidor lo vuelve a comprobar en join_space) */}
+            <button
+              type="button"
+              className="btn-primary"
+              data-foco-inicial
+              onClick={() => onIngresarDirecto(espacio)}
+              disabled={solicitando || validando}
+              style={{ width: '100%', marginBottom: '20px', background: 'linear-gradient(135deg, #059669, #10b981)', padding: '14px', fontSize: '1rem', fontWeight: 600 }}
+            >
+              🎓 Entrar al aula
+            </button>
+
             {/* Método 1: Ingreso por Código de Aula / Curso */}
             <form onSubmit={handleIngresarPorCodigo} style={{ marginBottom: '20px' }}>
               <label htmlFor="codigo-aula" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
@@ -219,7 +233,6 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   id="codigo-aula"
-                  data-foco-inicial
                   type="text"
                   className="form-input"
                   placeholder="Ej: SIS-301"
@@ -255,7 +268,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
                 </button>
               ) : (
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  No hay una clase en curso: para pedirle acceso al docente tiene que haber empezado la clase. Con el código del curso puedes entrar igual.
+                  Si no te deja entrar, pídele acceso al docente cuando empiece la clase o escribe el código del curso.
                 </p>
               )}
 
