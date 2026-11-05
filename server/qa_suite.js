@@ -486,6 +486,15 @@ async function runTests() {
     return (await acceso(token, aulaId, codigoAula)).status === 403;
   });
 
+  await caso('Un estudiante inscrito en la asignatura entra sin volver a escribir el código', async () => {
+    await pool.query(
+      `INSERT INTO inscripciones (usuario_id, asignatura_id)
+       SELECT $1, e.asignatura_id FROM espacios e WHERE e.id = $2 ON CONFLICT DO NOTHING`,
+      [nuevo.id, aulaId]
+    );
+    return (await entrar(sNuevo, aulaId)).ok;
+  });
+
   await caso('Con el código del curso (sin importar mayúsculas) el estudiante entra', async () => {
     const res = await acceso(ana.token, aulaId, ` ${codigoAula.toLowerCase()} `);
     return res.status === 200 && (await entrar(sAna, aulaId)).ok;
@@ -505,9 +514,10 @@ async function runTests() {
 
   await caso('Un estudiante no puede aprobarse a sí mismo una solicitud', async () => {
     try {
-      sNuevo.emit('responder_solicitud_acceso', { estudianteSocketId: sNuevo.id, espacioId: aulaId, aprobado: true });
+      // En otra aula: en la primera ya está inscrito
+      sNuevo.emit('responder_solicitud_acceso', { estudianteSocketId: sNuevo.id, espacioId: otraAulaId, aprobado: true });
       await new Promise((r) => setTimeout(r, 300));
-      return !(await entrar(sNuevo, aulaId)).ok;
+      return !(await entrar(sNuevo, otraAulaId)).ok;
     } finally {
       sNuevo.disconnect();
       await pool.query('DELETE FROM usuarios WHERE email = $1', [correoNuevo]);

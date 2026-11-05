@@ -3,7 +3,7 @@
 //
 //   DEMO_CLAVE=… node pruebas/escena/recorrer.mjs <salida> <x,z,giro|-> pasos…
 //
-// Pasos: foto:nombre · w|a|s|d:ms · girar:dx,dy · clic:texto · esperar:ms
+// Pasos: foto:nombre · w|a|s|d:ms · tecla:KeyE · girar:dx,dy · clic:texto · esperar:ms
 //        fps (cuadros por segundo en 4 s) · info:etiqueta (renderer.info)
 // MOVIL=1 emula un Pixel 7; CALIDAD=alta|media|baja (por defecto alta);
 // CHROMIUM=ruta al ejecutable si playwright-core no encuentra el suyo.
@@ -87,6 +87,8 @@ for (const paso of pasos) {
     await pagina.mouse.up();
   } else if (accion === 'clic') {
     await pagina.getByText(valor).first().click();
+  } else if (accion === 'tecla') {
+    await pagina.keyboard.press(valor);
   } else if (accion === 'clicescena') {
     await pagina.mouse.click(500, 400);
   } else if (accion === 'foco') {
