@@ -246,7 +246,9 @@ app.post('/api/auth/register', limiteRegistro, async (req, res) => {
         );
       }
 
-      // Inscripcion automatica en asignaturas activas (piloto ISW)
+      // Inscripcion automatica en asignaturas activas (piloto ISW): sin
+      // confirmar, sólo sirve para ver las aulas. Para entrar hace falta el
+      // código del curso, que la confirma (ACCESO-02).
       await client.query(
         `INSERT INTO inscripciones (usuario_id, asignatura_id)
          SELECT $1, id FROM asignaturas WHERE activa = TRUE`,
@@ -523,6 +525,7 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       espaciosRes = await pool.query(
         `SELECT DISTINCT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
                 a.nombre AS asignatura, a.codigo AS asignatura_codigo,
+                i.confirmada AS inscripcion_confirmada,
                 sc.id AS sesion_id, sc.tema AS sesion_tema,
                 sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado,
                 pd.usuario_id AS docente_id, u.nombre AS docente_nombre, u.apellido AS docente_apellido
@@ -558,6 +561,8 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
       // Docente dueño de la asignatura del aula (independiente de si hay clase en curso),
       // usado por el Campus 3D para agrupar las aulas de un mismo docente.
       docente_id: e.docente_id ?? null,
+      // El estudiante ya confirmó su inscripción con el código: entra directo (ACCESO-02)
+      inscripcion_confirmada: e.inscripcion_confirmada === true,
       docente_nombre: e.docente_nombre ?? null,
       docente_apellido: e.docente_apellido ?? null,
       sesion_activa: e.sesion_id ? {

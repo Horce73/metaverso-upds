@@ -471,6 +471,7 @@ async function runTests() {
   const nuevo = await tokenDe({ email: correoNuevo, password: CLAVE_DESECHABLE });
   const sNuevo = await conectar(nuevo.token);
 
+  // El registro lo inscribe en todas las asignaturas, pero sin confirmar (ACCESO-02)
   await caso('Sin pase, un estudiante no entra al aula aunque mande join_space', async () => {
     const r = await entrar(sNuevo, aulaId);
     return r.ok === false && r.sinAcceso === true;
@@ -486,10 +487,11 @@ async function runTests() {
     return (await acceso(token, aulaId, codigoAula)).status === 403;
   });
 
-  await caso('Un estudiante inscrito en la asignatura entra sin volver a escribir el código', async () => {
+  await caso('Con la inscripción confirmada (por el código) el estudiante entra sin volver a escribirlo', async () => {
     await pool.query(
-      `INSERT INTO inscripciones (usuario_id, asignatura_id)
-       SELECT $1, e.asignatura_id FROM espacios e WHERE e.id = $2 ON CONFLICT DO NOTHING`,
+      `INSERT INTO inscripciones (usuario_id, asignatura_id, confirmada)
+       SELECT $1, e.asignatura_id, TRUE FROM espacios e WHERE e.id = $2
+       ON CONFLICT (usuario_id, asignatura_id) DO UPDATE SET confirmada = TRUE`,
       [nuevo.id, aulaId]
     );
     return (await entrar(sNuevo, aulaId)).ok;
