@@ -1,12 +1,14 @@
 # Integracion continua (OPS-01). Cada pull request a main debe pasar tipos,
 # lint y la suite QA contra un backend y un Postgres reales antes de fusionarse.
+# OPS-02: el trabajo diario va a dev (por pull request) y de dev pasa a main;
+# las dos ramas corren los mismos chequeos, que exigen los rulesets.
 name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
 
 concurrency:
   group: ci-${{ github.ref }}
