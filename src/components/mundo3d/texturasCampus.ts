@@ -223,6 +223,31 @@ const DIBUJOS = {
       ctx.fillRect(0, 0, w, 3);
       ctx.fillRect(0, 0, 3, h);
     }),
+  // Porcelanato del edificio nuevo: 2 × 2 piezas de 60 cm, gris claro con junta fina (fotos del pasillo)
+  porcelanato: () =>
+    lienzo('porcelanato', 256, 256, (ctx, w, h) => {
+      const r = aleatorio(41);
+      const n = 2;
+      ctx.fillStyle = '#b9b6ae';
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++) {
+          ctx.fillStyle = sombrear('#dedbd4', 0.97 + r() * 0.05);
+          ctx.fillRect((i * w) / n + 1, (j * h) / n + 1, w / n - 2, h / n - 2);
+        }
+    }),
+  // Cielo raso de placas de 60 cm sobre perfilería blanca (2 × 2 placas)
+  cieloRaso: () =>
+    lienzo('cieloRaso', 256, 256, (ctx, w, h) => {
+      const n = 2;
+      ctx.fillStyle = '#c9ccd0';
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++) {
+          ctx.fillStyle = '#f4f5f6';
+          ctx.fillRect((i * w) / n + 2, (j * h) / n + 2, w / n - 4, h / n - 4);
+        }
+    }),
   // Baldosa blanca de 60 cm (patio, pasillos, aulas)
   baldosa: () =>
     lienzo('baldosa', 256, 256, (ctx, w, h) => {

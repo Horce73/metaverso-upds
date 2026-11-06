@@ -160,15 +160,29 @@ const EscaleraPatio: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
   );
 };
 
-// Colores del edificio nuevo: casi todo blanco (a confirmar con fotos)
+// Edificio nuevo según las fotos (docs/referencias-upds/bloque-nuevo-estilo):
+// muros blancos con zócalo gris, cielo raso de placas con paneles LED,
+// porcelanato claro, barandas de acero inoxidable y bancas metálicas
 const BLANCO_NUEVO: Cara = { color: '#f3f2ee' };
+// Las caras que miran al interior brillan un poco: el cuerpo de la torre les
+// hace sombra y en las fotos el pasillo es blanco y luminoso (más barato que
+// una luz puntual, que pesaría en todos los materiales de la escena)
+const INTERIOR: Cara = { color: '#f1efe8', emisivo: '#f1efe8', intensidadEmisiva: 0.22 };
+const CIELO_RASO: Cara = { textura: 'cieloRaso', modulo: [1.2, 1.2], emisivo: '#ffffff', intensidadEmisiva: 0.25 };
+const ZOCALO: Cara = { color: '#868c95', rugosidad: 0.7, emisivo: '#868c95', intensidadEmisiva: 0.12 };
+// Sin mapa de entorno un metal muy metálico se ve negro: acero apenas metálico
+const INOX: Cara = { color: '#d6dade', metalicidad: 0.35, rugosidad: 0.3 };
+const MADERA_PUERTA: Cara = { color: '#b8834f', rugosidad: 0.55 };
+const MARCO_PUERTA: Cara = { color: '#7a4f2c', rugosidad: 0.6 };
+const PUERTA_VIDRIO: Cara = { color: '#6f9692', rugosidad: 0.15, metalicidad: 0.3 };
+const ALTO_ZOCALO = 1.1;
 const VIDRIO_NUEVO: Cara = { color: '#34424f', rugosidad: 0.12, metalicidad: 0.55 };
 const MARCO_NUEVO: Cara = { color: '#d1d5db', metalicidad: 0.6, rugosidad: 0.3 };
 const PELDANO: Cara = { color: '#d5d8dc' };
 const PELDANO_HUELLA: Cara = { color: '#eceef0' };
-const LUMINARIA: Cara = { color: '#ffffff', emisivo: '#fff7e6', intensidadEmisiva: 1.4 };
+const LUMINARIA: Cara = { color: '#ffffff', emisivo: '#f4f8ff', intensidadEmisiva: 1.4 };
 
-/** Luminarias de cielo raso cada `paso` metros a lo largo de z, centradas en x. */
+/** Paneles LED de cielo raso cada `paso` metros a lo largo de z, centrados en x. */
 function luminarias(x: [number, number], z: [number, number], paso: number): [number, number][] {
   const xc = (x[0] + x[1]) / 2;
   const n = Math.max(1, Math.floor((z[1] - z[0]) / paso));
@@ -176,6 +190,7 @@ function luminarias(x: [number, number], z: [number, number], paso: number): [nu
 }
 
 /** Escalera en U junto a la fachada: sube del vestíbulo hacia la calle, descansa y vuelve (decorado). */
+// Los peldaños son `pared`: la cámara se detiene antes de ellos en vez de quedar adentro
 const EscaleraNuevo: React.FC<{ e: PlanoCampus['escaleraNuevo'] }> = ({ e }) => {
   const PELDANOS = 11;
   const medio = (e.x0 + e.x1) / 2;
@@ -187,15 +202,22 @@ const EscaleraNuevo: React.FC<{ e: PlanoCampus['escaleraNuevo'] }> = ({ e }) => 
       {Array.from({ length: PELDANOS }, (_, i) => (
         <React.Fragment key={i}>
           {/* Primer tramo (del lado de la entrada): sube hacia la fachada */}
-          <Bloque x={[e.x0, medio - 0.05]} y={[0, (i + 1) * contra]} z={[e.z0 + i * huella, e.z0 + (i + 1) * huella]} todas={PELDANO} arriba={PELDANO_HUELLA} />
+          <Bloque x={[e.x0, medio - 0.05]} y={[0, (i + 1) * contra]} z={[e.z0 + i * huella, e.z0 + (i + 1) * huella]} todas={PELDANO} arriba={PELDANO_HUELLA} pared />
           {/* Segundo tramo: vuelve hacia el vestíbulo hasta el nivel 2 */}
-          <Bloque x={[medio + 0.05, e.x1]} y={[0, PB_NUEVO / 2 + (i + 1) * contra]} z={[descanso - (i + 1) * huella, descanso - i * huella]} todas={PELDANO} arriba={PELDANO_HUELLA} />
+          <Bloque x={[medio + 0.05, e.x1]} y={[0, PB_NUEVO / 2 + (i + 1) * contra]} z={[descanso - (i + 1) * huella, descanso - i * huella]} todas={PELDANO} arriba={PELDANO_HUELLA} pared />
         </React.Fragment>
       ))}
-      <Bloque x={[e.x0, e.x1]} y={[0, PB_NUEVO / 2]} z={[descanso, e.z1]} todas={PELDANO} arriba={PELDANO_HUELLA} />
-      {/* Muro entre los dos tramos y baranda del primero */}
-      <Bloque x={[medio - 0.05, medio + 0.05]} y={[0, PB_NUEVO]} z={[e.z0 + huella, descanso]} todas={BLANCO_NUEVO} />
-      <Bloque x={[e.x0, e.x0 + 0.05]} y={[0.9, 1.0]} z={[e.z0, descanso]} todas={{ color: '#3a3f46', metalicidad: 0.6, rugosidad: 0.4 }} sombra={false} />
+      <Bloque x={[e.x0, e.x1]} y={[0, PB_NUEVO / 2]} z={[descanso, e.z1]} todas={PELDANO} arriba={PELDANO_HUELLA} pared />
+      {/* Muro entre los dos tramos */}
+      <Bloque x={[medio - 0.05, medio + 0.05]} y={[0, PB_NUEVO]} z={[e.z0 + huella, descanso]} todas={INTERIOR} pared />
+      {/* Baranda de acero inoxidable del primer tramo: pasamanos inclinado y parantes */}
+      <mesh position={[e.x0 + 0.06, 0.9 + PB_NUEVO / 4, (e.z0 + descanso) / 2]} rotation={[-Math.atan2(PB_NUEVO / 2, descanso - e.z0), 0, 0]}>
+        <boxGeometry args={[0.05, 0.05, Math.hypot(PB_NUEVO / 2, descanso - e.z0)]} />
+        <meshStandardMaterial color={INOX.color} metalness={INOX.metalicidad} roughness={INOX.rugosidad} />
+      </mesh>
+      {[0, 4, 8].map((i) => (
+        <Bloque key={i} x={[e.x0 + 0.04, e.x0 + 0.08]} y={[(i + 1) * contra, (i + 1) * contra + 0.9]} z={[e.z0 + (i + 0.5) * huella - 0.02, e.z0 + (i + 0.5) * huella + 0.02]} todas={INOX} sombra={false} />
+      ))}
     </group>
   );
 };
@@ -220,31 +242,66 @@ export const EdificioNuevo: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
   const letrero = texturaLetreroUPDS();
   const letras = texturaLetrasTorre();
   const mainelas = [xMarco + (xFranja - xMarco) / 3, xMarco + ((xFranja - xMarco) * 2) / 3];
-  const baldosa: Cara = { textura: 'baldosa', modulo: [2.4, 2.4] };
+  const porcelanato: Cara = { textura: 'porcelanato', modulo: [1.2, 1.2] };
+  // La bajada ya es del bloque B: piso de baldosa terracota como en la foto de la conexión
+  const terracotaPiso: Cara = { textura: 'baldosa', modulo: [1.2, 1.2], color: '#cf9a7c' };
+  // Zócalo gris a lo largo de cada muro del interior (x0, x1, z0, z1 de una tira delgada)
+  const t = 0.03;
+  const zocalos: [number, number, number, number][] = [
+    [ent.x0, ent.x0 + t, ent.z0, fz - 0.2],
+    [ent.x1 - t, ent.x1, ent.z0, fz - 0.2],
+    [hall.x0, hall.x0 + t, hall.z0, hall.z1],
+    [hall.x0, pas.x0, hall.z0, hall.z0 + t],
+    [hall.x0, ent.x0, hall.z1 - t, hall.z1],
+    [pas.x0, pas.x0 + t, pas.z0, hall.z0],
+    [pas.x0, xCulata, pas.z0, pas.z0 + t],
+    [xCulata - t, xCulata, con.z1, hall.z1],
+  ];
+  // Puertas de madera de las aulas del pasillo y la de vidrio de las oficinas (decorado)
+  const puertasPasillo = [pas.z1 - 3.5, pas.z1 - 7.5];
+  const zPuertaOficina = (hall.z0 + hall.z1) / 2 + 0.4;
   return (
     <group>
       {/* Planta baja: muros macizos alrededor de la entrada, el vestíbulo, el pasillo y la bajada */}
-      <Bloque x={[r.x0, hall.x0]} y={[0, PB]} z={[r.z0, fz]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[hall.x0, ent.x0]} y={[0, PB]} z={[hall.z1, fz]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[ent.x1, esc.x0]} y={[0, PB]} z={[esc.z0, fz]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[esc.x0, xCulata]} y={[0, PB]} z={[esc.z1, fz]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[xCulata, r.x1]} y={[0, PB]} z={[alaCalle.z0, fz]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[hall.x0, pas.x0]} y={[0, PB]} z={[r.z0, hall.z0]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[pas.x0, xAntiguo]} y={[0, PB]} z={[r.z0, pas.z0]} todas={BLANCO_NUEVO} pared />
+      <Bloque x={[r.x0, hall.x0]} y={[0, PB]} z={[r.z0, fz]} todas={BLANCO_NUEVO} derecha={INTERIOR} pared />
+      <Bloque x={[hall.x0, ent.x0]} y={[0, PB]} z={[hall.z1, fz]} todas={BLANCO_NUEVO} derecha={INTERIOR} fondo={INTERIOR} pared />
+      <Bloque x={[ent.x1, esc.x0]} y={[0, PB]} z={[esc.z0, fz]} todas={BLANCO_NUEVO} izquierda={INTERIOR} derecha={INTERIOR} fondo={INTERIOR} pared />
+      <Bloque x={[esc.x0, xCulata]} y={[0, PB]} z={[esc.z1, fz]} todas={BLANCO_NUEVO} fondo={INTERIOR} pared />
+      <Bloque x={[xCulata, r.x1]} y={[0, PB]} z={[alaCalle.z0, fz]} todas={BLANCO_NUEVO} izquierda={INTERIOR} pared />
+      <Bloque x={[hall.x0, pas.x0]} y={[0, PB]} z={[r.z0, hall.z0]} todas={BLANCO_NUEVO} frente={INTERIOR} derecha={INTERIOR} pared />
+      <Bloque x={[pas.x0, xAntiguo]} y={[0, PB]} z={[r.z0, pas.z0]} todas={BLANCO_NUEVO} frente={INTERIOR} pared />
       {/* Revestimiento blanco sobre la culata del antiguo, a los dos lados de la bajada */}
-      <Bloque x={[xCulata, xLadrillo]} y={[0, PB]} z={[r.z0, con.z0]} todas={BLANCO_NUEVO} pared />
-      <Bloque x={[xCulata, xLadrillo]} y={[0, PB]} z={[con.z1, alaCalle.z0]} todas={BLANCO_NUEVO} pared />
+      <Bloque x={[xCulata, xLadrillo]} y={[0, PB]} z={[r.z0, con.z0]} todas={BLANCO_NUEVO} izquierda={INTERIOR} pared />
+      <Bloque x={[xCulata, xLadrillo]} y={[0, PB]} z={[con.z1, alaCalle.z0]} todas={BLANCO_NUEVO} izquierda={INTERIOR} pared />
       <EscaleraNuevo e={esc} />
-      {[...luminarias([ent.x0, ent.x1], [ent.z0, fz - 0.6], 4), ...luminarias([hall.x0, pas.x0], [hall.z0, hall.z1], 3), ...luminarias([pas.x0, pas.x1], [pas.z0, hall.z1], 3)].map(([x, z]) => (
-        <Bloque key={`${x}:${z}`} x={[x - 0.6, x + 0.6]} y={[PB - 0.04, PB]} z={[z - 0.2, z + 0.2]} todas={LUMINARIA} sombra={false} />
+      {[...luminarias([ent.x0, ent.x1], [ent.z0, fz - 0.6], 2.4), ...luminarias([hall.x0, pas.x0], [hall.z0, hall.z1], 2.4), ...luminarias([pas.x0, pas.x1], [pas.z0, hall.z1], 2.4)].map(([x, z]) => (
+        <Bloque key={`${x}:${z}`} x={[x - 0.3, x + 0.3]} y={[PB - 0.03, PB]} z={[z - 0.3, z + 0.3]} todas={LUMINARIA} sombra={false} />
       ))}
-      <Piso x={[ent.x0, ent.x1]} z={[ent.z0, fz]} cara={baldosa} />
-      <Piso x={[hall.x0, hall.x1]} z={[hall.z0, hall.z1]} cara={baldosa} />
-      <Piso x={[pas.x0, pas.x1]} z={[pas.z0, pas.z1]} cara={baldosa} />
-      <Piso x={[con.x0, alaCalle.x0]} z={[con.z0, con.z1]} cara={baldosa} />
+      {zocalos.map(([x0, x1, z0, z1]) => (
+        <Bloque key={`${x0}:${z0}:${x1}`} x={[x0, x1]} y={[0, ALTO_ZOCALO]} z={[z0, z1]} todas={ZOCALO} sombra={false} />
+      ))}
+      {puertasPasillo.map((z) => (
+        <group key={z}>
+          <Bloque x={[pas.x0, pas.x0 + 0.05]} y={[0, 2.3]} z={[z - 0.6, z + 0.6]} todas={MARCO_PUERTA} sombra={false} />
+          <Bloque x={[pas.x0, pas.x0 + 0.08]} y={[0, 2.15]} z={[z - 0.48, z + 0.48]} todas={MADERA_PUERTA} sombra={false} />
+          <Bloque x={[pas.x0, pas.x0 + 0.1]} y={[1.0, 1.08]} z={[z + 0.3, z + 0.4]} todas={INOX} sombra={false} />
+        </group>
+      ))}
+      <Bloque x={[hall.x0, hall.x0 + 0.06]} y={[0, 2.3]} z={[zPuertaOficina - 0.55, zPuertaOficina + 0.55]} todas={PUERTA_VIDRIO} sombra={false} />
+      {/* Banca metálica de espera contra el fondo del vestíbulo */}
+      <Bloque x={[hall.x0 + 0.6, pas.x0 - 0.6]} y={[0.42, 0.47]} z={[hall.z0 + 0.1, hall.z0 + 0.6]} todas={INOX} />
+      <Bloque x={[hall.x0 + 0.6, pas.x0 - 0.6]} y={[0.47, 0.85]} z={[hall.z0 + 0.08, hall.z0 + 0.13]} todas={INOX} />
+      {[hall.x0 + 0.7, pas.x0 - 0.7].map((x) => (
+        <Bloque key={x} x={[x - 0.03, x + 0.03]} y={[0, 0.42]} z={[hall.z0 + 0.15, hall.z0 + 0.55]} todas={INOX} sombra={false} />
+      ))}
+      <Piso x={[ent.x0, ent.x1]} z={[ent.z0, fz]} cara={porcelanato} />
+      <Piso x={[hall.x0, hall.x1]} z={[hall.z0, hall.z1]} cara={porcelanato} />
+      <Piso x={[pas.x0, pas.x1]} z={[pas.z0, pas.z1]} cara={porcelanato} />
+      {/* Desde donde termina el piso del pasillo, para no pisarse con él */}
+      <Piso x={[xCulata, alaCalle.x0]} z={[con.z0, con.z1]} cara={terracotaPiso} />
 
-      {/* Cuerpo de la torre: once niveles, ciego a los costados y atrás */}
-      <Bloque x={[r.x0, xAntiguo]} y={[PB, ALTO]} z={[r.z0, fz]} todas={BLANCO_NUEVO} pared />
+      {/* Cuerpo de la torre: once niveles, ciego a los costados y atrás; por debajo, el cielo raso */}
+      <Bloque x={[r.x0, xAntiguo]} y={[PB, ALTO]} z={[r.z0, fz]} todas={BLANCO_NUEVO} abajo={CIELO_RASO} pared />
       {/* Caja de la escalera, que asoma sobre la cubierta junto al antiguo */}
       <Bloque x={[xFranja - 0.3, xAntiguo]} y={[ALTO, ALTO + 3]} z={[fz - 6, fz]} todas={BLANCO_NUEVO} pared />
 

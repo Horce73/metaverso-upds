@@ -31,6 +31,8 @@ export interface BloqueProps {
   derecha?: Cara; // +x
   izquierda?: Cara; // -x
   arriba?: Cara;
+  /** Cara de abajo (-y): el cielo raso, cuando el bloque es el techo de un interior. */
+  abajo?: Cara;
   pared?: boolean;
   sombra?: boolean;
 }
@@ -71,7 +73,7 @@ function materialDe(cara: Cara, ancho: number, alto: number): THREE.MeshStandard
   return m;
 }
 
-export const Bloque: React.FC<BloqueProps> = ({ x, y, z, todas = LISO, frente, fondo, derecha, izquierda, arriba, pared, sombra = true }) => {
+export const Bloque: React.FC<BloqueProps> = ({ x, y, z, todas = LISO, frente, fondo, derecha, izquierda, arriba, abajo, pared, sombra = true }) => {
   const w = x[1] - x[0];
   const h = y[1] - y[0];
   const d = z[1] - z[0];
@@ -80,7 +82,7 @@ export const Bloque: React.FC<BloqueProps> = ({ x, y, z, todas = LISO, frente, f
     materialDe(derecha ?? todas, d, h),
     materialDe(izquierda ?? todas, d, h),
     materialDe(arriba ?? todas, w, d),
-    materialDe(todas, w, d),
+    materialDe(abajo ?? todas, w, d),
     materialDe(frente ?? todas, w, h),
     materialDe(fondo ?? todas, w, h),
   ];
