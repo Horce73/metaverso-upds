@@ -368,3 +368,20 @@ export function texturaLetreroUPDS(): THREE.CanvasTexture {
     ctx.fillText('DOMINGO SAVIO', w / 2, h * 0.7);
   });
 }
+
+/** Letras «UPDS» en relieve gris sobre el blanco de la banda alta del edificio nuevo (elevación frontal). */
+export function texturaLetrasTorre(): THREE.CanvasTexture {
+  return lienzo('letrasTorre', 1024, 256, (ctx, w, h) => {
+    ctx.fillStyle = '#f3f2ee';
+    ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 170px Georgia, "Times New Roman", serif';
+    const texto = 'U P D S';
+    // Sombra corrida abajo a la derecha: se lee como letra corpórea
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillText(texto, w / 2 + 6, h / 2 + 8);
+    ctx.fillStyle = '#9aa0a6';
+    ctx.fillText(texto, w / 2, h / 2);
+  });
+}

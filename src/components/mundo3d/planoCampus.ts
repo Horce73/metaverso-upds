@@ -105,6 +105,8 @@ export const NIVELES_NUEVO: number[] = Array.from({ length: 11 }, (_, i) => (i =
 export const ALTO_NUEVO = 38;
 /** Muro del antiguo que cierra el patio del lado del nuevo (la culata), de x0 - 0,6 a x0. */
 export const CULATA = 0.6;
+/** Revestimiento blanco del lado del nuevo, para que por dentro no se vea el ladrillo de la culata. */
+export const REVESTIMIENTO = 0.15;
 
 const Z_PATIO_CALLE = FACHADA_Z - PROF_ALA; // -10
 const Z_PATIO_FONDO = Z_PATIO_CALLE - PATIO_FONDO; // -22
@@ -144,8 +146,8 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   const pasoRecepcion: Rect = { x0: xFin - 8, x1: xFin - 4, z0: Z_PATIO_CALLE - 0.5, z1: FACHADA_Z + 0.5 };
   const pasoCancha: Rect = { x0: xFin - 8, x1: xFin - 4, z0: Z_FIN_FONDO - 0.5, z1: Z_PATIO_FONDO + 0.5 };
   const cancha: Rect = { x0: xFin - 24, x1: xFin, z0: Z_FIN_FONDO - 16, z1: Z_FIN_FONDO };
-  // Del lado del antiguo, el pasillo y el vestíbulo llegan hasta la culata
-  const xCulata = X_INICIO_ANTIGUO - CULATA;
+  // Del lado del antiguo, el pasillo y el vestíbulo llegan hasta el revestimiento de la culata
+  const xCulata = X_INICIO_ANTIGUO - CULATA - REVESTIMIENTO;
   const entradaNuevo: Rect = { x0: -16.5, x1: -14.5, z0: -4.5, z1: FACHADA_Z + 0.5 };
   const hallNuevo: Rect = { x0: -17, x1: xCulata, z0: -8, z1: -4.5 };
   const escaleraNuevo: Rect = { x0: -14.3, x1: xCulata, z0: -4.5, z1: -0.3 };
