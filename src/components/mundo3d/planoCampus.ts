@@ -8,9 +8,18 @@
 //
 //        z > 0   ─────────────── calle ───────────────
 //        z = 0   [ edificio nuevo ][ edificio antiguo (ala de la calle) ]
-//                       │ hall         │ patio con galerías y aulas    │ recepción
-//                                      [ edificio antiguo (ala del fondo) ]
+//                  entrada │ escalera  │ patio con galerías y aulas    │ recepción
+//                    vestíbulo         │                               │
+//                          │ pasillo ──┘ bajada al patio               │
+//                  (torre de 11 niveles)[ edificio antiguo (ala del fondo) ]
 //                                                         [ cancha ]
+//
+// El edificio nuevo (CAMPUS-02) sale de los planos de la ampliación
+// (docs/mapas, fuera del repo), con medidas redondeadas. En la realidad el
+// terreno sube hacia el fondo: la calle entra al nivel 1 y el patio queda a la
+// altura del nivel 4. El juego es plano, así que se juntan las dos plantas:
+// del nivel 1, la entrada, el vestíbulo y la escalera junto a la fachada; del
+// nivel 4, el pasillo del lado del edificio antiguo y la bajada al patio.
 //
 // Lógica pura, sin three.js, para probarla con node --test: la escena
 // (Campus.tsx), la colisión del avatar y la tecla E salen de este plano.
@@ -51,9 +60,13 @@ export interface PlanoCampus {
   /** Pasillo de la recepción (calle → patio) y del ala del fondo (patio → cancha). */
   pasoRecepcion: Rect;
   pasoCancha: Rect;
-  /** Hall del edificio nuevo y su conexión con el patio. */
+  /** Edificio nuevo: puerta de la calle, vestíbulo, pasillo y bajada al patio (transitables). */
+  entradaNuevo: Rect;
   hallNuevo: Rect;
+  pasilloNuevo: Rect;
   conexionNuevo: Rect;
+  /** Escalera en U junto a la fachada (decorado; no se sube). */
+  escaleraNuevo: Rect;
   escalera: Rect;
   columnas: [number, number][];
   /** Decorado de la calle que estorba el paso: árboles de la vereda, autos y motos estacionados. */
@@ -79,6 +92,21 @@ export const PASO_PUERTAS = 4.5;
 export const ANCHO_PASO = 4;
 export const X_FIN_MINIMO = 28;
 export const DISTANCIA_PUERTA = 3.2;
+
+// Edificio nuevo (CAMPUS-02): 13 m de frente y 37 de fondo, pegado al antiguo
+export const FRENTE_NUEVO = 13;
+export const FONDO_NUEVO = 37;
+/** Alto de la planta baja y de cada piso de arriba del edificio nuevo. */
+export const PB_NUEVO = 3.6;
+export const PISO_NUEVO = 3.7;
+/** Nivel de piso de cada uno de los 11 niveles del edificio nuevo (el 1 es la calle). */
+export const NIVELES_NUEVO: number[] = Array.from({ length: 11 }, (_, i) => (i === 0 ? 0 : PB_NUEVO + PISO_NUEVO * (i - 1)));
+/** Losa de la cubierta del edificio nuevo, sobre el último nivel. */
+export const ALTO_NUEVO = 38;
+/** Muro del antiguo que cierra el patio del lado del nuevo (la culata), de x0 - 0,6 a x0. */
+export const CULATA = 0.6;
+/** Revestimiento blanco del lado del nuevo, para que por dentro no se vea el ladrillo de la culata. */
+export const REVESTIMIENTO = 0.15;
 
 const Z_PATIO_CALLE = FACHADA_Z - PROF_ALA; // -10
 const Z_PATIO_FONDO = Z_PATIO_CALLE - PATIO_FONDO; // -22
@@ -111,15 +139,21 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   const xFin = xFinPara(aulas.length);
   const calleAncho = ACERA + CALZADA + ACERA_ENFRENTE;
 
-  const edificioNuevo: Rect = { x0: -24, x1: X_INICIO_ANTIGUO, z0: -14, z1: FACHADA_Z };
+  const edificioNuevo: Rect = { x0: X_INICIO_ANTIGUO - FRENTE_NUEVO, x1: X_INICIO_ANTIGUO, z0: FACHADA_Z - FONDO_NUEVO, z1: FACHADA_Z };
   const alaCalle: Rect = { x0: X_INICIO_ANTIGUO, x1: xFin, z0: Z_PATIO_CALLE, z1: FACHADA_Z };
   const alaFondo: Rect = { x0: X_INICIO_ANTIGUO, x1: xFin, z0: Z_FIN_FONDO, z1: Z_PATIO_FONDO };
   const patio: Rect = { x0: X_INICIO_ANTIGUO + 0.5, x1: xFin - 0.5, z0: Z_PATIO_FONDO + 0.3, z1: Z_PATIO_CALLE - 0.3 };
   const pasoRecepcion: Rect = { x0: xFin - 8, x1: xFin - 4, z0: Z_PATIO_CALLE - 0.5, z1: FACHADA_Z + 0.5 };
   const pasoCancha: Rect = { x0: xFin - 8, x1: xFin - 4, z0: Z_FIN_FONDO - 0.5, z1: Z_PATIO_FONDO + 0.5 };
   const cancha: Rect = { x0: xFin - 24, x1: xFin, z0: Z_FIN_FONDO - 16, z1: Z_FIN_FONDO };
-  const hallNuevo: Rect = { x0: -19.5, x1: -14.5, z0: -13.5, z1: FACHADA_Z + 0.5 };
-  const conexionNuevo: Rect = { x0: -15, x1: X_INICIO_ANTIGUO + 1, z0: -13.5, z1: -10.5 };
+  // Del lado del antiguo, el pasillo y el vestíbulo llegan hasta el revestimiento de la culata
+  const xCulata = X_INICIO_ANTIGUO - CULATA - REVESTIMIENTO;
+  const entradaNuevo: Rect = { x0: -16.5, x1: -14.5, z0: -4.5, z1: FACHADA_Z + 0.5 };
+  const hallNuevo: Rect = { x0: -17, x1: xCulata, z0: -8, z1: -4.5 };
+  const escaleraNuevo: Rect = { x0: -14.3, x1: xCulata, z0: -4.5, z1: -0.3 };
+  // La bajada al patio abre la culata a unos 19 m de la fachada; el pasillo termina ahí
+  const conexionNuevo: Rect = { x0: -11.2, x1: X_INICIO_ANTIGUO + 0.7, z0: -21, z1: -17 };
+  const pasilloNuevo: Rect = { x0: -13.5, x1: xCulata, z0: conexionNuevo.z0, z1: hallNuevo.z0 };
 
   // Escalera central del patio (decorado; no se sube)
   const xCentro = (patio.x0 + Math.min(patio.x1, xFin - 9)) / 2;
@@ -147,12 +181,12 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   }
 
   const calle: Rect = { x0: -34, x1: xFin + 10, z0: FACHADA_Z + 0.4, z1: FACHADA_Z + calleAncho - 0.4 };
-  const transitable = [calle, pasoRecepcion, hallNuevo, conexionNuevo, patio, pasoCancha, cancha];
+  const transitable = [calle, pasoRecepcion, entradaNuevo, hallNuevo, pasilloNuevo, conexionNuevo, patio, pasoCancha, cancha];
 
   // Árboles al borde de la vereda, sin tapar las dos entradas
   const zArbol = FACHADA_Z + ACERA - 0.6;
   const libre = (x: number) =>
-    (x < hallNuevo.x0 - 1.5 || x > hallNuevo.x1 + 1.5) && (x < pasoRecepcion.x0 - 1.5 || x > pasoRecepcion.x1 + 1.5);
+    (x < entradaNuevo.x0 - 1.5 || x > entradaNuevo.x1 + 1.5) && (x < pasoRecepcion.x0 - 1.5 || x > pasoRecepcion.x1 + 1.5);
   const arboles: [number, number][] = [];
   for (let x = -30; x <= xFin + 8; x += 9) if (libre(x)) arboles.push([x, zArbol]);
   // Autos y motos junto al cordón, como en la foto del frontis
@@ -184,8 +218,11 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
     cancha,
     pasoRecepcion,
     pasoCancha,
+    entradaNuevo,
     hallNuevo,
+    pasilloNuevo,
     conexionNuevo,
+    escaleraNuevo,
     escalera,
     columnas,
     arboles,

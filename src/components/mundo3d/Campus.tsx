@@ -152,7 +152,7 @@ export const Campus: React.FC<CampusProps> = ({ plano, aulas = [], onInteractuar
     definirVolumenes([
       volumen(plano.alaCalle, ALTO_ANTIGUO + 3),
       volumen(plano.alaFondo, ALTO_ANTIGUO + 3),
-      volumen(plano.edificioNuevo, ALTO_NUEVO + 1),
+      volumen(plano.edificioNuevo, ALTO_NUEVO + 3.5),
     ]);
     return () => definirVolumenes([]);
   }, [plano]);
