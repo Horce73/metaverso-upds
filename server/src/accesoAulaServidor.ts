@@ -9,7 +9,8 @@ import { pases, codigoCoincide } from './accesoAula.js';
 
 export function registrarRutasAccesoAula(app: Express) {
   // Con el código correcto, además del pase, el estudiante queda inscrito en
-  // la asignatura: así figura en el tablero de asistencia y ve sus materiales.
+  // la asignatura con la inscripción confirmada: así figura en el tablero de
+  // asistencia, ve sus materiales y vuelve a entrar sin el código.
   app.post('/api/espacios/:id/acceso', limiteCodigoAula, authenticateJWT, async (req: any, res) => {
     const { userId, isGuest } = req.user;
     const espacioId = Number(req.params.id);
@@ -31,10 +32,11 @@ export function registrarRutasAccesoAula(app: Express) {
         await bitacora(userId, 'codigo_aula_incorrecto', `Aula ${espacioId}`, req.ip || '');
         return res.status(403).json({ error: 'Código incorrecto. Pídeselo a tu docente.' });
       }
+      // Confirmada: desde ahora entra a esta aula sin volver a escribir el código
       await pool.query(
-        `INSERT INTO inscripciones (usuario_id, asignatura_id)
-         SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM perfiles_estudiante WHERE usuario_id = $1)
-         ON CONFLICT DO NOTHING`,
+        `INSERT INTO inscripciones (usuario_id, asignatura_id, confirmada)
+         SELECT $1, $2, TRUE WHERE EXISTS (SELECT 1 FROM perfiles_estudiante WHERE usuario_id = $1)
+         ON CONFLICT (usuario_id, asignatura_id) DO UPDATE SET confirmada = TRUE`,
         [userId, asignatura_id]
       );
       pases.otorgar(userId, espacioId);

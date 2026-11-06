@@ -35,6 +35,7 @@ server/uploads
 /upds 
 # Fotos y planos de referencia del campus: quedan en la máquina, el repo es público
 docs/referencias-upds/
+docs/mapas/
 
 # Clave local de la demo para pruebas/escena
 .demo/

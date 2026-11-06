@@ -24,12 +24,15 @@ import { log } from './registro.js';
 import { pases } from './accesoAula.js';
 import { sanearApariencia } from './apariencia.js';
 
-/** ¿El usuario está inscrito en la asignatura de esta aula? */
+/**
+ * ¿El usuario confirmó (con el código del curso) su inscripción en la
+ * asignatura de esta aula? La inscripción automática del registro no cuenta.
+ */
 async function estaInscrito(usuarioId: number | null | undefined, espacioId: number): Promise<boolean> {
   if (!usuarioId) return false;
   const { rows } = await pool.query(
     `SELECT 1 FROM espacios e JOIN inscripciones i ON i.asignatura_id = e.asignatura_id
-     WHERE e.id = $1 AND i.usuario_id = $2 LIMIT 1`,
+     WHERE e.id = $1 AND i.usuario_id = $2 AND i.confirmada LIMIT 1`,
     [espacioId, usuarioId]
   );
   return rows.length > 0;
@@ -221,10 +224,9 @@ export function setupSockets(io: Server) {
         socket.emit('join_rechazado', { motivo: 'Los invitados solo pueden acceder al campus.' });
         return;
       }
-      // SEC-08: al aula entra el docente o el admin, el estudiante inscrito en
-      // la asignatura, o quien tiene un pase (código del curso o solicitud
-      // aprobada por el docente). La inscripción es la que deja el código la
-      // primera vez: después no hace falta volver a escribirlo.
+      // SEC-08: al aula entra el docente o el admin, el estudiante que
+      // confirmó su inscripción con el código (ACCESO-02), o quien tiene un
+      // pase (código del curso o solicitud aprobada por el docente).
       if (
         espacioTipo === 'aula' &&
         !esDocenteOAdmin(identidad.roles) &&
