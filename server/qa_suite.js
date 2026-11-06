@@ -1327,6 +1327,25 @@ async function runTests() {
       && csv.status === 200 && texto.includes('Minutos efectivos');
   });
 
+  await caso('Reiniciar la clase cierra un tramo abierto un instante antes sin fallar (salida >= entrada)', async () => {
+    // Alguien entra justo cuando el docente reinicia la clase: su tramo queda
+    // con una entrada posterior al inicio de la transacción de crear-curso
+    const datos = { espacio_id: otraAulaId, nombre_curso: 'Base de Datos I', codigo_curso: 'BD-101', tema: 'Clase QA tramos' };
+    const primera = await curso(docente.token, datos);
+    const { sesion } = await primera.json();
+    const { rows: [asis] } = await pool.query(
+      `INSERT INTO asistencias (sesion_id, usuario_id, hora_ingreso, estado) VALUES ($1, $2, NOW(), 'presente')
+       ON CONFLICT (sesion_id, usuario_id) DO UPDATE SET hora_salida = NULL RETURNING id`,
+      [sesion.id, maria.id]
+    );
+    await pool.query("DELETE FROM asistencia_tramos WHERE asistencia_id = $1", [asis.id]);
+    await pool.query("INSERT INTO asistencia_tramos (asistencia_id, entrada) VALUES ($1, NOW() + INTERVAL '2 seconds')", [asis.id]);
+    const segunda = await curso(docente.token, { ...datos, tema: 'Clase QA tramos (reinicio)' });
+    const { rows } = await pool.query('SELECT entrada, salida FROM asistencia_tramos WHERE asistencia_id = $1', [asis.id]);
+    return primera.status === 201 && segunda.status === 201
+      && rows.length === 1 && rows[0].salida !== null && rows[0].salida >= rows[0].entrada;
+  });
+
   await caso('Iniciar la clase registra la asistencia de quien ya estaba en el aula', async () => {
     const bd = (await pool.query("SELECT id FROM asignaturas WHERE codigo = 'BD-101'")).rows[0].id;
     await pool.query('INSERT INTO inscripciones (usuario_id, asignatura_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [maria.id, bd]);
