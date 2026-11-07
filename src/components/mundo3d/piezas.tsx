@@ -101,6 +101,33 @@ export const Bloque: React.FC<BloqueProps> = ({ x, y, z, todas = LISO, frente, f
 };
 
 /** Piso texturado a ras del suelo (y apenas sobre 0 para no titilar con el terreno). */
+type Punto = [number, number, number];
+
+/**
+ * Pasamanos recto de `desde` a `hasta` (puntos al nivel del piso), a la altura
+ * de la mano, con un parante en cada punta: sirve inclinado, a lo largo de un
+ * tramo de escalera.
+ */
+export const Pasamanos: React.FC<{ desde: Punto; hasta: Punto; cara: Cara; alto?: number }> = ({ desde, hasta, cara, alto = 0.9 }) => {
+  const [dx, dy, dz] = [hasta[0] - desde[0], hasta[1] - desde[1], hasta[2] - desde[2]];
+  const largo = Math.hypot(dx, dy, dz);
+  return (
+    <group>
+      {/* La caja va a lo largo de z: se gira hacia (dx, dz) y se inclina según dy */}
+      <mesh
+        position={[(desde[0] + hasta[0]) / 2, (desde[1] + hasta[1]) / 2 + alto, (desde[2] + hasta[2]) / 2]}
+        rotation={[-Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(dx, dz), 0, 'YXZ']}
+        material={materialDe(cara, 1, 1)}
+      >
+        <boxGeometry args={[0.05, 0.05, largo]} />
+      </mesh>
+      {[desde, hasta].map((p) => (
+        <Bloque key={p.join(':')} x={[p[0] - 0.025, p[0] + 0.025]} y={[p[1], p[1] + alto]} z={[p[2] - 0.025, p[2] + 0.025]} todas={cara} sombra={false} />
+      ))}
+    </group>
+  );
+};
+
 export const Piso: React.FC<{ x: [number, number]; z: [number, number]; y?: number; cara: Cara }> = ({ x, z, y = 0.02, cara }) => {
   const w = x[1] - x[0];
   const d = z[1] - z[0];
