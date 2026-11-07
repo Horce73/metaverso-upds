@@ -7,7 +7,7 @@ import { EdificioAntiguo, EdificioNuevo, ALTO_ANTIGUO, ALTO_NUEVO } from './Edif
 import { DecoradoCampus } from './DecoradoCampus.js';
 import { Fusionar } from './Fusionar.js';
 import { recortarVista, definirVolumenes } from './recorteVista.js';
-import type { PlanoCampus, PuertaAula, Rect } from './planoCampus.js';
+import { GALERIA, type PlanoCampus, type PuertaAula, type Rect } from './planoCampus.js';
 
 /** Caja de un edificio para el recorte de la vista: un poco más ancha, por letreros y cornisas. */
 function volumen(r: Rect, alto: number): THREE.Box3 {
@@ -148,10 +148,11 @@ export const Campus: React.FC<CampusProps> = ({ plano, aulas = [], onInteractuar
     if (raiz.current) recortarVista(raiz.current);
   }, [plano.xFin, aulas]);
   React.useEffect(() => {
-    // Con el techo: la cámara puede mirar desde arriba
+    // Con el techo: la cámara puede mirar desde arriba. Las alas incluyen sus
+    // galerías: las losas tapan a quien camina debajo o por la de arriba
     definirVolumenes([
-      volumen(plano.alaCalle, ALTO_ANTIGUO + 3),
-      volumen(plano.alaFondo, ALTO_ANTIGUO + 3),
+      volumen({ ...plano.alaCalle, z0: plano.alaCalle.z0 - GALERIA }, ALTO_ANTIGUO + 3),
+      volumen({ ...plano.alaFondo, z1: plano.alaFondo.z1 + GALERIA }, ALTO_ANTIGUO + 3),
       volumen(plano.edificioNuevo, ALTO_NUEVO + 3.5),
     ]);
     return () => definirVolumenes([]);

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Bloque, Piso, TechoDosAguas } from './piezas.js';
+import { Bloque, Piso, TechoDosAguas, Pasamanos, type Cara } from './piezas.js';
 import { textura } from './texturasCampus.js';
-import type { PlanoCampus } from './planoCampus.js';
+import { NIVEL_ALTO, PELDANOS_CANCHA, type PlanoCampus, type Rect } from './planoCampus.js';
 
 const X_INICIO_CALLE = -60;
 
@@ -133,8 +133,29 @@ const Aro: React.FC<{ x: number; z: number; sentido: 1 | -1 }> = ({ x, z, sentid
   </group>
 );
 
+// Los muros de la cancha comparten color: un material (y una llamada de dibujo) menos
+const MURO_CANCHA: Cara = { color: '#d8d4cb' };
+const BARANDA_CANCHA: Cara = { color: '#3a3f46', metalicidad: 0.6, rugosidad: 0.4 };
+
+// Gradas del ala del fondo a la cancha: suben hacia el fondo (-z), con un
+// pasamanos a cada lado. Mismos colores que la escalera del patio
+const GradasCancha: React.FC<{ g: Rect }> = ({ g }) => {
+  const huella = (g.z1 - g.z0) / PELDANOS_CANCHA;
+  const contra = NIVEL_ALTO / PELDANOS_CANCHA;
+  return (
+    <group>
+      {Array.from({ length: PELDANOS_CANCHA }, (_, i) => (
+        <Bloque key={i} x={[g.x0, g.x1]} y={[0, (i + 1) * contra]} z={[g.z1 - (i + 1) * huella, g.z1 - i * huella]} todas={{ color: '#c4c7cb' }} arriba={{ color: '#e8ebee' }} pared />
+      ))}
+      {[g.x0 + 0.05, g.x1 - 0.05].map((x) => (
+        <Pasamanos key={x} desde={[x, contra, g.z1 - huella / 2]} hasta={[x, NIVEL_ALTO, g.z0]} cara={BARANDA_CANCHA} />
+      ))}
+    </group>
+  );
+};
+
 export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
-  const { xFin, calleAncho, cancha, arboles, autos, motos } = plano;
+  const { xFin, calleAncho, cancha, gradasCancha, arboles, autos, motos } = plano;
   const xIni = X_INICIO_CALLE;
   const xFinCalle = xFin + 50;
   const zCalle0 = 3;
@@ -190,13 +211,25 @@ export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
       <Casa x={[-38, -24.2]} z={[-14, 0]} alto={11} frenteHacia={1} />
       <Casa x={[xFin + 0.2, xFin + 14]} z={[-16, 0]} alto={9} color="#f3d9c4" frenteHacia={1} />
 
-      {/* Cancha del fondo: piso, muros bajos y aros */}
-      <Piso x={[cancha.x0, cancha.x1]} z={[cancha.z0, cancha.z1]} y={0.02} cara={{ mapa: textura('cancha') }} />
-      <Bloque x={[cancha.x0 - 0.4, cancha.x0]} y={[0, 2.6]} z={[cancha.z0 - 0.4, cancha.z1]} todas={{ color: '#d8d4cb' }} pared />
-      <Bloque x={[cancha.x1, cancha.x1 + 0.4]} y={[0, 2.6]} z={[cancha.z0 - 0.4, cancha.z1]} todas={{ color: '#d8d4cb' }} pared />
-      <Bloque x={[cancha.x0 - 0.4, cancha.x1 + 0.4]} y={[0, 2.6]} z={[cancha.z0 - 0.4, cancha.z0]} todas={{ color: '#d8d4cb' }} pared />
-      <Aro x={cancha.x0 + 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={1} />
-      <Aro x={cancha.x1 - 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={-1} />
+      {/* Cancha del fondo, elevada al nivel de las galerías (CAMPUS-03): muro de
+          contención, piso, muros a los costados y al fondo, muro bajo hacia las
+          gradas y aros */}
+      <Bloque x={[cancha.x0 - 0.4, cancha.x1 + 0.4]} y={[0, NIVEL_ALTO]} z={[cancha.z0 - 0.4, cancha.z1]} todas={MURO_CANCHA} pared />
+      <Piso x={[cancha.x0, cancha.x1]} z={[cancha.z0, cancha.z1]} y={NIVEL_ALTO + 0.02} cara={{ mapa: textura('cancha') }} />
+      <Bloque x={[cancha.x0 - 0.4, cancha.x0]} y={[NIVEL_ALTO, NIVEL_ALTO + 2.6]} z={[cancha.z0 - 0.4, cancha.z1]} todas={MURO_CANCHA} pared />
+      <Bloque x={[cancha.x1, cancha.x1 + 0.4]} y={[NIVEL_ALTO, NIVEL_ALTO + 2.6]} z={[cancha.z0 - 0.4, cancha.z1]} todas={MURO_CANCHA} pared />
+      <Bloque x={[cancha.x0 - 0.4, cancha.x1 + 0.4]} y={[NIVEL_ALTO, NIVEL_ALTO + 2.6]} z={[cancha.z0 - 0.4, cancha.z0]} todas={MURO_CANCHA} pared />
+      {[
+        [cancha.x0, gradasCancha.x0],
+        [gradasCancha.x1, cancha.x1],
+      ].map(([a, b]) => (
+        <Bloque key={a} x={[a, b]} y={[NIVEL_ALTO, NIVEL_ALTO + 1]} z={[cancha.z1 - 0.15, cancha.z1]} todas={MURO_CANCHA} pared />
+      ))}
+      <group position={[0, NIVEL_ALTO, 0]}>
+        <Aro x={cancha.x0 + 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={1} />
+        <Aro x={cancha.x1 - 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={-1} />
+      </group>
+      <GradasCancha g={gradasCancha} />
 
       <Cerros />
     </group>

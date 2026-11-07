@@ -1,7 +1,10 @@
 // Recorre el campus en un navegador real y saca capturas o mide la escena.
 // Necesita la demo sembrada (docs/demo.md) y su clave en DEMO_CLAVE.
 //
-//   DEMO_CLAVE=… node pruebas/escena/recorrer.mjs <salida> <x,z,giro|-> pasos…
+//   DEMO_CLAVE=… node pruebas/escena/recorrer.mjs <salida> <x,z,giro[,y]|-> pasos…
+//
+// La y opcional sirve para aparecer en el nivel alto (galerías, piso alto del
+// nuevo, cancha): si ahí no hay piso a esa altura, se aparece en la vereda.
 //
 // Pasos: foto:nombre · w|a|s|d:ms · tecla:KeyE · girar:dx,dy · rueda:dy (aleja o acerca la cámara) · clic:texto · esperar:ms
 //        fps (cuadros por segundo en 4 s) · info:etiqueta (renderer.info)
@@ -16,8 +19,8 @@ const clave = process.env.DEMO_CLAVE;
 if (!clave) throw new Error('Falta DEMO_CLAVE (la clave con la que se sembró la demo)');
 mkdirSync(salida, { recursive: true });
 
-const [px, pz, giro] = posArg.split(',').map(Number);
-const ultima = posArg !== '-' ? { position: [px, 0, pz], rotation: [0, giro, 0] } : null;
+const [px, pz, giro, py = 0] = posArg.split(',').map(Number);
+const ultima = posArg !== '-' ? { position: [px, py, pz], rotation: [0, giro, 0] } : null;
 const cabeceras = (token) => ({
   'Content-Type': 'application/json',
   'X-Forwarded-For': `10.9.${Math.floor(Math.random() * 250)}.3`,
