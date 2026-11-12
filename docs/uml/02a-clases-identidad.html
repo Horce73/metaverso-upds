@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Clases — identidad y acceso</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Diagrama de clases · apaisado · UML 2.x</p>
+  <h1>Clases — identidad y acceso</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="clases-identidad" viewBox="0 0 1040 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="clases-identidad-titulo clases-identidad-desc">
+    <title id="clases-identidad-titulo">Clases — identidad y acceso</title>
+    <desc id="clases-identidad-desc">Clases del paquete Identidad y acceso: el usuario con sus roles, datos personales, consentimientos, avatar y solicitud de rol docente.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="600"/>
+
+
+<path class="linea conector" data-desde="rol" data-hacia="usuario" d="M 208 280 H 468"/>
+<path class="linea conector discontinua" data-desde="asignacion" data-hacia="rol" d="M 338 280 V 372"/>
+<path class="linea conector" data-desde="asignacion" data-hacia="usuario" d="M 338 428 V 448 Q 338 454 344 454 H 494 Q 500 454 500 448 V 396" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="usuario" data-hacia="consentimiento" d="M 586 196 V 144" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="usuario" data-hacia="avatar" d="M 704 232 H 784" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="usuario" data-hacia="datos" d="M 704 372 H 784" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="usuario" data-hacia="solicitud" d="M 536 396 V 476" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="solicitud" data-hacia="usuario" d="M 660 520 H 734 Q 740 520 740 514 V 390 Q 740 384 734 384 H 704" marker-end="url(#flecha-abierta)"/>
+<text class="mult" x="214" y="275">1..*</text>
+<text class="mult" x="462" y="275" text-anchor="end">0..*</text>
+<text class="mult" x="344" y="444">0..*</text>
+<text class="mult" x="506" y="414">0..1</text>
+<text class="rotulo" x="410" y="470" text-anchor="middle">asignadoPor</text>
+<text class="mult" x="592" y="182">1</text>
+<text class="mult" x="592" y="160">0..*</text>
+<text class="mult" x="726" y="227">1</text>
+<text class="mult" x="778" y="227" text-anchor="end">0..1</text>
+<text class="mult" x="726" y="367">1</text>
+<text class="mult" x="778" y="367" text-anchor="end">0..1</text>
+<text class="mult" x="542" y="418">1</text>
+<text class="mult" x="542" y="470">0..1</text>
+<text class="rotulo" x="542" y="446">solicita</text>
+<text class="mult" x="666" y="538">0..*</text>
+<text class="mult" x="710" y="402">0..1</text>
+<text class="rotulo" x="734" y="470" text-anchor="end">resueltaPor</text>
+<g class="nodo" id="rol">
+  <rect class="caja" x="40" y="236" width="168" height="88"/>
+  <text class="nombre" x="124" y="255" text-anchor="middle">Rol</text>
+  <line class="separador" x1="40" y1="264" x2="208" y2="264"/>
+  <text class="miembro" x="50" y="282">- id: int</text>
+  <text class="miembro" x="50" y="298">- nombre: String</text>
+  <text class="miembro" x="50" y="314">- descripcion: String</text>
+</g>
+<g class="nodo" id="asignacion">
+  <rect class="caja" x="254" y="372" width="168" height="56"/>
+  <text class="nombre" x="338" y="391" text-anchor="middle">AsignacionRol</text>
+  <line class="separador" x1="254" y1="400" x2="422" y2="400"/>
+  <text class="miembro" x="264" y="418">- asignadoEn: DateTime</text>
+</g>
+<g class="nodo" id="usuario">
+  <rect class="caja focal" x="468" y="196" width="236" height="200"/>
+  <text class="nombre" x="586" y="215" text-anchor="middle">Usuario</text>
+  <line class="separador" x1="468" y1="224" x2="704" y2="224"/>
+  <text class="miembro" x="478" y="242">- id: int</text>
+  <text class="miembro" x="478" y="258">- email: String</text>
+  <text class="miembro" x="478" y="274">- passwordHash: String</text>
+  <text class="miembro" x="478" y="290">- nombre: String</text>
+  <text class="miembro" x="478" y="306">- apellido: String</text>
+  <text class="miembro" x="478" y="322">- activo: boolean</text>
+  <text class="miembro" x="478" y="338">- intentosFallidos: int</text>
+  <text class="miembro" x="478" y="354">- bloqueadoHasta: DateTime [0..1]</text>
+  <text class="miembro" x="478" y="370">- creadoEn: DateTime</text>
+  <text class="miembro" x="478" y="386">- ultimoAcceso: DateTime [0..1]</text>
+</g>
+<g class="nodo" id="consentimiento">
+  <rect class="caja" x="494" y="24" width="184" height="120"/>
+  <text class="nombre" x="586" y="43" text-anchor="middle">Consentimiento</text>
+  <line class="separador" x1="494" y1="52" x2="678" y2="52"/>
+  <text class="miembro" x="504" y="70">- id: int</text>
+  <text class="miembro" x="504" y="86">- tipo: TipoConsentimiento</text>
+  <text class="miembro" x="504" y="102">- otorgado: boolean</text>
+  <text class="miembro" x="504" y="118">- fecha: DateTime</text>
+  <text class="miembro" x="504" y="134">- versionPolitica: String</text>
+</g>
+<g class="nodo" id="enum-consent">
+  <rect class="caja" x="728" y="24" width="168" height="100"/>
+  <text class="estereotipo" x="812" y="39" text-anchor="middle">«enumeration»</text>
+  <text class="nombre" x="812" y="56" text-anchor="middle">TipoConsentimiento</text>
+  <line class="separador" x1="728" y1="64" x2="896" y2="64"/>
+  <text class="miembro" x="738" y="82">tratamiento_datos</text>
+  <text class="miembro" x="738" y="98">uso_voz</text>
+  <text class="miembro" x="738" y="114">grabacion_clase</text>
+</g>
+<g class="nodo" id="avatar">
+  <rect class="caja" x="784" y="168" width="208" height="136"/>
+  <text class="nombre" x="888" y="187" text-anchor="middle">Avatar</text>
+  <line class="separador" x1="784" y1="196" x2="992" y2="196"/>
+  <text class="miembro" x="794" y="214">- id: int</text>
+  <text class="miembro" x="794" y="230">- nombreVisible: String</text>
+  <text class="miembro" x="794" y="246">- modeloUrl: String [0..1]</text>
+  <text class="miembro" x="794" y="262">- apariencia: JSON</text>
+  <text class="miembro" x="794" y="278">- ultimaPosicion: JSON [0..1]</text>
+  <text class="miembro" x="794" y="294">- actualizadoEn: DateTime</text>
+</g>
+<g class="nodo" id="datos">
+  <rect class="caja" x="784" y="336" width="240" height="168"/>
+  <text class="nombre" x="904" y="355" text-anchor="middle">DatosPersonales</text>
+  <line class="separador" x1="784" y1="364" x2="1024" y2="364"/>
+  <text class="miembro" x="794" y="382">- documentoIdentidad: String [0..1]</text>
+  <text class="miembro" x="794" y="398">- fechaNacimiento: Date [0..1]</text>
+  <text class="miembro" x="794" y="414">- nacionalidad: String [0..1]</text>
+  <text class="miembro" x="794" y="430">- genero: String [0..1]</text>
+  <text class="miembro" x="794" y="446">- domicilio: String [0..1]</text>
+  <text class="miembro" x="794" y="462">- tipoSangre: String [0..1]</text>
+  <text class="miembro" x="794" y="478">- estadoCivil: String [0..1]</text>
+  <text class="miembro" x="794" y="494">- actualizadoEn: DateTime</text>
+</g>
+<g class="nodo" id="solicitud">
+  <rect class="caja" x="452" y="476" width="208" height="88"/>
+  <text class="nombre" x="556" y="495" text-anchor="middle">SolicitudDocente</text>
+  <line class="separador" x1="452" y1="504" x2="660" y2="504"/>
+  <text class="miembro" x="462" y="522">- estado: EstadoSolicitud</text>
+  <text class="miembro" x="462" y="538">- creadaEn: DateTime</text>
+  <text class="miembro" x="462" y="554">- resueltaEn: DateTime [0..1]</text>
+</g>
+<g class="nodo" id="enum-solicitud">
+  <rect class="caja" x="136" y="476" width="160" height="100"/>
+  <text class="estereotipo" x="216" y="491" text-anchor="middle">«enumeration»</text>
+  <text class="nombre" x="216" y="508" text-anchor="middle">EstadoSolicitud</text>
+  <line class="separador" x1="136" y1="516" x2="296" y2="516"/>
+  <text class="miembro" x="146" y="534">pendiente</text>
+  <text class="miembro" x="146" y="550">aprobada</text>
+  <text class="miembro" x="146" y="566">rechazada</text>
+</g>
+
+  </svg>
+</body>
+</html>

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Secuencia — inicio de sesión</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Diagrama de secuencia · UML 2.x</p>
+  <h1>Secuencia — inicio de sesión</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="secuencia-inicio-sesion" viewBox="0 0 720 972" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="secuencia-inicio-sesion-titulo secuencia-inicio-sesion-desc">
+    <title id="secuencia-inicio-sesion-titulo">Secuencia — inicio de sesión</title>
+    <desc id="secuencia-inicio-sesion-desc">Inicio de sesión con POST /api/auth/login: límite por IP, búsqueda del usuario, bloqueo tras cinco fallos, verificación con bcrypt, roles, JWT y carga de espacios.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="720" height="972"/>
+
+
+<g class="contenedor">
+  <rect class="marco" x="88" y="146" width="346" height="50"/>
+  <path class="marco" d="M 88 164 H 132 L 140 156 V 146"/>
+  <text class="operador" x="94" y="159">break</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="88" y="266" width="346" height="50"/>
+  <path class="marco" d="M 88 284 H 132 L 140 276 V 266"/>
+  <text class="operador" x="94" y="279">break</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="88" y="324" width="554" height="74"/>
+  <path class="marco" d="M 88 342 H 132 L 140 334 V 324"/>
+  <text class="operador" x="94" y="337">break</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="88" y="434" width="554" height="112"/>
+  <path class="marco" d="M 88 452 H 132 L 140 444 V 434"/>
+  <text class="operador" x="94" y="447">break</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="88" y="602" width="346" height="50"/>
+  <path class="marco" d="M 88 620 H 132 L 140 612 V 602"/>
+  <text class="operador" x="94" y="615">break</text>
+</g>
+<line class="linea-vida" x1="618" y1="60" x2="618" y2="956"/>
+<line class="linea-vida" x1="410" y1="60" x2="410" y2="956"/>
+<line class="linea-vida" x1="266" y1="60" x2="266" y2="956"/>
+<line class="linea-vida" x1="156" y1="60" x2="156" y2="956"/>
+<line class="linea-vida" x1="44" y1="92" x2="44" y2="956"/>
+<path class="linea mensaje" d="M 44 116 H 151" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 161 140 H 405" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 405 186 H 161" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 415 236 H 613" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 613 260 H 415" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="613" y="236" width="10" height="24"/>
+<path class="linea mensaje discontinua" d="M 405 306 H 161" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 415 364 H 618" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 405 388 H 161" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 415 418 H 437 V 432 H 416" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 415 488 H 618" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 415 512 H 618" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 405 536 H 161" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 415 572 H 613" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 613 596 H 415" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="613" y="572" width="10" height="24"/>
+<path class="linea mensaje discontinua" d="M 405 642 H 161" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 415 692 H 618" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 415 716 H 613" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 613 740 H 415" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="613" y="716" width="10" height="24"/>
+<path class="linea mensaje" d="M 415 758 H 437 V 772 H 416" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 415 792 H 618" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 405 816 H 161" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="405" y="140" width="10" height="676"/>
+<path class="linea mensaje" d="M 161 834 H 183 V 848 H 162" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 161 868 H 261" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 271 892 H 405" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 405 916 H 271" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="405" y="892" width="10" height="24"/>
+<rect class="activacion" x="261" y="868" width="10" height="34"/>
+<path class="linea mensaje discontinua" d="M 151 940 H 44" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="151" y="116" width="10" height="824"/>
+<g class="etiqueta">
+  <rect class="mascara" x="25.65" y="99" width="143.7" height="14"/>
+  <text class="rotulo" x="97.5" y="110" text-anchor="middle">enviar(email, password)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="220" y="123" width="126" height="14"/>
+  <text class="rotulo" x="283" y="134" text-anchor="middle">POST /api/auth/login</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="211.15" y="169" width="143.7" height="14"/>
+  <text class="rotulo" x="283" y="180" text-anchor="middle">429 Demasiados intentos</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="144" y="148" width="194" height="14"/>
+  <text class="mult" x="148" y="159" text-anchor="start">[limiteLogin: 50 fallos/15 min]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="445.1" y="219" width="137.8" height="14"/>
+  <text class="rotulo" x="514" y="230" text-anchor="middle">WHERE email AND activo</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="465.75" y="205" width="96.5" height="14"/>
+  <text class="rotulo" x="514" y="216" text-anchor="middle">SELECT usuarios</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="474.6" y="243" width="78.8" height="14"/>
+  <text class="rotulo" x="514" y="254" text-anchor="middle">fila | vacío</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="202.3" y="289" width="161.4" height="14"/>
+  <text class="rotulo" x="283" y="300" text-anchor="middle">401 Credenciales inválidas</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="144" y="268" width="140" height="14"/>
+  <text class="mult" x="148" y="279" text-anchor="start">[no existe o inactivo]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="412.2" y="347" width="208.6" height="14"/>
+  <text class="rotulo" x="516.5" y="358" text-anchor="middle">INSERT bitacora('login_bloqueado')</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="220" y="371" width="126" height="14"/>
+  <text class="rotulo" x="283" y="382" text-anchor="middle">423 Cuenta bloqueada</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="144" y="326" width="158" height="14"/>
+  <text class="mult" x="148" y="337" text-anchor="start">[bloqueado_hasta &gt; ahora]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="439" y="418" width="102.4" height="14"/>
+  <text class="rotulo" x="443" y="429" text-anchor="start">bcrypt.compare()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="400.4" y="471" width="232.2" height="14"/>
+  <text class="rotulo" x="516.5" y="482" text-anchor="middle">bloqueado_hasta = +15 min si llega a 5</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="426.95" y="457" width="179.1" height="14"/>
+  <text class="rotulo" x="516.5" y="468" text-anchor="middle">UPDATE intentos_fallidos + 1;</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="418.1" y="495" width="196.8" height="14"/>
+  <text class="rotulo" x="516.5" y="506" text-anchor="middle">INSERT bitacora('login_fallido')</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="202.3" y="519" width="161.4" height="14"/>
+  <text class="rotulo" x="283" y="530" text-anchor="middle">401 Credenciales inválidas</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="144" y="436" width="134" height="14"/>
+  <text class="mult" x="148" y="447" text-anchor="start">[contraseña inválida]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="403.8" y="555" width="220.4" height="14"/>
+  <text class="rotulo" x="514" y="566" text-anchor="middle">SELECT roles (usuario_roles ⋈ roles)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="489.35" y="579" width="49.3" height="14"/>
+  <text class="rotulo" x="514" y="590" text-anchor="middle">roles[]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="211.15" y="625" width="143.7" height="14"/>
+  <text class="rotulo" x="283" y="636" text-anchor="middle">403 Sin roles asignados</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="144" y="604" width="74" height="14"/>
+  <text class="mult" x="148" y="615" text-anchor="start">[sin roles]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="450.55" y="675" width="131.9" height="14"/>
+  <text class="rotulo" x="516.5" y="686" text-anchor="middle">ultimo_acceso = NOW()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="426.95" y="661" width="179.1" height="14"/>
+  <text class="rotulo" x="516.5" y="672" text-anchor="middle">UPDATE intentos_fallidos = 0,</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="465.75" y="699" width="96.5" height="14"/>
+  <text class="rotulo" x="514" y="710" text-anchor="middle">SELECT avatares</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="468.7" y="723" width="90.6" height="14"/>
+  <text class="rotulo" x="514" y="734" text-anchor="middle">avatar | vacío</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="439" y="758" width="96.5" height="14"/>
+  <text class="rotulo" x="443" y="769" text-anchor="start">jwt.sign(…, 8h)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="432.85" y="775" width="167.3" height="14"/>
+  <text class="rotulo" x="516.5" y="786" text-anchor="middle">INSERT bitacora('login_ok')</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="205.25" y="799" width="155.5" height="14"/>
+  <text class="rotulo" x="283" y="810" text-anchor="middle">200 {token, user, avatar}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="185" y="834" width="78.8" height="14"/>
+  <text class="rotulo" x="189" y="845" text-anchor="start">localStorage</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="159.8" y="851" width="102.4" height="14"/>
+  <text class="rotulo" x="211" y="862" text-anchor="middle">onLoginSuccess()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="283.85" y="875" width="108.3" height="14"/>
+  <text class="rotulo" x="338" y="886" text-anchor="middle">GET /api/espacios</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="272.05" y="899" width="131.9" height="14"/>
+  <text class="rotulo" x="338" y="910" text-anchor="middle">espacios según el rol</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="52.2" y="923" width="90.6" height="14"/>
+  <text class="rotulo" x="97.5" y="934" text-anchor="middle">campus | error</text>
+</g>
+<g class="nodo" id="U">
+  <rect x="12" y="12" width="64" height="80" fill="none"/>
+  <circle class="caja" cx="44" cy="22" r="8"/>
+  <path class="linea" d="M 44 30 V 54 M 30 38 H 58 M 44 54 L 33 70 M 44 54 L 55 70"/>
+  <text class="nombre" x="44" y="88" text-anchor="middle">Usuario</text>
+</g>
+<g class="nodo" id="L">
+  <rect class="caja" x="116" y="16" width="80" height="44"/>
+  <text class="nombre" x="156" y="36" text-anchor="middle">Login</text>
+  <text class="estereotipo" x="156" y="52" text-anchor="middle">Login.tsx</text>
+</g>
+<g class="nodo" id="A">
+  <rect class="caja" x="232" y="16" width="68" height="44"/>
+  <text class="nombre" x="266" y="36" text-anchor="middle">App</text>
+  <text class="estereotipo" x="266" y="52" text-anchor="middle">App.tsx</text>
+</g>
+<g class="nodo" id="E">
+  <rect class="caja" x="346" y="16" width="128" height="44"/>
+  <text class="nombre" x="410" y="36" text-anchor="middle">app : Express</text>
+  <text class="estereotipo" x="410" y="52" text-anchor="middle">index.ts</text>
+</g>
+<g class="nodo" id="DB">
+  <rect class="caja" x="562" y="16" width="112" height="44"/>
+  <text class="nombre" x="618" y="36" text-anchor="middle">PostgreSQL</text>
+  <text class="estereotipo" x="618" y="52" text-anchor="middle">pool : pg.Pool</text>
+</g>
+
+  </svg>
+</body>
+</html>

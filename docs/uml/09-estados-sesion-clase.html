@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Estados — sesión de clase</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Máquina de estados · apaisado · UML 2.x</p>
+  <h1>Estados — sesión de clase</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="estados-sesion-clase" viewBox="0 0 1040 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="estados-sesion-clase-titulo estados-sesion-clase-desc">
+    <title id="estados-sesion-clase-titulo">Estados — sesión de clase</title>
+    <desc id="estados-sesion-clase-desc">Ciclo de vida de una sesión de clase: se crea en curso, puede grabarse mientras dura y pasa a finalizada; programada y cancelada están previstas en el esquema como trabajo futuro.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="680"/>
+
+
+<path class="linea conector" data-desde="e-ini" data-hacia="e-curso" d="M 240 35 V 104" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector discontinua" data-desde="nota-pre" data-hacia="e-ini" d="M 200 28 H 233"/>
+<path class="linea conector" data-desde="e-ini2" data-hacia="e-sin" d="M 175 290 H 216" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="e-sin" data-hacia="e-grab" d="M 376 280 H 456" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="e-grab" data-hacia="e-sin" d="M 456 300 H 376" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="e-curso" data-hacia="e-fin" d="M 304 424 V 552" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="e-curso" data-hacia="e-fin" d="M 496 424 V 552" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="e-fin" data-hacia="e-final" d="M 400 592 V 631" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector discontinua" data-desde="e-ini" data-hacia="e-prog" d="M 247 28 H 874 Q 880 28 880 34 V 160" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector discontinua" data-desde="e-prog" data-hacia="e-curso" d="M 800 180 H 680" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector discontinua" data-desde="e-prog" data-hacia="e-canc" d="M 880 200 V 300" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector discontinua" data-desde="e-canc" data-hacia="e-final2" d="M 880 340 V 411" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector discontinua" data-desde="nota-futuro" data-hacia="e-canc" d="M 776 488 V 320 H 800"/>
+<text class="rotulo" x="250" y="52">«create» POST /api/clases/crear-curso</text>
+<text class="rotulo" x="250" y="66">| POST /api/sesiones</text>
+<text class="rotulo" x="250" y="80">/ INSERT estado = 'en_curso',</text>
+<text class="rotulo" x="250" y="94">  inicio_real = NOW()</text>
+<g class="etiqueta">
+  <rect class="mascara" x="341.2" y="219" width="149.6" height="14"/>
+  <text class="rotulo" x="416" y="230" text-anchor="middle">grabacion {activa: true}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="338.25" y="233" width="155.5" height="14"/>
+  <text class="rotulo" x="416" y="244" text-anchor="middle">[docente o administrador]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="353" y="247" width="126" height="14"/>
+  <text class="rotulo" x="416" y="258" text-anchor="middle">/ iniciarGrabacion()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="338.25" y="319" width="155.5" height="14"/>
+  <text class="rotulo" x="416" y="330" text-anchor="middle">grabacion {activa: false}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="353" y="333" width="126" height="14"/>
+  <text class="rotulo" x="416" y="344" text-anchor="middle">/ detenerGrabacion()</text>
+</g>
+<text class="rotulo" x="296" y="448" text-anchor="end">PUT /api/sesiones/:id/finalizar</text>
+<text class="rotulo" x="296" y="462" text-anchor="end">[docente dueño o administrador]</text>
+<text class="rotulo" x="296" y="476" text-anchor="end">/ fin_real = NOW(); cierra</text>
+<text class="rotulo" x="296" y="490" text-anchor="end">asistencias, tramos y</text>
+<text class="rotulo" x="296" y="504" text-anchor="end">grabación</text>
+<text class="rotulo" x="504" y="448">POST /api/clases/crear-curso</text>
+<text class="rotulo" x="504" y="462">en la misma aula</text>
+<text class="rotulo" x="504" y="476">[mismo docente]</text>
+<text class="rotulo" x="504" y="490">/ cierra la clase previa</text>
+<text class="rotulo" x="504" y="504">  y abre otra</text>
+<g class="etiqueta">
+  <rect class="mascara" x="458.65" y="10" width="202.7" height="14"/>
+  <text class="rotulo" x="560" y="21" text-anchor="middle">«create» programar clase (futuro)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="688.8" y="162" width="102.4" height="14"/>
+  <text class="rotulo" x="740" y="173" text-anchor="middle">iniciar (futuro)</text>
+</g>
+<text class="rotulo" x="886" y="254">cancelar (futuro)</text>
+<g class="nodo" id="e-ini"><circle class="solido" cx="240" cy="28" r="7"/></g>
+<g class="nodo" id="nota-pre">
+  <path class="nota" d="M 16 8 H 196 L 204 16 V 68 H 16 Z"/>
+  <path class="nota" d="M 196 8 V 16 H 204" fill="none"/>
+  <text class="nota-texto" x="24" y="26">Precondiciones: rol docente,</text>
+  <text class="nota-texto" x="24" y="42">aula activa y sin clase en</text>
+  <text class="nota-texto" x="24" y="58">curso de otro docente.</text>
+</g>
+<g class="nodo" id="e-curso">
+  <rect class="caja" x="120" y="104" width="560" height="320" rx="10" style="fill:none"/>
+  <text class="nombre" x="400" y="123" text-anchor="middle">en_curso</text>
+  <line class="separador" x1="120" y1="132" x2="680" y2="132"/>
+  <text class="miembro" x="132" y="150">entry / registrarPresentesEnAula(espacioId)</text>
+  <text class="miembro" x="132" y="166">join_space de inscrito / registrarAsistencia()</text>
+  <text class="miembro" x="132" y="182">salida o desconexión / registrarSalida()</text>
+  <line class="separador" x1="120" y1="194" x2="680" y2="194"/>
+  <text class="estereotipo" x="132" y="212">región: grabación</text>
+<g class="nodo" id="e-ini2"><circle class="solido" cx="168" cy="290" r="7"/></g>
+<g class="nodo" id="e-sin">
+  <rect class="caja" x="216" y="270" width="160" height="40" rx="10"/>
+  <text class="nombre" x="296" y="295" text-anchor="middle">Sin grabar</text>
+</g>
+<g class="nodo" id="e-grab">
+  <rect class="caja" x="456" y="270" width="160" height="40" rx="10"/>
+  <text class="nombre" x="536" y="295" text-anchor="middle">Grabando</text>
+</g>
+</g>
+<g class="nodo" id="e-fin">
+  <rect class="caja" x="280" y="552" width="240" height="40" rx="10"/>
+  <text class="nombre" x="400" y="577" text-anchor="middle">finalizada</text>
+</g>
+<g class="nodo" id="e-final">
+  <circle cx="400" cy="640" r="9" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <circle class="solido" cx="400" cy="640" r="5"/>
+</g>
+<g class="nodo" id="e-prog">
+  <rect class="caja externa" style="stroke-dasharray:5 4" x="800" y="160" width="160" height="40" rx="10"/>
+  <text class="nombre" x="880" y="185" text-anchor="middle">programada</text>
+</g>
+<g class="nodo" id="e-canc">
+  <rect class="caja externa" style="stroke-dasharray:5 4" x="800" y="300" width="160" height="40" rx="10"/>
+  <text class="nombre" x="880" y="325" text-anchor="middle">cancelada</text>
+</g>
+<g class="nodo" id="e-final2">
+  <circle cx="880" cy="420" r="9" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <circle class="solido" cx="880" cy="420" r="5"/>
+</g>
+<g class="nodo" id="nota-futuro">
+  <path class="nota" d="M 752 488 H 960 L 968 496 V 596 H 752 Z"/>
+  <path class="nota" d="M 960 488 V 496 H 968" fill="none"/>
+  <text class="nota-texto" x="760" y="506">Trabajo futuro: programada y</text>
+  <text class="nota-texto" x="760" y="522">cancelada están en el CHECK de</text>
+  <text class="nota-texto" x="760" y="538">sesiones_clase, pero ninguna ruta</text>
+  <text class="nota-texto" x="760" y="554">las escribe. El Panel de Docente</text>
+  <text class="nota-texto" x="760" y="570">llama a POST /api/docente/clases,</text>
+  <text class="nota-texto" x="760" y="586">que no existe en el backend.</text>
+</g>
+
+  </svg>
+</body>
+</html>
