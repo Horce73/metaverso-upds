@@ -11,7 +11,7 @@ import { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO, normalizarApar
 import { CuerpoAvatar } from './CuerpoAvatar.js';
 import { fueFusionada } from './reemplazadas.js';
 import { texturaRostro } from './rostroAvatar.js';
-import { esTransitable, type PlanoCampus } from './planoCampus.js';
+import { caminar, type PlanoCampus } from './planoCampus.js';
 
 export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
 
@@ -225,12 +225,17 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
           const posActual = grupoRef.current.position;
           const prueba = pruebaRef.current;
 
-          // Si el paso choca, se intenta deslizar sólo en x o sólo en z
-          if (esPosicionValida(prueba.copy(posActual).add(mover), isAula, planoCampus)) {
+          if (!isAula && planoCampus) {
+            // Campus (CAMPUS-03): el plano decide hasta dónde llega el paso y a
+            // qué altura queda (escaleras, galerías); se desliza si choca
+            const [x, y, z] = caminar(planoCampus, posActual.x, posActual.y, posActual.z, mover.x, mover.z);
+            posActual.set(x, y, z);
+          } else if (esPosicionValida(prueba.copy(posActual).add(mover), isAula)) {
+            // Si el paso choca, se intenta deslizar sólo en x o sólo en z
             posActual.copy(prueba);
-          } else if (esPosicionValida(prueba.set(posActual.x + mover.x, posActual.y, posActual.z), isAula, planoCampus)) {
+          } else if (esPosicionValida(prueba.set(posActual.x + mover.x, posActual.y, posActual.z), isAula)) {
             posActual.copy(prueba);
-          } else if (esPosicionValida(prueba.set(posActual.x, posActual.y, posActual.z + mover.z), isAula, planoCampus)) {
+          } else if (esPosicionValida(prueba.set(posActual.x, posActual.y, posActual.z + mover.z), isAula)) {
             posActual.copy(prueba);
           }
 
@@ -390,11 +395,9 @@ function Etiqueta({ nombre }: { nombre: string }) {
   return <Letrero texto={nombre} position={[0, 2.8, 0]} scale={[1.5, 0.4, 1]} />;
 }
 
-function esPosicionValida(
-  pos: THREE.Vector3,
-  isAula: boolean = false,
-  planoCampus?: PlanoCampus
-): boolean {
+// Aula (y campus sin plano, que no debería pasar). El campus camina con
+// caminar() de planoCampus.ts, que además sabe de alturas.
+function esPosicionValida(pos: THREE.Vector3, isAula: boolean = false): boolean {
   const x = pos.x;
   const z = pos.z;
 
@@ -423,9 +426,7 @@ function esPosicionValida(
     return true;
   }
 
-  // Campus: dentro de lo transitable del plano (vereda, patio, cancha…) y
-  // fuera de edificios, escalera, columnas y vehículos
-  return !planoCampus || esTransitable(planoCampus, x, z);
+  return true;
 }
 
 export default AvatarModel;

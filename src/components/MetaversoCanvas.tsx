@@ -7,7 +7,7 @@ import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
 import { Campus, type AulaCampus } from './mundo3d/Campus.js';
-import { calcularPlanoCampus, esTransitable, puertaCercana, type PlanoCampus } from './mundo3d/planoCampus.js';
+import { alturaEn, calcularPlanoCampus, puertaCercana, type PlanoCampus } from './mundo3d/planoCampus.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
 import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
@@ -479,12 +479,14 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   planoRef.current = plano;
 
   // Dónde aparece el avatar. En el campus, una última posición guardada que
-  // ya no es transitable (era del campus anterior, de islas) se descarta y
-  // se aparece en la vereda, frente a la recepción.
+  // ya no es transitable (era del campus anterior, de islas, o no hay piso a
+  // esa altura) se descarta y se aparece en la vereda, frente a la recepción.
+  // Si vale, se asienta sobre el piso (una escalera, la galería).
   const spawnEfectivo = React.useMemo<SpawnPosicion | null>(() => {
     if (isAula) return spawnPosicion ?? null;
     const p = spawnPosicion?.position;
-    if (p && esTransitable(planoRef.current, p[0], p[2])) return spawnPosicion!;
+    const y = p ? alturaEn(planoRef.current, p[0], p[2], Number.isFinite(p[1]) ? p[1] : 0) : null;
+    if (p && y !== null) return { ...spawnPosicion!, position: [p[0], y, p[2]] };
     return planoRef.current.aparicion;
   }, [isAula, spawnPosicion]);
 
@@ -635,7 +637,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     const pos = avatarEstadoRef.current.posicion;
     if (!pos) return;
 
-    const puerta = puertaCercana(plano, pos.x, pos.z);
+    const puerta = puertaCercana(plano, pos.x, pos.z, undefined, pos.y);
     const aula = puerta && aulas.find((a) => String(a.id) === puerta.id);
     if (aula) handleInteractuarAula(aula);
   }, [isAula, estaSentado, asientoCercano, aulas, plano, onInteractuarAula, handleInteractuarAula]);
@@ -649,7 +651,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     }
     const intervalo = setInterval(() => {
       const pos = avatarEstadoRef.current.posicion;
-      setPuertaFrente(puertaCercana(planoRef.current, pos.x, pos.z)?.id ?? null);
+      setPuertaFrente(puertaCercana(planoRef.current, pos.x, pos.z, undefined, pos.y)?.id ?? null);
     }, 200);
     return () => clearInterval(intervalo);
   }, [isAula]);

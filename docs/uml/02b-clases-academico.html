@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Clases — académico</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Diagrama de clases · apaisado · UML 2.x</p>
+  <h1>Clases — académico</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="clases-academico" viewBox="0 0 1040 656" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="clases-academico-titulo clases-academico-desc">
+    <title id="clases-academico-titulo">Clases — académico</title>
+    <desc id="clases-academico-desc">Clases del paquete Académico: perfiles de estudiante y docente, carreras, asignaturas con su inscripción y materiales.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="656"/>
+
+
+<path class="linea conector" data-desde="usuario" data-hacia="estudiante" d="M 438 54 H 158 Q 152 54 152 60 V 136" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="usuario" data-hacia="docente" d="M 602 54 H 874 Q 880 54 880 60 V 136" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="estudiante" data-hacia="asignatura" d="M 272 256 H 420"/>
+<path class="linea conector discontinua" data-desde="inscripcion" data-hacia="asignatura" d="M 346 256 V 404"/>
+<path class="linea conector" data-desde="asignatura" data-hacia="docente" d="M 596 256 H 760" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="estudiante" data-hacia="carrera" d="M 96 272 V 480" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="asignatura" data-hacia="carrera" d="M 476 336 V 582 Q 476 588 470 588 H 248" marker-end="url(#flecha-abierta)"/>
+<path class="linea conector" data-desde="asignatura" data-hacia="material" d="M 596 316 H 704 Q 710 316 710 322 V 480" marker-start="url(#rombo-lleno)"/>
+<path class="linea conector" data-desde="material" data-hacia="usuario" d="M 860 520 H 1014 Q 1020 520 1020 514 V 30 Q 1020 24 1014 24 H 526 Q 520 24 520 30 V 40" marker-end="url(#flecha-abierta)"/>
+<text class="mult" x="414" y="49" text-anchor="end">1</text>
+<text class="mult" x="158" y="130">0..1</text>
+<text class="mult" x="626" y="49">1</text>
+<text class="mult" x="886" y="130">0..1</text>
+<text class="mult" x="278" y="251">0..*</text>
+<text class="mult" x="414" y="251" text-anchor="end">0..*</text>
+<text class="mult" x="602" y="251">0..*</text>
+<text class="mult" x="750" y="247" text-anchor="end">1</text>
+<text class="rotulo" x="678" y="274" text-anchor="middle">dicta</text>
+<text class="mult" x="102" y="290">0..*</text>
+<text class="mult" x="102" y="466">0..1</text>
+<text class="mult" x="482" y="354">0..*</text>
+<text class="mult" x="256" y="604">1</text>
+<text class="mult" x="618" y="311">1</text>
+<text class="mult" x="716" y="474">0..*</text>
+<text class="mult" x="866" y="515">0..*</text>
+<text class="mult" x="512" y="36" text-anchor="end">1</text>
+<text class="rotulo" x="1014" y="400" text-anchor="end">subidoPor</text>
+<g class="nodo" id="usuario">
+  <rect class="caja externa" x="438" y="40" width="164" height="28"/>
+  <text class="nombre" x="520" y="59" text-anchor="middle">Identidad::Usuario</text>
+</g>
+<g class="nodo" id="estudiante">
+  <rect class="caja" x="40" y="136" width="232" height="136"/>
+  <text class="nombre" x="156" y="155" text-anchor="middle">PerfilEstudiante</text>
+  <line class="separador" x1="40" y1="164" x2="272" y2="164"/>
+  <text class="miembro" x="50" y="182">- registroUpds: String [0..1]</text>
+  <text class="miembro" x="50" y="198">- fechaInicio: Date [0..1]</text>
+  <text class="miembro" x="50" y="214">- sistemaEstudio: String [0..1]</text>
+  <text class="miembro" x="50" y="230">- turno: String [0..1]</text>
+  <text class="miembro" x="50" y="246">- estado: String</text>
+  <text class="miembro" x="50" y="262">- semestre: int [0..1]</text>
+</g>
+<g class="nodo" id="docente">
+  <rect class="caja" x="760" y="136" width="240" height="168"/>
+  <text class="nombre" x="880" y="155" text-anchor="middle">PerfilDocente</text>
+  <line class="separador" x1="760" y1="164" x2="1000" y2="164"/>
+  <text class="miembro" x="770" y="182">- codigoDocente: String [0..1]</text>
+  <text class="miembro" x="770" y="198">- tituloAcademico: String [0..1]</text>
+  <text class="miembro" x="770" y="214">- gradoAcademico: String [0..1]</text>
+  <text class="miembro" x="770" y="230">- especialidad: String [0..1]</text>
+  <text class="miembro" x="770" y="246">- fechaIngreso: Date [0..1]</text>
+  <text class="miembro" x="770" y="262">- tipoContrato: String [0..1]</text>
+  <text class="miembro" x="770" y="278">- turno: String [0..1]</text>
+  <text class="miembro" x="770" y="294">- estado: String</text>
+</g>
+<g class="nodo" id="asignatura">
+  <rect class="caja focal" x="420" y="216" width="176" height="120"/>
+  <text class="nombre" x="508" y="235" text-anchor="middle">Asignatura</text>
+  <line class="separador" x1="420" y1="244" x2="596" y2="244"/>
+  <text class="miembro" x="430" y="262">- id: int</text>
+  <text class="miembro" x="430" y="278">- codigo: String</text>
+  <text class="miembro" x="430" y="294">- nombre: String</text>
+  <text class="miembro" x="430" y="310">- gestion: String</text>
+  <text class="miembro" x="430" y="326">- activa: boolean</text>
+</g>
+<g class="nodo" id="inscripcion">
+  <rect class="caja" x="266" y="404" width="160" height="72"/>
+  <text class="nombre" x="346" y="423" text-anchor="middle">Inscripcion</text>
+  <line class="separador" x1="266" y1="432" x2="426" y2="432"/>
+  <text class="miembro" x="276" y="450">- inscritoEn: DateTime</text>
+  <text class="miembro" x="276" y="466">- confirmada: boolean</text>
+</g>
+<g class="nodo" id="carrera">
+  <rect class="caja" x="40" y="480" width="208" height="152"/>
+  <text class="nombre" x="144" y="499" text-anchor="middle">Carrera</text>
+  <line class="separador" x1="40" y1="508" x2="248" y2="508"/>
+  <text class="miembro" x="50" y="526">- id: int</text>
+  <text class="miembro" x="50" y="542">- sigla: String</text>
+  <text class="miembro" x="50" y="558">- nombre: String</text>
+  <text class="miembro" x="50" y="574">- tituloAcademico: String</text>
+  <text class="miembro" x="50" y="590">- sistemaEnsenanza: String</text>
+  <text class="miembro" x="50" y="606">- modeloEstudio: String</text>
+  <text class="miembro" x="50" y="622">- activa: boolean</text>
+</g>
+<g class="nodo" id="material">
+  <rect class="caja" x="660" y="480" width="200" height="136"/>
+  <text class="nombre" x="760" y="499" text-anchor="middle">Material</text>
+  <line class="separador" x1="660" y1="508" x2="860" y2="508"/>
+  <text class="miembro" x="670" y="526">- id: int</text>
+  <text class="miembro" x="670" y="542">- tipo: String</text>
+  <text class="miembro" x="670" y="558">- titulo: String</text>
+  <text class="miembro" x="670" y="574">- archivoUrl: String</text>
+  <text class="miembro" x="670" y="590">- tamanoBytes: long [0..1]</text>
+  <text class="miembro" x="670" y="606">- subidoEn: DateTime</text>
+</g>
+
+  </svg>
+</body>
+</html>

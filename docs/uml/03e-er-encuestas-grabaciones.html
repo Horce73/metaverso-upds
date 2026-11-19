@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Entidad-relación — encuestas y grabaciones</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Entidad-relación · apaisado · UML 2.x</p>
+  <h1>Entidad-relación — encuestas y grabaciones</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="er-encuestas-grabaciones" viewBox="0 0 1040 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="er-encuestas-grabaciones-titulo er-encuestas-grabaciones-desc">
+    <title id="er-encuestas-grabaciones-titulo">Entidad-relación — encuestas y grabaciones</title>
+    <desc id="er-encuestas-grabaciones-desc">Tablas de encuestas con sus votos y de grabaciones de clase con sus eventos, con espacios, sesiones y usuarios como tablas externas.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="512"/>
+
+
+<path class="linea conector" data-desde="espacios" data-hacia="encuestas" d="M 432 70 H 386 Q 380 70 380 76 V 166 Q 380 172 374 172 H 320" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="sesiones_clase" data-hacia="encuestas" d="M 432 190 H 320" marker-start="url(#er-cero-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="encuestas" d="M 432 310 H 406 Q 400 310 400 304 V 214 Q 400 208 394 208 H 320" marker-start="url(#er-cero-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="encuestas" data-hacia="encuesta_votos" d="M 200 313 V 380" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="encuesta_votos" d="M 500 340 V 437 Q 500 443 494 443 H 328" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="sesiones_clase" data-hacia="grabaciones" d="M 608 190 H 720" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="grabaciones" d="M 608 310 H 674 Q 680 310 680 304 V 214 Q 680 208 686 208 H 720" marker-start="url(#er-cero-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="grabaciones" data-hacia="grabacion_eventos" d="M 780 259 V 320" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<text class="rotulo" x="406" y="262">autor_id</text>
+<text class="rotulo" x="674" y="262" text-anchor="end">iniciada_por</text>
+<g class="nodo" id="espacios">
+  <rect class="caja externa" x="432" y="40" width="176" height="60"/>
+  <rect x="432" y="40" width="176" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="432" y1="68" x2="608" y2="68"/>
+  <text class="nombre" x="442" y="59">espacios</text>
+  <text class="mult" x="440" y="89">PK</text>
+  <text class="miembro" x="468" y="89" text-decoration="underline">id</text>
+  <text class="mult" x="600" y="89" text-anchor="end">SERIAL</text>
+</g>
+<g class="nodo" id="sesiones_clase">
+  <rect class="caja externa" x="432" y="160" width="176" height="60"/>
+  <rect x="432" y="160" width="176" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="432" y1="188" x2="608" y2="188"/>
+  <text class="nombre" x="442" y="179">sesiones_clase</text>
+  <text class="mult" x="440" y="209">PK</text>
+  <text class="miembro" x="468" y="209" text-decoration="underline">id</text>
+  <text class="mult" x="600" y="209" text-anchor="end">SERIAL</text>
+</g>
+<g class="nodo" id="usuarios">
+  <rect class="caja externa" x="432" y="280" width="176" height="60"/>
+  <rect x="432" y="280" width="176" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="432" y1="308" x2="608" y2="308"/>
+  <text class="nombre" x="442" y="299">usuarios</text>
+  <text class="mult" x="440" y="329">PK</text>
+  <text class="miembro" x="468" y="329" text-decoration="underline">id</text>
+  <text class="mult" x="600" y="329" text-anchor="end">SERIAL</text>
+</g>
+<g class="nodo" id="encuestas">
+  <rect class="caja" x="120" y="109" width="200" height="204"/>
+  <rect x="120" y="109" width="200" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="120" y1="137" x2="320" y2="137"/>
+  <text class="nombre" x="130" y="128">encuestas</text>
+  <text class="mult" x="128" y="158">PK</text>
+  <text class="miembro" x="156" y="158" text-decoration="underline">id</text>
+  <text class="mult" x="312" y="158" text-anchor="end">SERIAL</text>
+  <text class="mult" x="128" y="176">FK</text>
+  <text class="miembro" x="156" y="176">espacio_id</text>
+  <text class="mult" x="312" y="176" text-anchor="end">INT</text>
+  <text class="mult" x="128" y="194">FK</text>
+  <text class="miembro" x="156" y="194" font-style="italic">sesion_id</text>
+  <text class="mult" x="312" y="194" text-anchor="end">INT</text>
+  <text class="mult" x="128" y="212">FK</text>
+  <text class="miembro" x="156" y="212" font-style="italic">autor_id</text>
+  <text class="mult" x="312" y="212" text-anchor="end">INT</text>
+  <text class="miembro" x="156" y="230">pregunta</text>
+  <text class="mult" x="312" y="230" text-anchor="end">VARCHAR(200)</text>
+  <text class="miembro" x="156" y="248">opciones</text>
+  <text class="mult" x="312" y="248" text-anchor="end">JSONB</text>
+  <text class="miembro" x="156" y="266">abierta</text>
+  <text class="mult" x="312" y="266" text-anchor="end">BOOLEAN</text>
+  <text class="miembro" x="156" y="284">creada_en</text>
+  <text class="mult" x="312" y="284" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="156" y="302" font-style="italic">cerrada_en</text>
+  <text class="mult" x="312" y="302" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="encuesta_votos">
+  <rect class="caja" x="120" y="380" width="208" height="112"/>
+  <rect x="120" y="380" width="208" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="120" y1="408" x2="328" y2="408"/>
+  <text class="nombre" x="130" y="399">encuesta_votos</text>
+  <text class="mult" x="128" y="429">PK FK</text>
+  <text class="miembro" x="164" y="429" text-decoration="underline">encuesta_id</text>
+  <text class="mult" x="320" y="429" text-anchor="end">INT</text>
+  <text class="mult" x="128" y="447">PK FK</text>
+  <text class="miembro" x="164" y="447" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="320" y="447" text-anchor="end">INT</text>
+  <text class="miembro" x="156" y="465">opcion</text>
+  <text class="mult" x="320" y="465" text-anchor="end">SMALLINT</text>
+  <text class="miembro" x="156" y="483">votado_en</text>
+  <text class="mult" x="320" y="483" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="grabaciones">
+  <rect class="caja" x="720" y="127" width="204" height="132"/>
+  <rect x="720" y="127" width="204" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="720" y1="155" x2="924" y2="155"/>
+  <text class="nombre" x="730" y="146">grabaciones</text>
+  <text class="mult" x="728" y="176">PK</text>
+  <text class="miembro" x="756" y="176" text-decoration="underline">id</text>
+  <text class="mult" x="916" y="176" text-anchor="end">SERIAL</text>
+  <text class="mult" x="728" y="194">FK</text>
+  <text class="miembro" x="756" y="194">sesion_id</text>
+  <text class="mult" x="916" y="194" text-anchor="end">INT</text>
+  <text class="mult" x="728" y="212">FK</text>
+  <text class="miembro" x="756" y="212" font-style="italic">iniciada_por</text>
+  <text class="mult" x="916" y="212" text-anchor="end">INT</text>
+  <text class="miembro" x="756" y="230">inicio</text>
+  <text class="mult" x="916" y="230" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="756" y="248" font-style="italic">fin</text>
+  <text class="mult" x="916" y="248" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="grabacion_eventos">
+  <rect class="caja" x="720" y="320" width="212" height="168"/>
+  <rect x="720" y="320" width="212" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="720" y1="348" x2="932" y2="348"/>
+  <text class="nombre" x="730" y="339">grabacion_eventos</text>
+  <text class="mult" x="728" y="369">PK</text>
+  <text class="miembro" x="756" y="369" text-decoration="underline">id</text>
+  <text class="mult" x="924" y="369" text-anchor="end">BIGSERIAL</text>
+  <text class="mult" x="728" y="387">FK</text>
+  <text class="miembro" x="756" y="387">grabacion_id</text>
+  <text class="mult" x="924" y="387" text-anchor="end">INT</text>
+  <text class="miembro" x="756" y="405">tipo</text>
+  <text class="mult" x="924" y="405" text-anchor="end">VARCHAR(12)</text>
+  <text class="miembro" x="756" y="423">autor</text>
+  <text class="mult" x="924" y="423" text-anchor="end">VARCHAR(120)</text>
+  <text class="miembro" x="756" y="441" font-style="italic">texto</text>
+  <text class="mult" x="924" y="441" text-anchor="end">TEXT</text>
+  <text class="miembro" x="756" y="459" font-style="italic">archivo</text>
+  <text class="mult" x="924" y="459" text-anchor="end">VARCHAR(80)</text>
+  <text class="miembro" x="756" y="477">en</text>
+  <text class="mult" x="924" y="477" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+
+  </svg>
+</body>
+</html>
