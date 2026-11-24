@@ -1653,6 +1653,156 @@ async function runTests() {
   sDocGrab.disconnect();
   sAnaGrab.disconnect();
 
+  // ---------------------------------------------------------------------------
+  // Acceso temporal de oyentes (AULA-09)
+  // ---------------------------------------------------------------------------
+  console.log('\n=== OYENTES EXTERNOS ===');
+
+  const sesionOyente = (await pool.query(
+    "SELECT id FROM sesiones_clase WHERE espacio_id = $1 AND estado = 'en_curso' ORDER BY inicio_real DESC LIMIT 1",
+    [aulaId]
+  )).rows[0].id;
+  const rutaOyentes = `/api/sesiones/${sesionOyente}/oyentes`;
+  let codigoOyente = '';
+  let tokenOyente = '';
+  let socketOyente;
+  const marcadorOyente = `oyente-${randomUUID()}`;
+
+  await caso('El docente habilita oyentes con cupo y genera una credencial no reutilizada', async () => {
+    const res = await api(rutaOyentes, {
+      method: 'POST',
+      token: docente.token,
+      body: { maxOyentes: 1 }
+    });
+    const data = await res.json();
+    codigoOyente = data.codigo;
+    return res.status === 201
+      && /^[A-Za-z0-9_-]{40,50}$/.test(codigoOyente)
+      && data.maxOyentes === 1
+      && !JSON.stringify(data).includes(await pool.query(
+        'SELECT credencial_hash FROM accesos_oyente WHERE sesion_id = $1 ORDER BY id DESC LIMIT 1',
+        [sesionOyente]
+      ).then(r => r.rows[0].credencial_hash));
+  });
+
+  await caso('El panel solo expone estado y nunca devuelve la credencial secreta', async () => {
+    const res = await api(rutaOyentes, { token: docente.token });
+    const data = await res.json();
+    return res.status === 200 && data.habilitado && data.maxOyentes === 1
+      && !Object.prototype.hasOwnProperty.call(data, 'codigo');
+  });
+
+  await caso('Un enlace inexistente o un nombre inválido no se puede canjear', async () => {
+    const invalido = await api('/api/oyentes/canjear', {
+      method: 'POST',
+      body: { codigo: `A${'a'.repeat(42)}`, nombre: 'Visitante QA' }
+    });
+    const nombreInvalido = await api('/api/oyentes/canjear', {
+      method: 'POST',
+      body: { codigo: codigoOyente, nombre: ' ' }
+    });
+    return invalido.status === 403 && nombreInvalido.status === 400;
+  });
+
+  await caso('El código válido emite una identidad temporal sin cuenta universitaria', async () => {
+    const res = await api('/api/oyentes/canjear', {
+      method: 'POST',
+      body: { codigo: codigoOyente, nombre: 'Visitante QA' }
+    });
+    const data = await res.json();
+    tokenOyente = data.token;
+    return res.status === 200 && Boolean(tokenOyente)
+      && data.user.rol === 'oyente' && data.user.isOyente
+      && data.espacio.tipo === 'aula'
+      && String(data.espacio.id) === String(aulaId)
+      && data.espacio.asignatura_codigo === null;
+  });
+
+  await caso('La identidad oyente solo puede consultar su única aula y no otras API', async () => {
+    const espacios = await api('/api/espacios', { token: tokenOyente });
+    const lista = await espacios.json();
+    const sesiones = await api('/api/sesiones', { token: tokenOyente });
+    const acceso = await api(rutaOyentes, { method: 'POST', token: tokenOyente, body: { maxOyentes: 3 } });
+    return espacios.status === 200 && lista.length === 1
+      && lista[0].tipo === 'aula' && String(lista[0].id) === String(aulaId)
+      && sesiones.status === 403 && acceso.status === 403;
+  });
+
+  socketOyente = await conectar(tokenOyente);
+  const antesAsistenciasOyente = await asistenciasEnAula(0, aulaId);
+  const joinOyente = await entrar(socketOyente, aulaId);
+  await caso('El oyente entra a su sesión autorizada sin crear asistencia', async () =>
+    joinOyente.ok && antesAsistenciasOyente === 0 && await asistenciasEnAula(0, aulaId) === 0
+  );
+
+  await caso('Un oyente no puede presentar un PeerJS ajeno al identificador de su token', async () => {
+    const rechazo = esperarEvento(socketOyente, 'join_rechazado', 1500);
+    socketOyente.emit('join_space', { espacioId: aulaId, peerId: 'peer-docente-falso' });
+    return Boolean((await rechazo)?.motivo);
+  });
+
+  await caso('El cupo concurrente rechaza al segundo oyente', async () => {
+    const segundo = await api('/api/oyentes/canjear', {
+      method: 'POST',
+      body: { codigo: codigoOyente, nombre: 'Segundo oyente' }
+    });
+    const datos = await segundo.json();
+    if (segundo.status !== 200) return false;
+    const socketSegundo = await conectar(datos.token);
+    try {
+      const rechazo = esperarEvento(socketSegundo, 'join_rechazado', 1500);
+      socketSegundo.emit('join_space', { espacioId: aulaId });
+      return (await rechazo)?.motivo === 'La clase alcanzó el límite de oyentes.';
+    } finally {
+      socketSegundo.disconnect();
+    }
+  });
+
+  await caso('El oyente recibe el pizarrón, pero el servidor rechaza dibujar y escribir', async () => {
+    const recibeEstado = esperarEvento(socketOyente, 'pizarra_state', 1500);
+    socketOyente.emit('get_pizarra_state');
+    const trazo = esperarEvento(socketOyente, 'pizarra_trazo', 700);
+    socketOyente.emit('pizarra_trazo', {
+      id: randomUUID(), color: '#ffffff', grosor: 0.01, puntos: [[0.1, 0.1]], fin: true
+    });
+    const chatRechazado = esperarEvento(socketOyente, 'chat_rechazado', 1500);
+    socketOyente.emit('chat_msg_send', { message: { text: marcadorOyente } });
+    const [estado, intentoTrazo, rechazo] = await Promise.all([recibeEstado, trazo, chatRechazado]);
+    const mensajeGuardado = await pool.query('SELECT 1 FROM chat_mensajes WHERE texto = $1', [marcadorOyente]);
+    return Boolean(estado) && intentoTrazo === null
+      && Boolean(rechazo?.motivo) && mensajeGuardado.rows.length === 0;
+  });
+
+  await caso('El oyente tampoco puede inyectar cuadros de pantalla compartida', async () => {
+    const cuadro = cuadroWebp('oyente-no-comparte');
+    const recibido = esperarEvento(
+      sDocente,
+      'pantalla_cuadro',
+      700,
+      data => Buffer.isBuffer(data) && data.equals(cuadro)
+    );
+    socketOyente.emit('pantalla_cuadro', cuadro);
+    return (await recibido) === null;
+  });
+
+  await caso('Cerrar acceso expulsa la conexión y revoca el enlace existente', async () => {
+    const expulsado = esperarEvento(socketOyente, 'oyente_expulsado', 2000);
+    const cierre = await api(rutaOyentes, { method: 'DELETE', token: docente.token });
+    const datos = await cierre.json();
+    await expulsado;
+    const estado = await api(rutaOyentes, { token: docente.token });
+    const estadoData = await estado.json();
+    const canje = await api('/api/oyentes/canjear', {
+      method: 'POST',
+      body: { codigo: codigoOyente, nombre: 'Visitante QA' }
+    });
+    return cierre.status === 200 && datos.ok
+      && estado.status === 200 && !estadoData.habilitado
+      && canje.status === 403;
+  });
+
+  if (socketOyente) socketOyente.disconnect();
+
   for (const s of socketsAbiertos) s.disconnect();
 
   console.log('\n=== CONCLUSIÓN ===');

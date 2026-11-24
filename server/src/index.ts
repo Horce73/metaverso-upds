@@ -23,6 +23,7 @@ import { log } from './registro.js';
 import { sanearApariencia } from './apariencia.js';
 import { registrarRutasSalud } from './salud.js';
 import { registrarRutasAccesoAula } from './accesoAulaServidor.js';
+import { registrarRutasOyentes, cerrarAccesosOyenteSesion } from './oyentes.js';
 
 dotenv.config();
 
@@ -123,6 +124,7 @@ registrarRutasSolicitudesDocente(app);
 registrarRutasMapaCalor(app);
 registrarRutasGrabacion(app);
 registrarRutasAccesoAula(app);
+registrarRutasOyentes(app, io);
 
 // Por defecto PeerServer ata su WebSocketServer al servidor HTTP, y ese
 // servidor responde 400 a todo upgrade que no sea el suyo, incluido el de
@@ -476,6 +478,46 @@ app.get('/api/espacios', authenticateJWT, async (req: any, res) => {
   try {
     const { userId, rol, isGuest } = req.user;
 
+    if (req.user.isOyente) {
+      const { rows } = await pool.query(
+        `SELECT e.id, e.nombre, e.tipo, e.escena_url, e.capacidad_max,
+                a.nombre AS asignatura,
+                u.nombre AS docente_nombre, u.apellido AS docente_apellido,
+                sc.id AS sesion_id, sc.tema AS sesion_tema,
+                sc.inicio_real AS sesion_inicio, sc.estado AS sesion_estado
+         FROM accesos_oyente ao
+         JOIN sesiones_clase sc ON sc.id = ao.sesion_id
+         JOIN espacios e ON e.id = sc.espacio_id
+         LEFT JOIN asignaturas a ON a.id = e.asignatura_id
+         LEFT JOIN usuarios u ON u.id = sc.docente_id
+         WHERE ao.id = $1 AND sc.id = $2
+           AND ao.revocado_en IS NULL AND ao.vence_en > NOW()
+           AND sc.estado = 'en_curso' AND e.activo = TRUE`,
+        [req.user.accesoOyenteId, req.user.sesionId]
+      );
+      if (rows.length === 0) return res.status(403).json({ error: 'El acceso de oyente venció o fue cerrado.' });
+      const e = rows[0];
+      return res.json([{
+        id: e.id,
+        nombre: e.nombre,
+        tipo: e.tipo,
+        escena_url: e.escena_url,
+        capacidad_max: e.capacidad_max,
+        asignatura: e.asignatura,
+        asignatura_codigo: null,
+        docente_id: null,
+        docente_nombre: e.docente_nombre,
+        docente_apellido: e.docente_apellido,
+        sesion_activa: {
+          id: e.sesion_id,
+          tema: e.sesion_tema,
+          inicio: e.sesion_inicio,
+          estado: e.sesion_estado,
+          docente: [e.docente_nombre, e.docente_apellido].filter(Boolean).join(' '),
+        },
+      }]);
+    }
+
     // Invitados solo ven el campus
     if (isGuest || rol === 'invitado') {
       const result = await pool.query(
@@ -745,6 +787,14 @@ app.post('/api/clases/crear-curso', authenticateJWT, requiereRol('docente'), asy
     await client.query('COMMIT');
     liberar();
 
+    for (const sesionPrevia of enCursoRes.rows) {
+      try {
+        await cerrarAccesosOyenteSesion(Number(sesionPrevia.id), io);
+      } catch (err) {
+        log.error('No se pudieron cerrar los accesos de oyentes de la sesión finalizada', err);
+      }
+    }
+
     const userRes = await pool.query('SELECT nombre, apellido FROM usuarios WHERE id = $1', [userId]);
     const docenteInfo = userRes.rows[0];
 
@@ -810,6 +860,7 @@ app.put('/api/sesiones/:id/finalizar', authenticateJWT, async (req: any, res) =>
     );
     await cerrarTramosDeSesion(Number(id));
     await detenerGrabacionDeSesion(Number(id));
+    await cerrarAccesosOyenteSesion(Number(id), io);
     io.to(String(sesion.espacio_id)).emit('grabacion_estado', { activa: false });
 
     await bitacora(userId, 'fin_clase', sesion.tema || '', req.ip);

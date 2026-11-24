@@ -21,6 +21,10 @@ export function verificarToken(token: string): Promise<any> {
   });
 }
 
+export function firmarToken(payload: object, expiresIn: jwt.SignOptions['expiresIn']): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+}
+
 export function authenticateJWT(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.sendStatus(401);
@@ -28,6 +32,12 @@ export function authenticateJWT(req: any, res: any, next: any) {
   const token = authHeader.split(' ')[1];
   jwt.verify(token, JWT_SECRET, (err: any, decoded: any) => {
     if (err) return res.sendStatus(403);
+    if (
+      decoded && typeof decoded === 'object' && decoded.isOyente &&
+      !(req.method === 'GET' && req.path === '/api/espacios')
+    ) {
+      return res.status(403).json({ error: 'El acceso de oyente es solo de lectura.' });
+    }
     req.user = decoded;
     next();
   });

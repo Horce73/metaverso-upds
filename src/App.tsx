@@ -26,6 +26,8 @@ import { SIN_PREGUNTAS, type EstadoPreguntas } from './components/preguntas.js';
 import { iniciarCaptura, type CapturaPantalla } from './components/compartirPantalla.js';
 import { useEsTactil } from './components/mundo3d/useEsTactil.js';
 import { usePantallaCompleta } from './components/usePantallaCompleta.js';
+import { AccesoOyente } from './components/AccesoOyente.js';
+import { OyentesSesion } from './components/OyentesSesion.js';
 
 // 3D-01: estos cuatro arrastran three.js (MetaversoCanvas, CustomAvatar) o son
 // paneles que la mayoria de sesiones nunca abre (AdminPanel, TeacherPanel).
@@ -90,9 +92,10 @@ interface User {
   email: string;
   nombre: string;
   apellido: string;
-  rol: 'estudiante' | 'docente' | 'admin' | 'administrador' | 'invitado';
+  rol: 'estudiante' | 'docente' | 'admin' | 'administrador' | 'invitado' | 'oyente';
   roles?: string[];
   isGuest?: boolean;
+  isOyente?: boolean;
 }
 
 interface MensajeChat {
@@ -316,6 +319,7 @@ function App() {
   const [solicitudesPendientesDocente, setSolicitudesPendientesDocente] = useState<any[]>([]);
   const [mostrarCrearCursoModal, setMostrarCrearCursoModal] = useState(false);
   const [mostrarDiagnosticoVoz, setMostrarDiagnosticoVoz] = useState(false);
+  const [mostrarAccesoOyentes, setMostrarAccesoOyentes] = useState(false);
 
   const navigateTo = (path: string) => {
     window.location.hash = `#${path}`;
@@ -347,8 +351,10 @@ function App() {
 
   // Inicializar y restaurar autenticación y espacio activo tras F5
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
+    const savedOyenteToken = sessionStorage.getItem('oyenteToken');
+    const savedOyenteUser = sessionStorage.getItem('oyenteUser');
+    const savedToken = savedOyenteToken || localStorage.getItem('token');
+    const savedUser = savedOyenteUser || localStorage.getItem('user');
     const savedAvatar = localStorage.getItem('avatar');
     const savedEspacio = sessionStorage.getItem('espacioActivo');
 
@@ -406,9 +412,18 @@ function App() {
 
     const handleJoinRechazado = (data: { motivo: string; sinAcceso?: boolean }) => {
       alert(`❌ ${data.motivo}`);
+      if (user?.isOyente) {
+        handleLogout();
+        return;
+      }
       // Sin pase para el aula (SEC-08), p. ej. al recargar después de que se
       // reinició el servidor: de vuelta al campus en vez de un aula vacía
       if (data.sinAcceso) volverAlCampusRef.current();
+    };
+
+    const handleOyenteExpulsado = (data: { motivo?: string }) => {
+      alert(data.motivo || 'El acceso a la clase fue cerrado.');
+      handleLogout();
     };
 
     const handleNuevaSolicitud = (solicitud: any) => {
@@ -442,12 +457,14 @@ function App() {
     activeSocket.off('respuesta_solicitud_acceso', handleRespuestaSolicitud);
     activeSocket.off('session_terminated', handleSessionTerminated);
     activeSocket.off('join_rechazado', handleJoinRechazado);
+    activeSocket.off('oyente_expulsado', handleOyenteExpulsado);
     activeSocket.off('connect_error', handleConnectError);
 
     activeSocket.on('nueva_solicitud_acceso', handleNuevaSolicitud);
     activeSocket.on('respuesta_solicitud_acceso', handleRespuestaSolicitud);
     activeSocket.on('session_terminated', handleSessionTerminated);
     activeSocket.on('join_rechazado', handleJoinRechazado);
+    activeSocket.on('oyente_expulsado', handleOyenteExpulsado);
     activeSocket.on('connect_error', handleConnectError);
 
     return () => {
@@ -456,6 +473,7 @@ function App() {
       activeSocket.off('session_terminated', handleSessionTerminated);
       activeSocket.off('connect_error', handleConnectError);
       activeSocket.off('join_rechazado', handleJoinRechazado);
+      activeSocket.off('oyente_expulsado', handleOyenteExpulsado);
     };
   }, [token, user]);
 
@@ -495,7 +513,7 @@ function App() {
       return;
     }
 
-    if (user?.rol === 'invitado' && espacio.tipo === 'aula') {
+    if ((user?.rol === 'invitado' || user?.isGuest) && espacio.tipo === 'aula') {
       alert(
         '❌ Los invitados solo pueden acceder al campus.\n\nPara acceder a las aulas, debes registrarte e iniciar sesión con tu cuenta UPDS.'
       );
@@ -557,7 +575,9 @@ function App() {
     activeSocket.off('clase_iniciada');
     activeSocket.off('clase_finalizada');
 
-    const uniquePeerId = `peer_${user?.id || 'guest'}_${Math.random().toString(36).substring(2, 7)}`;
+    const uniquePeerId = user?.isOyente
+      ? `peer_${user.id}`
+      : `peer_${user?.id || 'guest'}_${Math.random().toString(36).substring(2, 7)}`;
 
     let joinedSpace = false;
     const emitJoin = (pId?: string) => {
@@ -590,7 +610,8 @@ function App() {
       (estado, detalle) => {
         setEstadoVoz(estado);
         setDetalleVoz(detalle || '');
-      }
+      },
+      { soloEscucha: !!user?.isOyente }
     );
 
     // Posicionar al oyente en el punto de aparición. Sin esto el listener se
@@ -638,7 +659,7 @@ function App() {
     activeSocket.on('encuesta_estado', (data: EncuestaEstado | null) => {
       setEncuesta(data);
       // Una encuesta nueva y abierta se muestra sola, sin quitarle el foco a nadie
-      if (data?.abierta && data.id !== ultimaEncuestaRef.current) setPanelEncuesta((p) => p || 'sola');
+      if (!user?.isOyente && data?.abierta && data.id !== ultimaEncuestaRef.current) setPanelEncuesta((p) => p || 'sola');
       ultimaEncuestaRef.current = data?.id ?? null;
     });
     activeSocket.off('grabacion_estado');
@@ -791,6 +812,11 @@ function App() {
     });
 
     activeSocket.on('clase_finalizada', (data: { espacioId: string }) => {
+      if (user?.isOyente && espacioActivo && String(espacioActivo.id) === String(data.espacioId)) {
+        alert('La clase finalizó.');
+        handleLogout();
+        return;
+      }
       if (espacioActivo && String(espacioActivo.id) === String(data.espacioId)) {
         setSesionClase(null);
         setEspacioActivo((prev) => (prev ? { ...prev, sesion_activa: null } : null));
@@ -838,6 +864,10 @@ function App() {
   // la hay -p. ej. se restauró directo en un aula tras F5- la que quedó guardada en la BD).
   const volverAlCampusRef = useRef<() => void>(() => {});
   const handleVolverAlCampus = () => {
+    if (user?.isOyente) {
+      handleLogout();
+      return;
+    }
     const campus = espacios.find((e) => e.tipo === 'campus');
     if (!campus) return;
     handleJoinSpace(campus, ultimaPosicionCampusRef.current ?? avatar?.ultima_posicion ?? undefined);
@@ -851,6 +881,8 @@ function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('avatar');
+    sessionStorage.removeItem('oyenteToken');
+    sessionStorage.removeItem('oyenteUser');
     sessionStorage.removeItem('espacioActivo');
     setUser(null);
     setToken('');
@@ -914,7 +946,7 @@ function App() {
   // Enviar mensaje de chat
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !socket || !espacioActivo) return;
+    if (user?.isOyente || !chatInput.trim() || !socket || !espacioActivo) return;
 
     socket.emit('chat_msg_send', {
       espacioId: espacioActivo.id,
@@ -1053,7 +1085,7 @@ function App() {
   useEffect(() => {
     if (!token || !user) return;
     if (espacioActivo) return;
-    if (route === '/admin' || route === '/docente') return;
+    if (route === '/admin' || route === '/docente' || route.startsWith('/oyente/')) return;
     if (espacios.length === 0) return;
 
     const restaurado = espacioRestauradoRef.current;
@@ -1074,6 +1106,40 @@ function App() {
   }, [token, user, espacios, espacioActivo, route]);
 
   // RENDERIZADO DE RUTAS DE NAVEGACIÓN INDEPENDIENTES
+
+  if (route.startsWith('/oyente/')) {
+    const codigo = route.slice('/oyente/'.length);
+    return (
+      <AccesoOyente
+        codigo={codigo}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onVolver={() => navigateTo('/')}
+        onEntrar={(data) => {
+          if (socketRef.current) {
+            socketRef.current.removeAllListeners();
+            socketRef.current.disconnect();
+            setSocket(null);
+          }
+          audioClient?.destroy();
+          setAudioClient(null);
+          setRemoteUsers({});
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          localStorage.removeItem('avatar');
+          sessionStorage.setItem('oyenteToken', data.token);
+          sessionStorage.setItem('oyenteUser', JSON.stringify(data.user));
+          sessionStorage.setItem('espacioActivo', JSON.stringify(data.espacio));
+          espacioRestauradoRef.current = data.espacio;
+          setToken(data.token);
+          setUser(data.user);
+          setAvatar(null);
+          setEspacios([data.espacio]);
+          navigateTo('/metaverso');
+        }}
+      />
+    );
+  }
 
   // 1. Ruta / (Landing Page)
   if (route === '/') {
@@ -1128,6 +1194,7 @@ function App() {
   const isDocente =
     user?.rol === 'docente' ||
     (Array.isArray((user as any)?.roles) && (user as any).roles.includes('docente'));
+  const isOyente = !!user.isOyente || user.rol === 'oyente';
 
   // AULA-03: mi lugar en la cola y si tengo la palabra
   const miSocketId = socketRef.current?.id;
@@ -1287,7 +1354,7 @@ function App() {
                   🎓 Mis Clases
                 </button>
               )}
-              {!user.isGuest && (
+              {!user.isGuest && !user.isOyente && (
                 <button
                   className="hamburger-item"
                   onClick={() => {
@@ -1298,7 +1365,7 @@ function App() {
                   🎨 Avatar
                 </button>
               )}
-              {puedeTranscribir() && (
+              {puedeTranscribir() && !isOyente && (
                 <button
                   className="hamburger-item"
                   onClick={() => {
@@ -1384,10 +1451,16 @@ function App() {
               {espacioActivo.nombre}
             </h2>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+              {isOyente && (
+                <span className="status-badge" style={{ background: 'rgba(245,158,11,.16)', color: '#fbbf24' }}>
+                  OYENTE · Solo observación
+                </span>
+              )}
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap' }}>
                 Conectados: {Object.keys(remoteUsers).length + 1} usuarios
               </p>
               {espacioActivo.tipo === 'aula' && espacioActivo.asignatura_codigo && (
+                !isOyente && (
                 <span
                   style={{
                     background: 'rgba(59, 130, 246, 0.15)',
@@ -1402,12 +1475,13 @@ function App() {
                 >
                   🔑 Código: {espacioActivo.asignatura_codigo}
                 </span>
+                )
               )}
             </div>
           </div>
 
           <div className="top-bar-acciones">
-            {user.rol === 'docente' && espacioActivo.tipo === 'aula' && (
+            {(isDocente || isAdmin) && espacioActivo.tipo === 'aula' && (
               <>
                 {!sesionClase ? (
                   <button
@@ -1425,6 +1499,9 @@ function App() {
                       onClick={fetchAsistenciasReport}
                     >
                       Reporte Asistencia
+                    </button>
+                    <button className="btn-secondary" onClick={() => setMostrarAccesoOyentes(true)}>
+                      👁️ Oyentes
                     </button>
                     <button
                       className="btn-secondary"
@@ -1445,7 +1522,7 @@ function App() {
 
             {espacioActivo.tipo === 'aula' && (
               <button className="btn-secondary" onClick={handleVolverAlCampus}>
-                Salir al Campus
+                {isOyente ? 'Salir de la clase' : 'Salir al Campus'}
               </button>
             )}
           </div>
@@ -1497,6 +1574,14 @@ function App() {
               }
             }}
             onClose={() => setMostrarCrearCursoModal(false)}
+          />
+        )}
+
+        {mostrarAccesoOyentes && sesionClase?.id && (
+          <OyentesSesion
+            sesionId={sesionClase.id}
+            token={token}
+            onClose={() => setMostrarAccesoOyentes(false)}
           />
         )}
 
@@ -1565,7 +1650,7 @@ function App() {
           </div>
         )}
 
-        {materialesAbierto && espacioActivo.tipo === 'aula' && (
+        {materialesAbierto && espacioActivo.tipo === 'aula' && !isOyente && (
           <PanelMateriales
             token={token}
             espacioId={espacioActivo.id}
@@ -1588,7 +1673,7 @@ function App() {
             socket={socket!}
             espacioId={espacioActivo.id}
             sesionId={sesionClase?.id}
-            puedeDibujar={!user.isGuest && user.rol !== 'invitado'}
+            puedeDibujar={!isOyente && !user.isGuest && user.rol !== 'invitado'}
             puedeAdministrar={isDocente || isAdmin}
             onClose={() => setPizarraAbierta(false)}
           />
@@ -1660,7 +1745,7 @@ function App() {
 
         {/* Fuera de la sidebar: su backdrop-filter haría que position:fixed
             se calcule contra ella y el panel quedaría recortado. */}
-        {mostrarDiagnosticoVoz && (
+        {mostrarDiagnosticoVoz && !isOyente && (
           <PanelDiagnosticoVoz
             audioClient={audioClient}
             nombres={Object.fromEntries(
@@ -1730,7 +1815,9 @@ function App() {
                 )}
                 <span>
                   {remoteUsers[socketId].nombreVisible} (
-                  {!remoteUsers[socketId].peerId
+                  {remoteUsers[socketId].esOyente
+                    ? 'Oyente'
+                    : !remoteUsers[socketId].peerId
                     ? 'VoIP Cargando'
                     : audioClient?.estaConectadoCon(remoteUsers[socketId].peerId)
                       ? 'En alcance de voz'
@@ -1758,18 +1845,22 @@ function App() {
             {detalleVoz && (
               <div style={{ fontSize: '0.72rem', opacity: 0.75, marginTop: '2px' }}>{detalleVoz}</div>
             )}
-            <div style={{ fontSize: '0.7rem', opacity: 0.55, marginTop: '2px' }}>
-              ID: <span style={{ fontFamily: 'monospace' }}>{peerId || '—'}</span>
-            </div>
-            {audioClient && <SelectorMicrofono audioClient={audioClient} compacto />}
-            <button
-              type="button"
-              className="enlace-diagnostico-voz"
-              onClick={() => setMostrarDiagnosticoVoz((v) => !v)}
-              aria-expanded={mostrarDiagnosticoVoz}
-            >
-              {mostrarDiagnosticoVoz ? 'Ocultar diagnóstico' : 'Ver diagnóstico'}
-            </button>
+            {!isOyente && (
+              <>
+                <div style={{ fontSize: '0.7rem', opacity: 0.55, marginTop: '2px' }}>
+                  ID: <span style={{ fontFamily: 'monospace' }}>{peerId || '—'}</span>
+                </div>
+                {audioClient && <SelectorMicrofono audioClient={audioClient} compacto />}
+                <button
+                  type="button"
+                  className="enlace-diagnostico-voz"
+                  onClick={() => setMostrarDiagnosticoVoz((v) => !v)}
+                  aria-expanded={mostrarDiagnosticoVoz}
+                >
+                  {mostrarDiagnosticoVoz ? 'Ocultar diagnóstico' : 'Ver diagnóstico'}
+                </button>
+              </>
+            )}
           </div>
 
 
@@ -1790,6 +1881,11 @@ function App() {
             ))}
           </div>
 
+          {isOyente ? (
+            <p role="status" style={{ color: 'var(--text-secondary)' }}>
+              Estás en modo de solo lectura; puedes ver los mensajes, pero no escribir.
+            </p>
+          ) : (
           <form onSubmit={handleSendChat} className="chat-input-wrapper">
             <input
               type="text"
@@ -1805,6 +1901,7 @@ function App() {
               Enviar
             </button>
           </form>
+          )}
         </div>
         )}
 
@@ -1858,7 +1955,7 @@ function App() {
           </div>
         )}
 
-        {espacioActivo.tipo === 'aula' && panelEncuesta && (
+        {espacioActivo.tipo === 'aula' && panelEncuesta && !isOyente && (
           <PanelEncuesta
             encuesta={encuesta}
             dirige={isDocente || isAdmin}
@@ -1874,8 +1971,8 @@ function App() {
           <Subtitulos
             socket={socket}
             visible={verSubtitulos}
-            transcribir={transcribirVoz && puedeTranscribir()}
-            microfonoAbierto={!!audioClient && estadoVoz !== 'sin-microfono' && !micMuted && (!pulsarParaHablar || pulsando)}
+            transcribir={transcribirVoz && puedeTranscribir() && !isOyente}
+            microfonoAbierto={!isOyente && !!audioClient && estadoVoz !== 'sin-microfono' && !micMuted && (!pulsarParaHablar || pulsando)}
             onErrorTranscripcion={() => {
               setTranscribirVoz(false);
               guardarPreferencia('transcribirVoz', false);
@@ -1892,16 +1989,16 @@ function App() {
 
         {/* Controles de HUD Inferiores */}
         <div className="hud-bottom-controls">
-          <button
+          {!isOyente && <button
             className={`control-btn ${micMuted ? 'muted' : ''}`}
             onClick={toggleMic}
             title={micMuted ? 'Activar Micrófono' : 'Silenciar Micrófono'}
             aria-label={micMuted ? 'Activar Micrófono' : 'Silenciar Micrófono'}
           >
             {micMuted ? '🔇' : '🎙️'}
-          </button>
+          </button>}
 
-          <button
+          {!isOyente && <button
             className={`control-btn ${pulsarParaHablar ? 'active' : ''}`}
             onClick={() => setPulsarParaHablar((v) => !v)}
             aria-pressed={pulsarParaHablar}
@@ -1909,9 +2006,9 @@ function App() {
             aria-label={pulsarParaHablar ? 'Desactivar pulsar para hablar' : 'Pulsar para hablar (tecla V)'}
           >
             PTT
-          </button>
+          </button>}
 
-          {pulsarParaHablar && !micMuted && (
+          {!isOyente && pulsarParaHablar && !micMuted && (
             <button
               className={`boton-pulsar-hablar ${pulsando ? 'hablando' : ''}`}
               onPointerDown={() => setPulsando(true)}
@@ -1967,7 +2064,7 @@ function App() {
             </button>
           )}
 
-          {espacioActivo.tipo === 'aula' && !(isDocente || isAdmin) && !tengoLaPalabra && (
+          {espacioActivo.tipo === 'aula' && !isOyente && !(isDocente || isAdmin) && !tengoLaPalabra && (
             <button
               className={`control-btn ${manoLevantada ? 'active' : ''}`}
               onClick={() => socketRef.current?.emit(manoLevantada ? 'bajar_mano' : 'levantar_mano')}
@@ -1979,7 +2076,7 @@ function App() {
             </button>
           )}
 
-          {tengoLaPalabra && (
+          {!isOyente && tengoLaPalabra && (
             <button className="boton-pulsar-hablar hablando" onClick={() => socketRef.current?.emit('quitar_palabra')}>
               🎤 Tienes la palabra · Terminar
             </button>
@@ -1997,7 +2094,7 @@ function App() {
             </button>
           )}
 
-          {espacioActivo.tipo === 'aula' && (isDocente || isAdmin || encuesta) && (
+          {espacioActivo.tipo === 'aula' && !isOyente && (isDocente || isAdmin || encuesta) && (
             <button
               className={`control-btn ${panelEncuesta ? 'active' : ''}`}
               onClick={() => setPanelEncuesta(panelEncuesta ? false : 'usuario')}
@@ -2020,7 +2117,7 @@ function App() {
             </button>
           )}
 
-          {espacioActivo.tipo === 'aula' && (
+          {espacioActivo.tipo === 'aula' && !isOyente && (
             <button
               className={`control-btn ${materialesAbierto ? 'active' : ''}`}
               onClick={() => setMaterialesAbierto((v) => !v)}
