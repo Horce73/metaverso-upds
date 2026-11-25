@@ -1217,7 +1217,10 @@ function App() {
     }
     return (
       <Suspense fallback={<CargandoPantalla mensaje="Abriendo el panel de administración…" />}>
-        <AdminPanel token={token} onClose={volverDesdeGestion} />
+        {/* El panel usa colores oscuros fijos: superficie-oscura le da los tokens oscuros también en modo claro */}
+        <div className="superficie-oscura">
+          <AdminPanel token={token} onClose={volverDesdeGestion} />
+        </div>
       </Suspense>
     );
   }

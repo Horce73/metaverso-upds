@@ -1,5 +1,6 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { PERSONALIZACION_POR_DEFECTO, type PersonalizacionAvatar } from './mundo3d/personalizacion.js';
+import { IconoSol, IconoLuna, IconoCorreo, IconoCandado, IconoPuerta } from './Iconos.js';
 
 // Perezoso: AvatarCustomizer3D arrastra three.js y @react-three/fiber, y la
 // pantalla de login/registro (paso 1) es lo primero que carga cualquier
@@ -190,7 +191,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
       if (res.status === 423) {
         setBloqueado(true);
         setTiempoRestante(15 * 60);
-        setErrorMsg(`🔒 ${data.error || 'Cuenta bloqueada temporalmente. Intenta en 15 minutos.'}`);
+        setErrorMsg(data.error || 'Cuenta bloqueada temporalmente. Intenta en 15 minutos.');
         setLoading(false);
         return;
       }
@@ -249,9 +250,11 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
               className="theme-toggle-btn"
               onClick={onToggleTheme}
               style={{ position: 'absolute', top: '20px', right: '20px' }}
-              title={isLight ? 'Cambiar a Modo Oscuro' : 'Cambiar a Modo Claro'}
+              title={isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+              aria-label={isLight ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro'}
+              type="button"
             >
-              {isLight ? '🌙' : '☀️'}
+              {isLight ? <IconoLuna /> : <IconoSol />}
             </button>
           )}
 
@@ -269,19 +272,19 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
               <span className="upds-sub">DOMINGO SAVIO</span>
             </h1>
             <div className="upds-badge">
-              <span className="badge-campus">🏛️ SEDE SUCRE</span>
-              <span className="badge-metaverso">🌐 METAVERSO EDUCATIVO</span>
+              <span className="badge-campus">Sede Sucre</span>
+              <span className="badge-metaverso">Metaverso educativo</span>
             </div>
           </div>
 
           <div className="login-header">
             <h2 className="login-title">
-              {isRegister ? 'Crear Cuenta UPDS (Paso 1 de 2)' : 'Acceso al Metaverso'}
+              {isRegister ? 'Crear cuenta UPDS (paso 1 de 2)' : 'Ingresar al campus'}
             </h2>
             <p className="login-subtitle">
               {isRegister
-                ? 'Ingresa tus datos personales institucionales'
-                : 'Ingresa al campus y aulas en tiempo real'}
+                ? 'Ingresa tus datos institucionales'
+                : 'Usa tu correo institucional para entrar a las aulas en tiempo real.'}
             </p>
           </div>
 
@@ -381,8 +384,8 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
 
             <div className="form-group">
               <label htmlFor="campo-email" className="form-label">
-                <span className="label-icon">📧</span>
-                Correo Institucional
+                <span className="label-icon"><IconoCorreo size={16} /></span>
+                Correo institucional
               </label>
               <input
                 id="campo-email"
@@ -397,7 +400,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
 
             <div className="form-group">
               <label htmlFor="campo-clave" className="form-label">
-                <span className="label-icon">🔐</span>
+                <span className="label-icon"><IconoCandado size={16} /></span>
                 Contraseña
               </label>
               <input
@@ -442,11 +445,11 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
               {loading ? (
                 <span className="btn-loader">
                   <span className="spinner"></span>
-                  Procesando...
+                  Procesando…
                 </span>
               ) : (
                 <span className="btn-content">
-                  {isRegister ? '🎨 Siguiente: Personalizar Avatar 3D ➔' : '🎯 Acceder al Metaverso'}
+                  {isRegister ? 'Siguiente: personalizar avatar' : 'Ingresar'}
                 </span>
               )}
             </button>
@@ -465,7 +468,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                     }}
                     type="button"
                   >
-                    Inicia sesión aquí
+                    Inicia sesión
                   </button>
                 </>
               ) : (
@@ -479,7 +482,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                     }}
                     type="button"
                   >
-                    Regístrate aquí
+                    Crea tu cuenta
                   </button>
                 </>
               )}
@@ -488,7 +491,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
             {!isRegister && (
               <div className="guest-section">
                 <div className="divider">
-                  <span className="divider-text">O VISITA EL CAMPUS COMO</span>
+                  <span className="divider-text">O recorre el campus sin cuenta</span>
                 </div>
                 <button
                   type="button"
@@ -496,12 +499,11 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, theme = 'dark', on
                   disabled={loading}
                   className="btn-guest"
                 >
-                  <span className="guest-icon">🚪</span>
-                  <span className="guest-text">Invitado</span>
-                  <span className="guest-badge">Explorar Campus</span>
+                  <span className="guest-icon"><IconoPuerta size={18} /></span>
+                  <span className="guest-text">Entrar como invitado</span>
                 </button>
                 <p className="guest-note">
-                  🌍 Acceso limitado al campus 3D sin necesidad de registro
+                  Acceso limitado al campus 3D, sin registro.
                 </p>
               </div>
             )}
