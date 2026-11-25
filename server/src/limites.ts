@@ -47,6 +47,13 @@ export const limiteCodigoAula = rateLimit({
   ...respuesta('Demasiados códigos incorrectos desde tu red. Intenta en unos minutos.')
 });
 
+export const limiteCanjeOyente = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 30,
+  skipSuccessfulRequests: true,
+  ...respuesta('Demasiados intentos de acceso de oyente. Intenta más tarde.')
+});
+
 // Limitador de ventana fija para eventos de un socket: devuelve true mientras
 // quede cupo en la ventana actual. Cada socket tiene los suyos.
 export function limitador(max: number, ventanaMs: number): () => boolean {

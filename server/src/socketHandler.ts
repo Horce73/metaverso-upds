@@ -23,6 +23,11 @@ import { debeRecibirMovimiento } from './relevanciaPosicion.js';
 import { log } from './registro.js';
 import { pases } from './accesoAula.js';
 import { sanearApariencia } from './apariencia.js';
+import {
+  accesoOyenteVigente,
+  liberarConexionOyente,
+  reservarConexionOyente,
+} from './oyentes.js';
 
 /**
  * ¿El usuario confirmó (con el código del curso) su inscripción en la
@@ -43,6 +48,10 @@ async function estaInscrito(usuarioId: number | null | undefined, espacioId: num
 interface Identidad {
   userId: number;       // 0 para invitados (no tienen fila en usuarios)
   esInvitado: boolean;
+  esOyente: boolean;
+  accesoOyenteId?: number;
+  sesionId?: number;
+  idOyente?: string;
   nombre: string;
   roles: string[];
 }
@@ -58,6 +67,7 @@ interface UserState {
   apariencia: any;
   peerId?: string;
   roles: string[];
+  esOyente?: boolean;
 }
 
 const activeUsers = new Map<string, UserState>();
@@ -117,7 +127,29 @@ async function resolverIdentidad(token: unknown): Promise<Identidad | null> {
   }
 
   if (payload.isGuest) {
-    return { userId: 0, esInvitado: true, nombre: String(payload.nombre || 'Invitado'), roles: ['invitado'] };
+    return { userId: 0, esInvitado: true, esOyente: false, nombre: String(payload.nombre || 'Invitado'), roles: ['invitado'] };
+  }
+
+  if (payload.isOyente) {
+    const accesoOyenteId = Number(payload.accesoOyenteId);
+    const sesionId = Number(payload.sesionId);
+    if (
+      !Number.isInteger(accesoOyenteId) ||
+      !Number.isInteger(sesionId) ||
+      !(await accesoOyenteVigente(accesoOyenteId, sesionId))
+    ) {
+      return null;
+    }
+    return {
+      userId: 0,
+      esInvitado: false,
+      esOyente: true,
+      accesoOyenteId,
+      sesionId,
+      idOyente: String(payload.idOyente || ''),
+      nombre: String(payload.nombre || 'Oyente'),
+      roles: ['oyente'],
+    };
   }
 
   const userId = Number(payload.userId);
@@ -134,7 +166,7 @@ async function resolverIdentidad(token: unknown): Promise<Identidad | null> {
   const roles = await obtenerRoles(userId);
   if (roles.length === 0) return null;
 
-  return { userId, esInvitado: false, nombre: rows[0].nombre_visible || rows[0].nombre, roles };
+  return { userId, esInvitado: false, esOyente: false, nombre: rows[0].nombre_visible || rows[0].nombre, roles };
 }
 
 /**
@@ -209,6 +241,10 @@ export function setupSockets(io: Server) {
       // Se retransmite a todo el espacio: sólo lo que parece una apariencia (AVATAR-01)
       const apariencia = sanearApariencia(data?.apariencia || data?.user?.apariencia);
       const peerId = String(data?.peerId || data?.user?.peerId || '');
+      if (identidad.esOyente && peerId && peerId !== `peer_oyente_${identidad.idOyente}`) {
+        socket.emit('join_rechazado', { motivo: 'No se pudo validar el canal de audio de oyente.' });
+        return;
+      }
 
       // El espacio y su tipo salen de la base, no del cliente.
       const nuevoEspacioId = Number(data?.espacioId);
@@ -220,6 +256,33 @@ export function setupSockets(io: Server) {
         return;
       }
       const espacioTipo: 'campus' | 'aula' = espacioRes.rows[0].tipo;
+      if (identidad.esOyente) {
+        if (espacioTipo !== 'aula' || !identidad.sesionId || !identidad.accesoOyenteId) {
+          socket.emit('join_rechazado', { motivo: 'El acceso de oyente solo permite entrar a su clase.' });
+          return;
+        }
+        let reserva: Awaited<ReturnType<typeof reservarConexionOyente>>;
+        try {
+          reserva = await reservarConexionOyente(
+            identidad.accesoOyenteId,
+            identidad.sesionId,
+            socket.id,
+            identidad.nombre
+          );
+        } catch (err) {
+          log.error('Error al reservar cupo para oyente', err);
+          socket.emit('join_rechazado', { motivo: 'No se pudo validar el acceso de oyente. Intenta nuevamente.' });
+          return;
+        }
+        if (!reserva.ok || reserva.espacioId !== nuevoEspacioId) {
+          if (reserva.ok) await liberarConexionOyente(socket.id);
+          socket.emit('join_rechazado', {
+            motivo: reserva.ok ? 'El enlace no corresponde a esta aula.' : reserva.motivo,
+            sinAcceso: true,
+          });
+          return;
+        }
+      }
       if (espacioTipo === 'aula' && identidad.esInvitado) {
         socket.emit('join_rechazado', { motivo: 'Los invitados solo pueden acceder al campus.' });
         return;
@@ -296,7 +359,8 @@ export function setupSockets(io: Server) {
         estaSentado: false,
         apariencia,
         peerId,
-        roles
+        roles,
+        esOyente: identidad.esOyente,
       };
 
       activeUsers.set(socket.id, userState);
@@ -408,7 +472,7 @@ export function setupSockets(io: Server) {
     // Deshacer un trazo: el autor el suyo; docente o admin, cualquiera
     on('pizarra_deshacer', 'pizarra', async (data: { id?: unknown }) => {
       const user = activeUsers.get(socket.id);
-      if (!user || user.espacioTipo !== 'aula') return;
+      if (!user || user.espacioTipo !== 'aula' || identidad.esOyente) return;
       try {
         if (await deshacerTrazo(String(data?.id ?? ''), user.espacioId, user.userId, esDocenteOAdmin(user.roles))) {
           io.to(String(user.espacioId)).emit('pizarra_borrado', { ids: [String(data?.id)] });
@@ -478,7 +542,7 @@ export function setupSockets(io: Server) {
       espacioId: string;
       temaClase?: string;
     }) => {
-      if (identidad.esInvitado) return;
+      if (identidad.esInvitado || identidad.esOyente) return;
       // Quien solicita es el usuario del token, no el que diga el payload.
       const usuario = { id: identidad.userId, nombre: identidad.nombre };
       log.info('solicitud de acceso al aula', { usuarioId: identidad.userId || null, espacioId: data.espacioId });
@@ -509,14 +573,14 @@ export function setupSockets(io: Server) {
     // toda el aula hasta que la devuelve o el docente se la quita.
     on('levantar_mano', 'preguntas', () => {
       const user = activeUsers.get(socket.id);
-      if (!user || user.espacioTipo !== 'aula' || esDocenteOAdmin(identidad.roles)) return;
+      if (!user || user.espacioTipo !== 'aula' || identidad.esOyente || esDocenteOAdmin(identidad.roles)) return;
       const nuevo = { socketId: socket.id, userId: user.userId, nombre: user.nombreVisible, desde: Date.now() };
       if (levantarMano(user.espacioId, nuevo)) emitirPreguntas(user.espacioId);
     });
 
     on('bajar_mano', 'preguntas', () => {
       const user = activeUsers.get(socket.id);
-      if (user && bajarMano(user.espacioId, socket.id)) emitirPreguntas(user.espacioId);
+      if (!identidad.esOyente && user && bajarMano(user.espacioId, socket.id)) emitirPreguntas(user.espacioId);
     });
 
     on('ceder_palabra', 'preguntas', (data: { socketId?: unknown }) => {
@@ -537,7 +601,7 @@ export function setupSockets(io: Server) {
     // La devuelve quien la tiene, o se la quita el docente
     on('quitar_palabra', 'preguntas', () => {
       const user = activeUsers.get(socket.id);
-      if (!user) return;
+      if (!user || identidad.esOyente) return;
       const actual = quienTienePalabra(user.espacioId);
       if (!actual || (actual.socketId !== socket.id && !esDocenteOAdmin(identidad.roles))) return;
       if (quitarPalabra(user.espacioId)) emitirPreguntas(user.espacioId);
@@ -624,7 +688,7 @@ export function setupSockets(io: Server) {
 
     on('pantalla_cuadro', 'pantalla_cuadro', (datos: unknown) => {
       const user = activeUsers.get(socket.id);
-      if (!user || !esCuadroValido(datos)) return;
+      if (!user || identidad.esOyente || !esCuadroValido(datos)) return;
       if (guardarCuadro(user.espacioId, socket.id, datos)) {
         socket.to(String(user.espacioId)).volatile.emit('pantalla_cuadro', datos);
         grabarCaptura(user.espacioId, user.nombreVisible, datos).catch((err) => console.error('Error al grabar captura:', err));
@@ -676,6 +740,10 @@ export function setupSockets(io: Server) {
     }) => {
       const user = activeUsers.get(socket.id);
       if (!user) return;
+      if (identidad.esOyente) {
+        socket.emit('chat_rechazado', { motivo: 'El modo oyente no permite enviar mensajes.' });
+        return;
+      }
       const saneado = sanearTextoChat(data?.message?.text);
       if (!saneado.ok) {
         socket.emit('chat_rechazado', { motivo: saneado.motivo });
@@ -698,7 +766,7 @@ export function setupSockets(io: Server) {
     // y se difunde al resto del espacio con el nombre del token. No se guarda.
     on('subtitulo', 'subtitulo', (data: { texto?: unknown; final?: unknown }) => {
       const user = activeUsers.get(socket.id);
-      if (!user) return;
+      if (!user || identidad.esOyente) return;
       const saneado = sanearTextoChat(data?.texto);
       if (!saneado.ok) return;
       const texto = saneado.texto.slice(0, MAX_LARGO_SUBTITULO);
@@ -725,6 +793,9 @@ export function setupSockets(io: Server) {
         activeUsers.delete(socket.id);
         conPosicionReal.delete(socket.id);
         dejarAula(user.espacioId, socket.id);
+        if (identidad.esOyente) {
+          await liberarConexionOyente(socket.id).catch((err) => log.error('Error al liberar cupo de oyente', err));
+        }
         // Un trazo a medias se guarda con lo que alcanzó a dibujar
         await cerrarTrazosDe(socket.id).catch((err) => log.error('Error al cerrar trazos', err));
         await registrarSalida(user.userId, user.espacioId);

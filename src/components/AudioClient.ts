@@ -74,6 +74,8 @@ const RESTRICCIONES_VOZ = {
 export interface OpcionesAudioClient {
   /** Opus DTX (decisión 0001). Sólo la prueba de carga lo apaga, para comparar. */
   dtx?: boolean;
+  /** No solicita el micrófono; usa una pista silenciosa para recibir llamadas. */
+  soloEscucha?: boolean;
 }
 
 export class AudioClient {
@@ -122,6 +124,7 @@ export class AudioClient {
   private resumeHandler: (() => void) | null = null;
 
   private userId: string;
+  private soloEscucha: boolean;
   private onPeerIdReady: (peerId: string) => void;
   private onError: (err: any) => void;
   private onEstado: (estado: EstadoVoz, detalle?: string) => void;
@@ -132,9 +135,10 @@ export class AudioClient {
     onPeerIdReady: (peerId: string) => void,
     onError: (err: any) => void,
     onEstado?: (estado: EstadoVoz, detalle?: string) => void,
-    { dtx = true }: OpcionesAudioClient = {}
+    { dtx = true, soloEscucha = false }: OpcionesAudioClient = {}
   ) {
     this.userId = userId;
+    this.soloEscucha = soloEscucha;
     this.opcionesLlamada = dtx ? { sdpTransform: activarDtx } : {};
     this.onPeerIdReady = onPeerIdReady;
     this.onError = onError;
@@ -247,7 +251,9 @@ export class AudioClient {
       }
 
       // 2. Micrófono (o stream silencioso si no hay)
-      this.localStream = await this.obtenerMicrofono();
+      this.localStream = this.soloEscucha
+        ? this.crearStreamSilencioso()
+        : await this.obtenerMicrofono();
       if (this.micDisponible) this.analizadorLocal = this.crearAnalizador(this.localStream);
 
       // 3. Servidores ICE desde el backend
