@@ -176,6 +176,32 @@ Un usuario puede tener más de un rol simultáneamente (modelo N:M vía `usuario
 | **RF-17** | El sistema debe permitir compartir materiales de clase (PDF/PPT) asociados a una asignatura y visualizarlos dentro de una sesión. | ⏳ Modelo de datos listo (`materiales`, `sesion_materiales`); endpoint y UI pendientes |
 | **RF-18** | El sistema debe permitir recuperar el acceso a la cuenta ante contraseña olvidada. | ⏳ Pendiente |
 
+RF-19 en adelante salen del [PRD de la mejora](docs/producto/PRD.md) y se implementan según el [plan](docs/producto/PLAN_IMPLEMENTACION.md).
+
+| Código | Requerimiento | Estado |
+|---|---|---|
+| **RF-19** | El usuario dispara gestos (saludar, aplaudir, asentir, negar, señalar) desde una rueda o atajos, y todos en el espacio los ven. | ⏳ Propuesto |
+| **RF-20** | Reacciones efímeras sobre el avatar (👍 ❤️ 😂 👏 ❓) que flotan unos segundos, también para oyentes sin voz. | ⏳ Propuesto |
+| **RF-21** | El avatar mira a quien habla o al objetivo señalado, sin costo de red extra relevante. | ⏳ Propuesto |
+| **RF-22** | Interacción con objetos además de sentarse (pizarra, puertas, letreros) con la tecla `E` unificada. | ⏳ Propuesto |
+| **RF-23** | Sistema de diseño único (tokens, componentes, estados) en landing, login, HUD, paneles y modales. | ⏳ Propuesto |
+| **RF-24** | Revisión de accesibilidad y responsive: foco visible, contraste AA, teclado, móvil vertical y horizontal. | ⏳ Propuesto |
+| **RF-25** | Entrada por enlace con solo un nombre visible, sin registro, con un token de rol `oyente`. | 🟡 Parcial: acceso de oyente por sesión de clase (PR #78); falta enlazarlo a eventos |
+| **RF-26** | El oyente escucha (voz y pantalla), reacciona y escribe en el chat del evento si el organizador lo permite. | 🟡 Parcial: escucha sin micrófono (PR #78); faltan reacciones y chat opcional |
+| **RF-27** | El oyente pide la palabra y el organizador se la cede o no. | ⏳ Propuesto |
+| **RF-28** | Aforo de oyentes con cola de espera y vista ligera sin 3D. | 🟡 Parcial: cupo por acceso (PR #78); faltan cola y vista ligera |
+| **RF-29** | Docente o admin crea un evento: título, descripción, fecha y hora, espacio, aforo y visibilidad. | ⏳ Propuesto |
+| **RF-30** | Ciclo de vida del evento: programado → en curso → finalizado / cancelado. | ⏳ Propuesto |
+| **RF-31** | Enlace de invitación firmado y revocable; página pública del evento con cuenta regresiva. | ⏳ Propuesto |
+| **RF-32** | Inscripción previa y lista de asistentes con hora de entrada y salida. | ⏳ Propuesto |
+| **RF-33** | Cartelera de próximos eventos en el campus y en la landing. | ⏳ Propuesto |
+| **RF-34** | Cualquier participante reporta un mensaje o a un usuario con un motivo. | ⏳ Propuesto |
+| **RF-35** | El moderador silencia (voz o chat) por un tiempo y expulsa del espacio. | ⏳ Propuesto |
+| **RF-36** | El moderador veta a un usuario de un evento o de la plataforma, también a oyentes sin cuenta. | ⏳ Propuesto |
+| **RF-37** | Filtro de chat configurable (palabras bloqueadas, enlaces, mayúsculas, ráfagas) y modo lento. | 🟡 Núcleo listo (MOD-01, `server/src/moderacion.ts`); falta conectarlo al chat (MOD-02b) |
+| **RF-38** | Bitácora de moderación: quién hizo qué, a quién, cuándo y por qué, visible para el admin. | ⏳ Propuesto |
+| **RF-39** | Panel de moderación con cola de reportes y acciones en un clic. | ⏳ Propuesto |
+
 ---
 
 ## 9. Requerimientos No Funcionales (RNF)
