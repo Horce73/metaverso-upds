@@ -471,6 +471,7 @@ async function runTests() {
   const nuevo = await tokenDe({ email: correoNuevo, password: CLAVE_DESECHABLE });
   const sNuevo = await conectar(nuevo.token);
 
+  // El registro lo inscribe en todas las asignaturas, pero sin confirmar (ACCESO-02)
   await caso('Sin pase, un estudiante no entra al aula aunque mande join_space', async () => {
     const r = await entrar(sNuevo, aulaId);
     return r.ok === false && r.sinAcceso === true;
@@ -484,6 +485,16 @@ async function runTests() {
   await caso('Un invitado no obtiene pase con el código', async () => {
     const { token } = await (await api('/api/auth/guest', { method: 'POST' })).json();
     return (await acceso(token, aulaId, codigoAula)).status === 403;
+  });
+
+  await caso('Con la inscripción confirmada (por el código) el estudiante entra sin volver a escribirlo', async () => {
+    await pool.query(
+      `INSERT INTO inscripciones (usuario_id, asignatura_id, confirmada)
+       SELECT $1, e.asignatura_id, TRUE FROM espacios e WHERE e.id = $2
+       ON CONFLICT (usuario_id, asignatura_id) DO UPDATE SET confirmada = TRUE`,
+      [nuevo.id, aulaId]
+    );
+    return (await entrar(sNuevo, aulaId)).ok;
   });
 
   await caso('Con el código del curso (sin importar mayúsculas) el estudiante entra', async () => {
@@ -505,9 +516,10 @@ async function runTests() {
 
   await caso('Un estudiante no puede aprobarse a sí mismo una solicitud', async () => {
     try {
-      sNuevo.emit('responder_solicitud_acceso', { estudianteSocketId: sNuevo.id, espacioId: aulaId, aprobado: true });
+      // En otra aula: en la primera ya está inscrito
+      sNuevo.emit('responder_solicitud_acceso', { estudianteSocketId: sNuevo.id, espacioId: otraAulaId, aprobado: true });
       await new Promise((r) => setTimeout(r, 300));
-      return !(await entrar(sNuevo, aulaId)).ok;
+      return !(await entrar(sNuevo, otraAulaId)).ok;
     } finally {
       sNuevo.disconnect();
       await pool.query('DELETE FROM usuarios WHERE email = $1', [correoNuevo]);
@@ -1313,6 +1325,25 @@ async function runTests() {
     const texto = await csv.text();
     return res.status === 200 && fila?.entrada && fila.salida === null && Number.isInteger(fila.minutos)
       && csv.status === 200 && texto.includes('Minutos efectivos');
+  });
+
+  await caso('Reiniciar la clase cierra un tramo abierto un instante antes sin fallar (salida >= entrada)', async () => {
+    // Alguien entra justo cuando el docente reinicia la clase: su tramo queda
+    // con una entrada posterior al inicio de la transacción de crear-curso
+    const datos = { espacio_id: otraAulaId, nombre_curso: 'Base de Datos I', codigo_curso: 'BD-101', tema: 'Clase QA tramos' };
+    const primera = await curso(docente.token, datos);
+    const { sesion } = await primera.json();
+    const { rows: [asis] } = await pool.query(
+      `INSERT INTO asistencias (sesion_id, usuario_id, hora_ingreso, estado) VALUES ($1, $2, NOW(), 'presente')
+       ON CONFLICT (sesion_id, usuario_id) DO UPDATE SET hora_salida = NULL RETURNING id`,
+      [sesion.id, maria.id]
+    );
+    await pool.query("DELETE FROM asistencia_tramos WHERE asistencia_id = $1", [asis.id]);
+    await pool.query("INSERT INTO asistencia_tramos (asistencia_id, entrada) VALUES ($1, NOW() + INTERVAL '2 seconds')", [asis.id]);
+    const segunda = await curso(docente.token, { ...datos, tema: 'Clase QA tramos (reinicio)' });
+    const { rows } = await pool.query('SELECT entrada, salida FROM asistencia_tramos WHERE asistencia_id = $1', [asis.id]);
+    return primera.status === 201 && segunda.status === 201
+      && rows.length === 1 && rows[0].salida !== null && rows[0].salida >= rows[0].entrada;
   });
 
   await caso('Iniciar la clase registra la asistencia de quien ya estaba en el aula', async () => {

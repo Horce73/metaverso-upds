@@ -29,6 +29,20 @@ import {
   reservarConexionOyente,
 } from './oyentes.js';
 
+/**
+ * ¿El usuario confirmó (con el código del curso) su inscripción en la
+ * asignatura de esta aula? La inscripción automática del registro no cuenta.
+ */
+async function estaInscrito(usuarioId: number | null | undefined, espacioId: number): Promise<boolean> {
+  if (!usuarioId) return false;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM espacios e JOIN inscripciones i ON i.asignatura_id = e.asignatura_id
+     WHERE e.id = $1 AND i.usuario_id = $2 AND i.confirmada LIMIT 1`,
+    [espacioId, usuarioId]
+  );
+  return rows.length > 0;
+}
+
 // Identidad del socket (SEC-01). Se fija una sola vez en el handshake a partir
 // del JWT y de la base; ningun evento posterior la toma del payload del cliente.
 interface Identidad {
@@ -273,13 +287,14 @@ export function setupSockets(io: Server) {
         socket.emit('join_rechazado', { motivo: 'Los invitados solo pueden acceder al campus.' });
         return;
       }
-      // SEC-08: al aula entra el docente o el admin, o quien tiene un pase
-      // (código del curso o solicitud aprobada por el docente)
+      // SEC-08: al aula entra el docente o el admin, el estudiante que
+      // confirmó su inscripción con el código (ACCESO-02), o quien tiene un
+      // pase (código del curso o solicitud aprobada por el docente).
       if (
         espacioTipo === 'aula' &&
-        !identidad.esOyente &&
         !esDocenteOAdmin(identidad.roles) &&
-        !pases.tiene(identidad.userId, nuevoEspacioId)
+        !pases.tiene(identidad.userId, nuevoEspacioId) &&
+        !(await estaInscrito(identidad.userId, nuevoEspacioId))
       ) {
         socket.emit('join_rechazado', {
           motivo: 'Para entrar a esta aula necesitas el código del curso o que el docente apruebe tu solicitud.',

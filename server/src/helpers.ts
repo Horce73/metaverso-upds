@@ -88,10 +88,17 @@ async function abrirTramo(asistenciaId: number) {
   );
 }
 
+// Dentro de una transacción NOW() es la hora en que empezó, no la de ahora: un
+// tramo que otra conexión abrió un instante después (alguien que entra justo
+// cuando el docente reinicia la clase) quedaba con la salida antes de la
+// entrada, chk_tramo_orden lo rechazaba y crear-curso respondía 500. La
+// salida nunca va antes de la entrada.
+const SALIDA_TRAMO = 'GREATEST(NOW(), t.entrada)';
+
 /** Cierra los tramos abiertos de toda una sesión (al finalizar la clase). */
 export async function cerrarTramosDeSesion(sesionId: number, db: { query: typeof pool.query } = pool) {
   await db.query(
-    `UPDATE asistencia_tramos t SET salida = NOW()
+    `UPDATE asistencia_tramos t SET salida = ${SALIDA_TRAMO}
      FROM asistencias a
      WHERE t.asistencia_id = a.id AND a.sesion_id = $1 AND t.salida IS NULL`,
     [sesionId]
@@ -117,7 +124,7 @@ export async function registrarSalida(userId: number, espacioId: number) {
       [res.rows[0].id, userId]
     );
     await pool.query(
-      `UPDATE asistencia_tramos t SET salida = NOW()
+      `UPDATE asistencia_tramos t SET salida = ${SALIDA_TRAMO}
        FROM asistencias a
        WHERE t.asistencia_id = a.id AND a.sesion_id = $1 AND a.usuario_id = $2 AND t.salida IS NULL`,
       [res.rows[0].id, userId]

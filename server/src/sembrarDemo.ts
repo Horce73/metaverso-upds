@@ -85,7 +85,7 @@ async function sembrar(clave: string) {
       [CODIGO, carrera, docenteId]
     )
   ).rows[0].id;
-  for (const a of alumnos) await pool.query('INSERT INTO inscripciones (usuario_id, asignatura_id) VALUES ($1, $2)', [a.id, asignaturaId]);
+  for (const a of alumnos) await pool.query('INSERT INTO inscripciones (usuario_id, asignatura_id, confirmada) VALUES ($1, $2, TRUE)', [a.id, asignaturaId]);
   const espacioId = (
     await pool.query(
       `INSERT INTO espacios (nombre, tipo, asignatura_id, escena_url, capacidad_max) VALUES ('Aula de demostración', 'aula', $1, '/escenas/aula.glb', 40) RETURNING id`,

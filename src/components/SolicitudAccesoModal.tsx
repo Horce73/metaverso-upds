@@ -10,6 +10,7 @@ interface SolicitudAccesoModalProps {
     tipo: string;
     asignatura?: string;
     asignatura_codigo?: string;
+    inscripcion_confirmada?: boolean;
     sesion_activa?: {
       id: string;
       tema: string;
@@ -169,7 +170,9 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>
               {esDocente
                 ? 'Como docente, puedes ingresar al aula y configurar el curso para iniciar la clase de hoy.'
-                : 'Puedes ingresar libremente o verificar con tu código de aula cuando el docente inicie la sesión.'}
+                : espacio.inscripcion_confirmada
+                  ? 'Ya entraste con el código de este curso: puedes volver cuando quieras, aunque no haya clase.'
+                  : 'Para entrar la primera vez escribe el código del curso que te dio tu docente.'}
             </p>
           )}
         </div>
@@ -211,6 +214,21 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
           </div>
         ) : (
           <>
+            {/* Con la inscripción confirmada por el código entra directo (el
+                servidor lo vuelve a comprobar en join_space, ACCESO-02) */}
+            {espacio.inscripcion_confirmada && (
+              <button
+                type="button"
+                className="btn-primary"
+                data-foco-inicial
+                onClick={() => onIngresarDirecto(espacio)}
+                disabled={solicitando || validando}
+                style={{ width: '100%', marginBottom: '20px', background: 'linear-gradient(135deg, #059669, #10b981)', padding: '14px', fontSize: '1rem', fontWeight: 600 }}
+              >
+                🎓 Entrar al aula
+              </button>
+            )}
+
             {/* Método 1: Ingreso por Código de Aula / Curso */}
             <form onSubmit={handleIngresarPorCodigo} style={{ marginBottom: '20px' }}>
               <label htmlFor="codigo-aula" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
@@ -219,7 +237,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input
                   id="codigo-aula"
-                  data-foco-inicial
+                  data-foco-inicial={espacio.inscripcion_confirmada ? undefined : true}
                   type="text"
                   className="form-input"
                   placeholder="Ej: SIS-301"
@@ -255,7 +273,7 @@ export const SolicitudAccesoModal: React.FC<SolicitudAccesoModalProps> = ({
                 </button>
               ) : (
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  No hay una clase en curso: para pedirle acceso al docente tiene que haber empezado la clase. Con el código del curso puedes entrar igual.
+                  Si no te deja entrar, pídele acceso al docente cuando empiece la clase o escribe el código del curso.
                 </p>
               )}
 

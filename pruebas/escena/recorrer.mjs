@@ -1,9 +1,12 @@
 // Recorre el campus en un navegador real y saca capturas o mide la escena.
 // Necesita la demo sembrada (docs/demo.md) y su clave en DEMO_CLAVE.
 //
-//   DEMO_CLAVE=… node pruebas/escena/recorrer.mjs <salida> <x,z,giro|-> pasos…
+//   DEMO_CLAVE=… node pruebas/escena/recorrer.mjs <salida> <x,z,giro[,y]|-> pasos…
 //
-// Pasos: foto:nombre · w|a|s|d:ms · girar:dx,dy · clic:texto · esperar:ms
+// La y opcional sirve para aparecer en el nivel alto (galerías, piso alto del
+// nuevo, cancha): si ahí no hay piso a esa altura, se aparece en la vereda.
+//
+// Pasos: foto:nombre · w|a|s|d:ms · tecla:KeyE · girar:dx,dy · rueda:dy (aleja o acerca la cámara) · clic:texto · esperar:ms
 //        fps (cuadros por segundo en 4 s) · info:etiqueta (renderer.info)
 // MOVIL=1 emula un Pixel 7; CALIDAD=alta|media|baja (por defecto alta);
 // CHROMIUM=ruta al ejecutable si playwright-core no encuentra el suyo.
@@ -16,8 +19,8 @@ const clave = process.env.DEMO_CLAVE;
 if (!clave) throw new Error('Falta DEMO_CLAVE (la clave con la que se sembró la demo)');
 mkdirSync(salida, { recursive: true });
 
-const [px, pz, giro] = posArg.split(',').map(Number);
-const ultima = posArg !== '-' ? { position: [px, 0, pz], rotation: [0, giro, 0] } : null;
+const [px, pz, giro, py = 0] = posArg.split(',').map(Number);
+const ultima = posArg !== '-' ? { position: [px, py, pz], rotation: [0, giro, 0] } : null;
 const cabeceras = (token) => ({
   'Content-Type': 'application/json',
   'X-Forwarded-For': `10.9.${Math.floor(Math.random() * 250)}.3`,
@@ -85,8 +88,14 @@ for (const paso of pasos) {
     await pagina.mouse.down();
     await pagina.mouse.move(640 + dx, 400 + dy, { steps: 10 });
     await pagina.mouse.up();
+  } else if (accion === 'rueda') {
+    await pagina.mouse.move(640, 400);
+    await pagina.mouse.wheel(0, Number(valor));
+    await pagina.waitForTimeout(800);
   } else if (accion === 'clic') {
     await pagina.getByText(valor).first().click();
+  } else if (accion === 'tecla') {
+    await pagina.keyboard.press(valor);
   } else if (accion === 'clicescena') {
     await pagina.mouse.click(500, 400);
   } else if (accion === 'foco') {

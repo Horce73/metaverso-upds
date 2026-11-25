@@ -62,7 +62,9 @@ async function accesoAsignatura(userId: unknown, asignaturaId: number, docenteId
     `SELECT
        EXISTS (SELECT 1 FROM usuario_roles ur JOIN roles r ON r.id = ur.rol_id
                WHERE ur.usuario_id = $1 AND r.nombre = 'administrador') AS admin,
-       EXISTS (SELECT 1 FROM inscripciones WHERE usuario_id = $1 AND asignatura_id = $2) AS inscrito`,
+       -- Sólo la inscripción confirmada con el código del curso (ACCESO-02): la
+       -- automática del registro, sin confirmar, no abre los materiales
+       EXISTS (SELECT 1 FROM inscripciones WHERE usuario_id = $1 AND asignatura_id = $2 AND confirmada) AS inscrito`,
     [uid, asignaturaId]
   );
   const gestiona = rows[0].admin || uid === docenteId;

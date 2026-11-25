@@ -7,7 +7,7 @@ import { EdificioAntiguo, EdificioNuevo, ALTO_ANTIGUO, ALTO_NUEVO } from './Edif
 import { DecoradoCampus } from './DecoradoCampus.js';
 import { Fusionar } from './Fusionar.js';
 import { recortarVista, definirVolumenes } from './recorteVista.js';
-import type { PlanoCampus, PuertaAula, Rect } from './planoCampus.js';
+import { NIVEL_BLOQUE, PISO_FILA, type PlanoCampus, type PuertaAula, type Rect } from './planoCampus.js';
 
 /** Caja de un edificio para el recorte de la vista: un poco más ancha, por letreros y cornisas. */
 function volumen(r: Rect, alto: number): THREE.Box3 {
@@ -16,9 +16,9 @@ function volumen(r: Rect, alto: number): THREE.Box3 {
 
 // Campus UPDS (CAMPUS-01): la manzana de la universidad en vez de las islas
 // flotantes. Se llega por la vereda, se entra por la recepción del edificio
-// antiguo o por el hall del nuevo, y las aulas son puertas de madera en las
-// galerías del patio. El plano (planoCampus.ts) decide dónde va cada cosa;
-// acá sólo se dibuja.
+// antiguo o por el hall del nuevo, y las aulas son puertas de madera en los
+// pasillos (CAMPUS-04: donde están en el plano). El plano (planoCampus.ts)
+// decide dónde va cada cosa; acá sólo se dibuja.
 
 export interface AulaCampus {
   id: number | string;
@@ -36,7 +36,7 @@ interface CampusProps {
 }
 
 // Sol de media mañana de Sucre: alto y algo de costado, para que las fachadas
-// a la calle reciban luz y el patio tenga sombra de las galerías
+// a la calle reciban luz y el patio tenga sombra de la fila de aulas
 const SOL = new THREE.Vector3(45, 70, 38);
 
 const Iluminacion: React.FC<{ centro: [number, number] }> = ({ centro }) => {
@@ -47,7 +47,7 @@ const Iluminacion: React.FC<{ centro: [number, number] }> = ({ centro }) => {
       <Sky sunPosition={SOL.toArray()} turbidity={3} rayleigh={0.9} mieCoefficient={0.004} mieDirectionalG={0.8} />
       <fog attach="fog" args={['#c8d9ea', 90, 260]} />
       <hemisphereLight args={['#dbeafe', '#cfc6b4', 1.15]} />
-      {/* Relleno suave: bajo las galerías y en los pasillos no llega el sol */}
+      {/* Relleno suave: en los pasillos no llega el sol */}
       <ambientLight intensity={0.35} color="#fff8ee" />
       <primitive object={objetivo} position={[centro[0], 0, centro[1]]} />
       <directionalLight
@@ -73,28 +73,29 @@ const Iluminacion: React.FC<{ centro: [number, number] }> = ({ centro }) => {
 };
 
 /** Puerta de madera de un aula, con su placa y el aviso de clase en curso. */
+// Cabe bajo la losa del pasillo de las aulas (PISO_FILA): placa y aviso van por debajo
 const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractuar?: () => void }> = ({ puerta, aula, onInteractuar }) => {
   const enClase = !!aula.sesion_activa;
-  // La puerta del ala de la calle mira al patio por -z; la del fondo, por +z
-  const giro = puerta.lado === 'calle' ? Math.PI : 0;
+  // El aro de la tecla E, en el punto de espera frente a la puerta
+  const frente = Math.hypot(puerta.frente[0] - puerta.x, puerta.frente[1] - puerta.z);
   return (
-    <group position={[puerta.x, 0, puerta.z]} rotation={[0, giro, 0]}>
+    <group position={[puerta.x, puerta.y, puerta.z]} rotation={[0, puerta.giro, 0]}>
       {/* Marco y hoja de madera */}
-      <mesh position={[0, 1.25, 0.04]} castShadow>
-        <boxGeometry args={[1.5, 2.5, 0.08]} />
+      <mesh position={[0, 1.15, 0.04]} castShadow>
+        <boxGeometry args={[1.2, 2.3, 0.08]} />
         <meshStandardMaterial color="#7a4a22" roughness={0.6} />
       </mesh>
-      <mesh position={[0, 1.15, 0.09]}>
-        <boxGeometry args={[1.15, 2.25, 0.05]} />
+      <mesh position={[0, 1.05, 0.09]}>
+        <boxGeometry args={[0.95, 2.1, 0.05]} />
         <meshStandardMaterial color="#b0743a" roughness={0.55} />
       </mesh>
-      <mesh position={[0.42, 1.1, 0.13]}>
+      <mesh position={[0.34, 1.0, 0.13]}>
         <boxGeometry args={[0.06, 0.2, 0.04]} />
         <meshStandardMaterial color="#d4d4d8" metalness={0.8} roughness={0.3} />
       </mesh>
       {/* Lámpara de estado: verde si hay clase, apagada si no */}
-      <mesh position={[0, 2.75, 0.08]}>
-        <boxGeometry args={[0.5, 0.12, 0.08]} />
+      <mesh position={[0, 2.4, 0.08]}>
+        <boxGeometry args={[0.4, 0.1, 0.08]} />
         <meshStandardMaterial
           color={enClase ? '#34d399' : '#475569'}
           emissive={enClase ? '#10b981' : '#000000'}
@@ -103,8 +104,8 @@ const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractu
       </mesh>
       <Letrero
         texto={aula.nombre}
-        position={[0, 3.25, 0.25]}
-        scale={[2.6, 0.55, 1]}
+        position={[0, PISO_FILA - 0.28, 0.25]}
+        scale={[2.2, 0.42, 1]}
         ancho={520}
         alto={110}
         fondo="rgba(15,23,42,0.85)"
@@ -113,8 +114,8 @@ const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractu
       {enClase && (
         <Letrero
           texto={`● En clase: ${aula.sesion_activa?.tema || 'clase en curso'}`}
-          position={[0, 3.8, 0.25]}
-          scale={[2.6, 0.42, 1]}
+          position={[0, 2.05, 0.45]}
+          scale={[2.2, 0.36, 1]}
           ancho={620}
           alto={100}
           fondo="#065f46"
@@ -124,13 +125,13 @@ const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractu
       {onInteractuar && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 0.04, 3]}
+          position={[0, 0.04, frente]}
           onClick={(e) => {
             e.stopPropagation();
             onInteractuar();
           }}
         >
-          <ringGeometry args={[0.55, 0.85, 28]} />
+          <ringGeometry args={[0.4, 0.6, 28]} />
           <meshBasicMaterial color={enClase ? '#34d399' : '#60a5fa'} transparent opacity={0.65} side={THREE.DoubleSide} />
         </mesh>
       )}
@@ -140,28 +141,31 @@ const PuertaDeAula: React.FC<{ puerta: PuertaAula; aula: AulaCampus; onInteractu
 
 export const Campus: React.FC<CampusProps> = ({ plano, aulas = [], onInteractuarAula }) => {
   const porId = React.useMemo(() => new Map(aulas.map((a) => [String(a.id), a])), [aulas]);
-  const centro: [number, number] = [(plano.edificioNuevo.x0 + plano.xFin) / 2, -12];
+  const centro: [number, number] = [(plano.edificioNuevo.x0 + plano.auditorio.x1) / 2, -19];
   const raiz = React.useRef<THREE.Group>(null);
   // Después de que Fusionar armó sus mallas (sus efectos corren antes que
   // este), y otra vez si cambian el plano o las puertas de las aulas
   React.useLayoutEffect(() => {
     if (raiz.current) recortarVista(raiz.current);
-  }, [plano.xFin, aulas]);
+  }, [plano, aulas]);
   React.useEffect(() => {
-    // Con el techo: la cámara puede mirar desde arriba
+    // Con el techo: la cámara puede mirar desde arriba. La fila de aulas
+    // incluye el pasillo: su losa tapa a quien camina debajo. El auditorio,
+    // bajo y junto al lindero, no tapa a nadie
     definirVolumenes([
-      volumen(plano.alaCalle, ALTO_ANTIGUO + 3),
-      volumen(plano.alaFondo, ALTO_ANTIGUO + 3),
-      volumen(plano.edificioNuevo, ALTO_NUEVO + 1),
+      volumen({ ...plano.alaCalle, x1: plano.nucleo.x1 }, ALTO_ANTIGUO + 3),
+      volumen({ ...plano.filaAulas, z1: plano.corredor.z1 }, PISO_FILA * 2 + 3),
+      volumen(plano.bloqueCentral, NIVEL_BLOQUE + PISO_FILA * 2 + 3.5),
+      volumen(plano.edificioNuevo, ALTO_NUEVO + 3.5),
     ]);
     return () => definirVolumenes([]);
   }, [plano]);
   return (
     <group ref={raiz}>
       <Iluminacion centro={centro} />
-      {/* Todo lo que no se mueve, fusionado por material (PERF-01); el largo
-          del edificio (xFin) es lo único del plano que cambia su forma */}
-      <Fusionar clave={`${plano.xFin}`}>
+      {/* Todo lo que no se mueve, fusionado por material (PERF-01). Desde
+          CAMPUS-04 la forma no depende de las aulas: sólo las puertas, aparte */}
+      <Fusionar clave="campus">
         <DecoradoCampus plano={plano} />
         <EdificioNuevo plano={plano} />
         <EdificioAntiguo plano={plano} />

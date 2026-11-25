@@ -169,3 +169,18 @@ test('una pausa larga del emisor no deja el atraso crecido sin límite', () => {
   for (let t = 1400; t <= 61400; t += 1000 / 60) posicionEn(e, t); // un minuto sin paquetes
   assert.ok(e.atraso <= 40 + RETARDO_MAX_MS + 1e-6, `atraso=${e.atraso}`);
 });
+
+test('quien sube una escalera se ve subiendo: la altura se interpola como x y z (CAMPUS-03)', () => {
+  const e = crearEstado();
+  // Sube 3,6 m mientras avanza 4 m: cada 40 ms, 0,16 m adelante y 0,144 m arriba
+  for (let i = 0; i <= 25; i++) recibir(e, [i * 0.16, i * 0.144, 0], 0, 1000 + i * 40, 1050 + i * 40);
+  let anterior = -Infinity;
+  for (let ahora = 1200; ahora <= 2300; ahora += 16) {
+    const { pos } = posicionEn(e, ahora);
+    // Siempre sobre la rampa (y proporcional a x), nunca bajando
+    assert.ok(cerca(pos[1], pos[0] * 0.9, 1e-9), `y=${pos[1]} con x=${pos[0]}`);
+    assert.ok(pos[1] >= anterior - 1e-9);
+    anterior = pos[1];
+  }
+  assert.ok(cerca(anterior, 3.6, 1e-9));
+});
