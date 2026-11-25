@@ -21,6 +21,15 @@ const FRECUENCIA_CAMINAR = 9;
 const AMPLITUD_CAMINAR = 0.6;
 
 
+export interface Teletransporte {
+  x: number;
+  y: number;
+  z: number;
+  angulo: number;
+  /** Marca de cada viaje (dos viajes al mismo punto también cuentan). */
+  vez: number;
+}
+
 interface AvatarModelProps {
   nombre: string;
   personalizacion?: PersonalizacionAvatar;
@@ -30,6 +39,8 @@ interface AvatarModelProps {
   isAula?: boolean;
   estaSentado?: boolean;
   posicionSentado?: { x: number; y: number; z: number; angulo: number } | null;
+  /** Salto a otro punto (el ascensor del campus): se aplica cada vez que cambia `vez`. */
+  teletransporte?: Teletransporte | null;
   /** Plano del campus (CAMPUS-01): por dónde se puede caminar fuera del aula. */
   planoCampus?: PlanoCampus;
   onUpdatePosicion?: (posicion: THREE.Vector3, angulo: number) => void;
@@ -61,6 +72,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   isAula = false,
   estaSentado = false,
   posicionSentado,
+  teletransporte,
   planoCampus,
   onUpdatePosicion,
   nivelVoz,
@@ -146,6 +158,18 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
       onUpdatePosicion?.(grupoRef.current.position, posicionSentado.angulo);
     }
   }, [estaSentado, posicionSentado, onUpdatePosicion]);
+
+  // Ascensor: aparece en la otra parada, mirando hacia afuera de la puerta
+  useEffect(() => {
+    if (!teletransporte || !grupoRef.current) return;
+    const { x, y, z, angulo } = teletransporte;
+    grupoRef.current.position.set(x, y, z);
+    grupoRef.current.rotation.y = angulo;
+    direccionActual.current.set(Math.sin(angulo), 0, Math.cos(angulo));
+    onUpdatePosicion?.(grupoRef.current.position, angulo);
+    // Sólo al pedir un viaje nuevo, no si cambia el callback
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teletransporte?.vez]);
 
   const aplicarNivelDetalle = (grupo: THREE.Group, lejos: boolean) => {
     if (!lodRef.current) {

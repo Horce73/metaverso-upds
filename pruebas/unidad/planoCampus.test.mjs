@@ -13,12 +13,15 @@ import {
   NIVEL_PATIO,
   NIVEL_BLOQUE,
   NIVEL_ESPARCIMIENTO,
+  NIVEL_4,
   X_INICIO_ANTIGUO,
   ESCALON,
   PB_NUEVO,
   alturaEn,
   caminar,
   contiene,
+  paradaCercana,
+  siguienteParada,
 } from '../../src/components/mundo3d/planoCampus.ts';
 
 const centro = (r) => [(r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2];
@@ -128,22 +131,25 @@ test('cada zona se pisa a su altura; dentro de los edificios no se pisa', () => 
   const p = plano.aparicion.position;
   assert.equal(alturaEn(plano, p[0], p[2], 0), 0);
   const porAltura = [
-    [0, [plano.pasoRecepcion, plano.corredor, plano.pasoOeste, plano.entradaNuevo, plano.hallNuevo, plano.pasilloNuevo]],
+    [0, [plano.pasoRecepcion, plano.entradaAntigua, plano.hallAntiguo, plano.pasilloConexion, plano.conexionNuevo, plano.entradaNuevo, plano.hallNuevo]],
+    [NIVEL_4, [plano.corredor, plano.pasoOeste, plano.pasilloNuevo]],
     [NIVEL_PATIO, [plano.patio, plano.patioOeste, plano.patioEste, plano.pasilloFondo, plano.descanso]],
     [NIVEL_BLOQUE, [plano.cafeteria, plano.hall]],
     [NIVEL_ESPARCIMIENTO, [...plano.esparcimiento, plano.cancha]],
     [NIVEL_ALTO, [plano.hallAlto, plano.pasilloAlto]],
+    ...plano.hallesNuevo.map((h) => [h.y, [h.rect]]),
   ];
   for (const [y, zonas] of porAltura) {
     for (const r of zonas) assert.equal(alturaEn(plano, ...centro(r), y), y, `zona en ${centro(r)} a ${y}`);
   }
-  // El patio no se pisa desde el corredor sin la escalera
-  assert.equal(esTransitable(plano, ...centro(plano.patio)), false);
+  // El patio no se pisa desde el corredor sin la escalera, ni el corredor desde la calle
+  assert.equal(esTransitable(plano, ...centro(plano.patio), NIVEL_4), false);
+  assert.equal(esTransitable(plano, ...centro(plano.corredor), 0), false);
   // Dentro del ala de la calle, de la fila de aulas, del bloque central fuera
   // de la cafetería y el hall, y del nuevo fuera de sus pasillos
-  for (const y of [0, NIVEL_PATIO, NIVEL_BLOQUE]) {
+  for (const y of [0, NIVEL_4, NIVEL_PATIO, NIVEL_BLOQUE]) {
     for (const [x, z] of [
-      [0, -5],
+      [5, -2],
       [8, -16.5],
       [8, -30],
       [-22, -8],
@@ -153,39 +159,85 @@ test('cada zona se pisa a su altura; dentro de los edificios no se pisa', () => 
   }
 });
 
-test('calle → recepción → corredor → escalera en abanico → patio, sube parejo y se vuelve a bajar', () => {
+test('en el nivel 1 se recorre: ingreso principal, pasillo de conexión, hall, vestíbulo del nuevo y vuelta a la calle', () => {
   const plano = calcularPlanoCampus(aulas(8));
   const xr = (plano.pasoRecepcion.x0 + plano.pasoRecepcion.x1) / 2;
+  const zp = (plano.pasilloConexion.z0 + plano.pasilloConexion.z1) / 2;
+  const zc = (plano.conexionNuevo.z0 + plano.conexionNuevo.z1) / 2;
+  const xa = (plano.entradaAntigua.x0 + plano.entradaAntigua.x1) / 2;
+  const xn = (plano.entradaNuevo.x0 + plano.entradaNuevo.x1) / 2;
+  const alturas = recorrer(plano, [
+    [xr, 2],
+    [xr, zp],
+    [-5, zp],
+    [-5, zc],
+    [-15.5, zc],
+    [xn, -6],
+    [xn, 2],
+    [xa, 2],
+    [xa, -3],
+  ]);
+  assert.ok(alturas.every((y) => y === 0));
+});
+
+test('corredor → paso → escalera en abanico → patio, sube parejo y se vuelve a bajar', () => {
+  const plano = calcularPlanoCampus(aulas(8));
   const xo = (plano.pasoOeste.x0 + plano.pasoOeste.x1) / 2;
   const zc = (plano.corredor.z0 + plano.corredor.z1) / 2;
   const zd = (plano.descanso.z0 + plano.descanso.z1) / 2;
   const camino = [
-    [xr, 2],
-    [xr, zc],
+    [5, zc],
     [xo, zc],
     [xo, zd],
   ];
-  const alturas = recorrer(plano, camino);
+  const alturas = recorrer(plano, camino, NIVEL_4);
   assert.equal(alturas.at(-1), NIVEL_PATIO);
   subeParejo(alturas);
-  // Del descanso al centro del patio, y de vuelta a la calle
+  // Del descanso al centro del patio, y de vuelta al corredor
   assert.equal(recorrer(plano, [[xo, zd], [plano.patio.x1 - 0.2, zd], centro(plano.patio)], NIVEL_PATIO).at(-1), NIVEL_PATIO);
-  assert.equal(recorrer(plano, [...camino].reverse(), NIVEL_PATIO).at(-1), 0);
+  assert.equal(recorrer(plano, [...camino].reverse(), NIVEL_PATIO).at(-1), NIVEL_4);
 });
 
-test('desde la calle se llega al patio por el edificio nuevo: entrada, vestíbulo, pasillo y escalones', () => {
+test('el ascensor lleva del pasillo de conexión al pasillo de las aulas, y de vuelta', () => {
   const plano = calcularPlanoCampus(aulas(4));
-  const { entradaNuevo: e, pasilloNuevo: p, escalonesNuevo: s } = plano;
-  const xe = (e.x0 + e.x1) / 2;
+  const [calle, arriba] = plano.ascensor;
+  assert.equal(calle.y, 0);
+  assert.equal(arriba.y, NIVEL_4);
+  assert.equal(paradaCercana(plano, ...calle.frente, 0), calle);
+  assert.equal(siguienteParada(plano, calle), arriba);
+  assert.equal(siguienteParada(plano, arriba), calle);
+  // Cada parada deja al avatar en piso caminable de su nivel
+  for (const p of [calle, arriba]) {
+    assert.equal(alturaEn(plano, ...p.frente, p.y), p.y);
+    assert.equal(alturaEn(plano, ...p.llegada, p.y), p.y);
+    // Se llega lejos de la puerta, para que la cámara no quede en el muro
+    assert.ok(Math.hypot(p.llegada[0] - p.x, p.llegada[1] - p.z) >= 2);
+  }
+  assert.ok(contiene(plano.pasilloConexion, ...calle.frente) && contiene(plano.corredor, ...arriba.frente));
+  // La puerta de arriba no se usa desde la calle, ni de lejos
+  assert.equal(paradaCercana(plano, ...arriba.frente, 0), null);
+  assert.equal(paradaCercana(plano, calle.frente[0] - 5, calle.frente[1], 0), null);
+});
+
+test('desde la calle se sube por la escalera del nuevo, piso a piso, hasta el nivel 4 y por los escalones al patio', () => {
+  const plano = calcularPlanoCampus(aulas(4));
+  const { entradaNuevo: en, escaleraNuevo: e, hallNuevo, pasilloNuevo: p, escalonesNuevo: s } = plano;
+  const medio = (e.x0 + e.x1) / 2;
+  const x1 = (e.x0 + medio) / 2;
+  const x2 = (medio + e.x1) / 2;
+  const zh = (hallNuevo.z0 + hallNuevo.z1) / 2;
+  const zd = e.z1 - 0.6;
+  const unPiso = [
+    [x1, zd],
+    [x2, zd],
+    [x2, zh],
+    [x1, zh],
+  ];
+  const xe = (en.x0 + en.x1) / 2;
   const xp = (p.x0 + p.x1) / 2;
   const zs = (s.z0 + s.z1) / 2;
-  const alturas = recorrer(plano, [
-    [xe, 2],
-    [xe, -6],
-    [xp, -6],
-    [xp, zs],
-    [plano.patio.x0 + 1, zs],
-  ]);
+  const alturas = recorrer(plano, [[xe, 2], [xe, zh], [x1, zh], ...unPiso, ...unPiso, ...unPiso, [xp, zh], [xp, zs], [plano.patio.x0 + 1, zs]]);
+  for (const nivel of [NIVEL_ALTO, NIVELES_NUEVO[2], NIVEL_4]) assert.ok(alturas.some((y) => cerca(y, nivel)), `pasa por ${nivel}`);
   assert.equal(alturas.at(-1), NIVEL_PATIO);
   assert.ok(contiene(plano.patio, plano.patio.x0 + 1, zs));
 });
@@ -194,10 +246,10 @@ test('el corredor de las aulas se abre al pasillo del nuevo por la culata', () =
   const plano = calcularPlanoCampus(aulas(4));
   const zc = (plano.corredor.z0 + plano.corredor.z1) / 2;
   const xp = (plano.pasilloNuevo.x0 + plano.pasilloNuevo.x1) / 2;
-  assert.deepEqual(recorrer(plano, [[xp, zc], [5, zc]]).at(-1), 0);
+  assert.deepEqual(recorrer(plano, [[xp, zc], [5, zc]], NIVEL_4).at(-1), NIVEL_4);
   // Fuera de esa abertura y de los escalones, la culata es muro
-  assert.ok(choca(plano, [xp, -17], [X_INICIO_ANTIGUO + 1, -17]));
-  assert.ok(choca(plano, [xp, -20], [X_INICIO_ANTIGUO + 1, -20]));
+  assert.ok(choca(plano, [xp, -17], [X_INICIO_ANTIGUO + 1, -17], NIVEL_4));
+  assert.ok(choca(plano, [xp, -20], [X_INICIO_ANTIGUO + 1, -20], NIVEL_4));
 });
 
 test('patio → escalera → área de esparcimiento → cancha sobre el auditorio, y de vuelta', () => {
@@ -283,22 +335,23 @@ test('el edificio nuevo tiene 11 niveles y la cubierta queda sobre el último', 
   assert.ok(ALTO_NUEVO > NIVELES_NUEVO.at(-1) + 0.5 && ALTO_NUEVO < 40);
 });
 
-test('dentro del edificio nuevo sólo se camina por la entrada, el vestíbulo, el pasillo, los escalones y la escalera', () => {
+test('en el nivel 1 del nuevo sólo se camina por la entrada, el vestíbulo, el pie de la escalera y la puerta al antiguo', () => {
   const plano = calcularPlanoCampus(aulas(4));
-  const { edificioNuevo: r, entradaNuevo, hallNuevo, pasilloNuevo, escalonesNuevo, escaleraNuevo, corredor } = plano;
-  const zonas = [entradaNuevo, hallNuevo, pasilloNuevo, escalonesNuevo, escaleraNuevo, corredor];
+  const { edificioNuevo: r, entradaNuevo, hallNuevo, pasilloNuevo, escaleraNuevo, conexionNuevo } = plano;
+  const zonas = [entradaNuevo, hallNuevo, escaleraNuevo, conexionNuevo];
   for (let x = r.x0 + 0.1; x < r.x1; x += 0.5) {
     for (let z = r.z0 + 0.1; z < r.z1; z += 0.5) {
       if (esTransitable(plano, x, z)) assert.ok(zonas.some((zona) => contiene(zona, x, z)), `se pisa (${x}, ${z})`);
     }
   }
-  // El pasillo no sigue más allá de los escalones (atrás están el ascensor y los baños)
-  assert.equal(esTransitable(plano, (pasilloNuevo.x0 + pasilloNuevo.x1) / 2, pasilloNuevo.z0 - 1), false);
+  // En el nivel 4, el pasillo no sigue más allá de los escalones (atrás están el ascensor y los baños)
+  assert.equal(esTransitable(plano, (pasilloNuevo.x0 + pasilloNuevo.x1) / 2, pasilloNuevo.z0 + 1, NIVEL_4), true);
+  assert.equal(esTransitable(plano, (pasilloNuevo.x0 + pasilloNuevo.x1) / 2, pasilloNuevo.z0 - 1, NIVEL_4), false);
 });
 
-test('ningún árbol tapa la entrada del edificio nuevo ni la recepción', () => {
+test('ningún árbol tapa las entradas', () => {
   const plano = calcularPlanoCampus(aulas(4));
-  for (const r of [plano.entradaNuevo, plano.pasoRecepcion]) {
+  for (const r of [plano.entradaNuevo, plano.entradaAntigua, plano.pasoRecepcion]) {
     const x = (r.x0 + r.x1) / 2;
     for (const [ax] of plano.arboles) assert.ok(Math.abs(ax - x) > 2, `árbol en x=${ax}`);
   }
@@ -307,9 +360,10 @@ test('ningún árbol tapa la entrada del edificio nuevo ni la recepción', () =>
 test('la puerta cercana es la que tiene uno enfrente, y ninguna si está lejos o en otro piso', () => {
   const plano = calcularPlanoCampus(aulas(14));
   const p = plano.puertas[2];
-  assert.equal(puertaCercana(plano, p.frente[0] + 0.5, p.frente[1])?.id, p.id);
+  assert.equal(puertaCercana(plano, p.frente[0] + 0.5, p.frente[1], 3.5, NIVEL_4)?.id, p.id);
   assert.equal(puertaCercana(plano, plano.aparicion.position[0], plano.aparicion.position[2]), null);
-  // Una puerta del corredor no se abre desde el nivel alto; una del pasillo del fondo, desde el piso 0 tampoco
+  // Una puerta del corredor no se abre desde la calle ni desde el nivel 2; una del pasillo del fondo, desde la calle tampoco
+  assert.equal(puertaCercana(plano, ...p.frente, 3.5, 0), null);
   assert.equal(puertaCercana(plano, ...p.frente, 3.5, NIVEL_ALTO), null);
   const g = plano.puertas.at(-1);
   assert.equal(g.y, NIVEL_PATIO);
@@ -330,7 +384,7 @@ test('desde el piso 0 sólo se sube por las escaleras', () => {
   }
 });
 
-test('en el edificio nuevo se sube por la escalera en U al piso alto', () => {
+test('la escalera en U llega al nivel 2 y a su pasillo, con un muro entre los tramos', () => {
   const plano = calcularPlanoCampus(aulas(4));
   const { escaleraNuevo: e, hallAlto, pasilloAlto, hallNuevo } = plano;
   const medio = (e.x0 + e.x1) / 2;
@@ -349,10 +403,9 @@ test('en el edificio nuevo se sube por la escalera en U al piso alto', () => {
   assert.equal(alturas[0], 0);
   assert.equal(alturas.at(-1), NIVEL_ALTO);
   assert.ok(alturas.some((h) => cerca(h, PB_NUEVO / 2)), 'pasa por el descanso');
-  // El muro entre los tramos no se cruza
+  // El muro entre los tramos no se cruza, en ningún piso
   assert.ok(choca(plano, [x1, (e.z0 + e.z1) / 2 - 0.5], [x2, (e.z0 + e.z1) / 2 - 0.5]));
-  // Desde el piso alto no se cae al hueco del primer tramo
-  assert.ok(choca(plano, [x1, (hallAlto.z0 + hallAlto.z1) / 2], [x1, e.z1 - 0.1], NIVEL_ALTO));
+  assert.ok(choca(plano, [x1, e.z0 + 0.4], [x2, e.z0 + 0.4], NIVEL_ALTO));
   // El piso alto queda dentro del edificio nuevo
   for (const r of [hallAlto, pasilloAlto]) assert.ok(r.x0 >= plano.edificioNuevo.x0 && r.x1 <= plano.edificioNuevo.x1);
 });

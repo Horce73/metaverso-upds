@@ -7,32 +7,35 @@
 //
 //        z > 0   ─────────────────── calle ───────────────────
 //        z = 0   [ edificio nuevo ][ edificio antiguo (ala de la calle) ][núcleo]
-//                  entrada │escalera│ ── pasillo de las aulas ────────────── │
+//                  (nivel 1: entrada, vestíbulo, escalera; hall, pasillo de conexión)
+//        nivel 4   │escalera│ ── pasillo de las aulas ────────────── │ascensor
 //                  pasillo │        [ fila de 5 aulas            ]  paso    ╱
 //                  del     │ ─ escalones ─ patio ───────── fuente ─ gradas ╱ auditorio
 //                  nuevo   │ patio [ bloque central: cafetería,   ] área  ╱ (cancha
 //                          │ este  [ hall, biblioteca, depósitos  ] de    ╱  encima)
 //                          │ ─────────── pasillo del fondo ──────── esparcimiento
 //
-// El edificio nuevo (CAMPUS-02) y el antiguo en el nivel del patio (CAMPUS-04)
-// salen de los planos arquitectónicos de 2024 (docs/mapas, fuera del repo),
-// con medidas redondeadas. En la realidad el terreno sube hacia el fondo: la
-// calle entra al nivel 1 del nuevo y el patio del antiguo queda a la altura
-// de su nivel 4. El juego junta las dos plantas en el piso 0: del nivel 1, la
-// entrada, el vestíbulo y la escalera junto a la fachada; del nivel 4, el
-// pasillo del nuevo, el pasillo de las aulas del antiguo y lo que da al patio.
-// Los desniveles del nivel 4 sí se conservan: el patio queda un poco más alto
-// que los pasillos (NIVEL_PATIO), el bloque central un poco más que el patio
-// y el área de esparcimiento con la cancha, sobre el auditorio, más arriba
-// (NIVEL_ESPARCIMIENTO).
+// El edificio nuevo (CAMPUS-02) y el antiguo (CAMPUS-04 y 05) salen de los
+// planos arquitectónicos de 2024 (docs/mapas, fuera del repo), con medidas
+// redondeadas. Los niveles van a su altura real (CAMPUS-05): la calle entra
+// al nivel 1; detrás del ala de la calle el terreno sube y el patio del
+// antiguo queda a la altura del nivel 4 del nuevo (NIVEL_4, unos 11 m). Del
+// nivel 1 se recorren los dos ingresos del antiguo, su hall y el pasillo de
+// conexión, y la entrada y el vestíbulo del nuevo. Se sube por la escalera en
+// U del nuevo, que para en los niveles 2 y 3 (sólo sus descansos y el pasillo
+// del nivel 2, CAMPUS-03), o por el ascensor del núcleo del antiguo (tecla E).
+// En el nivel 4: el pasillo del nuevo, el pasillo de las aulas del antiguo y
+// lo que da al patio, con sus desniveles: el patio un poco más alto que los
+// pasillos (NIVEL_PATIO), el bloque central un poco más que el patio y el área
+// de esparcimiento con la cancha, sobre el auditorio, más arriba
+// (NIVEL_ESPARCIMIENTO). El pasillo de las aulas (+10,36) y el del nuevo
+// (+10,90) quedan juntos en NIVEL_4.
 //
 // En la realidad las filas del antiguo están giradas unos 3° respecto del
 // nuevo: acá van alineadas a los ejes. El auditorio y la cancha, girados 115°
 // junto al lindero, conservan su giro (Rect.giro).
 //
-// Nivel alto (CAMPUS-03): el piso alto del nuevo, adonde llega la escalera en
-// U del vestíbulo. La conexión con el piso de arriba de las aulas (nivel 5)
-// queda para otra tanda.
+// La conexión con el piso de arriba de las aulas (nivel 5) queda para otra tanda.
 //
 // Altura: cada zona caminable es una superficie plana o una rampa (las
 // escaleras: la altura sube pareja, a ras de los peldaños). El avatar pisa la
@@ -90,6 +93,18 @@ export interface Superficie extends Rect {
   rampa?: Rampa;
 }
 
+/** Puerta del ascensor en una parada: se le pone E delante y lleva a la otra. */
+export interface ParadaAscensor {
+  nombre: string;
+  x: number;
+  z: number;
+  y: number;
+  giro: number;
+  frente: [number, number];
+  /** Donde aparece quien llega: unos pasos delante de la puerta, para que la cámara (detrás) no quede en el muro. */
+  llegada: [number, number];
+}
+
 /** Obstáculo que ocupa de y0 a y1 (una mesa, un árbol, un auto, el muro entre dos tramos). */
 export interface Bloqueo extends Rect {
   y0: number;
@@ -104,8 +119,15 @@ export interface PlanoCampus {
   alaCalle: Rect;
   /** Escalera, ascensor y baños del antiguo, en la punta del ala de la calle. */
   nucleo: Rect;
-  /** Pasillo de la recepción, de la calle al pasillo de las aulas. */
+  /** Nivel 1 del antiguo: el ingreso principal (el del letrero), el ingreso vidriado junto al nuevo, el hall y el pasillo de conexión por detrás. */
   pasoRecepcion: Rect;
+  entradaAntigua: Rect;
+  hallAntiguo: Rect;
+  pasilloConexion: Rect;
+  /** Puerta entre el vestíbulo del nuevo y el hall del antiguo (nivel 1). */
+  conexionNuevo: Rect;
+  /** Ascensor del núcleo: una parada en el pasillo de conexión (calle) y otra en el pasillo de las aulas (nivel 4). */
+  ascensor: ParadaAscensor[];
   /** Pasillo de las aulas (+10,36 en la realidad), entre el ala de la calle y la fila. */
   corredor: Rect;
   /** Fila de cinco aulas, con la puerta al corredor y las ventanas al patio. */
@@ -141,15 +163,16 @@ export interface PlanoCampus {
   arbolesPatio: [number, number][];
   /** Mesas redondas de la cafetería. */
   mesas: [number, number][];
-  /** Edificio nuevo: puerta de la calle, vestíbulo, pasillo junto al antiguo y escalones al patio. */
+  /** Edificio nuevo: puerta de la calle y vestíbulo (nivel 1), pasillo junto al antiguo y escalones al patio (nivel 4). */
   entradaNuevo: Rect;
   hallNuevo: Rect;
   pasilloNuevo: Rect;
   escalonesNuevo: Rect;
-  /** Escalera en U junto a la fachada: sube del vestíbulo al piso alto. */
+  /** Escalera en U junto a la fachada: sube del vestíbulo, piso a piso, hasta el nivel 4. */
   escaleraNuevo: Rect;
-  /** Piso alto del edificio nuevo (CAMPUS-03). */
+  /** Descansos de la escalera en los niveles 2, 3 y 4 (el del 4 da al pasillo); el del 2 sigue en un pasillo (CAMPUS-03). */
   hallAlto: Rect;
+  hallesNuevo: { rect: Rect; y: number }[];
   pasilloAlto: Rect;
   /** Decorado de la calle que estorba el paso: árboles de la vereda, autos y motos estacionados. */
   arboles: [number, number][];
@@ -172,15 +195,27 @@ export const X_INICIO_ANTIGUO = -10;
 export const X_FIN = 22.5;
 export const ANCHO_PASO = 4;
 
-// Edificio antiguo: alto de la planta baja y de cada piso de arriba (ala de la calle)
-export const PB_ANTIGUO = 3.6;
-export const PISO_ANTIGUO = 3.2;
+// Edificio nuevo (CAMPUS-02): 13 m de frente y 37 de fondo, pegado al antiguo
+export const FRENTE_NUEVO = 13;
+export const FONDO_NUEVO = 37;
+/** Alto de la planta baja y de cada piso de arriba del edificio nuevo. */
+export const PB_NUEVO = 3.6;
+export const PISO_NUEVO = 3.7;
+/** Nivel de piso de cada uno de los 11 niveles del edificio nuevo (el 1 es la calle). */
+export const NIVELES_NUEVO: number[] = Array.from({ length: 11 }, (_, i) => (i === 0 ? 0 : PB_NUEVO + PISO_NUEVO * (i - 1)));
+/** Nivel 4 (+10,90): el pasillo del nuevo y el de las aulas del antiguo. */
+export const NIVEL_4 = NIVELES_NUEVO[3];
+
 /** Alto de cada piso de la fila de aulas y del bloque central (de +10,36 a +13,31 en la realidad). */
 export const PISO_FILA = 3;
-/** Nivel alto (CAMPUS-03): el piso alto del nuevo. */
-export const NIVEL_ALTO = PB_ANTIGUO;
-/** El patio (+12,00) sobre los pasillos (+10,36 y +10,90, que el juego junta en el piso 0). */
-export const NIVEL_PATIO = 1.1;
+// Edificio antiguo, ala de la calle: planta baja y tres pisos (2, 3 y el 4
+// con las buhardillas), que llegan al techo del pasillo de las aulas
+export const PB_ANTIGUO = 3.6;
+export const PISO_ANTIGUO = (NIVEL_4 + PISO_FILA - PB_ANTIGUO) / 3;
+/** Nivel alto (CAMPUS-03): el nivel 2 del nuevo. */
+export const NIVEL_ALTO = NIVELES_NUEVO[1];
+/** El patio (+12,00) sobre los pasillos del nivel 4. */
+export const NIVEL_PATIO = NIVEL_4 + 1.1;
 /** El bloque central (+12,30) queda un escalón bajo sobre el patio. */
 export const NIVEL_BLOQUE = NIVEL_PATIO + 0.3;
 /** Área de esparcimiento y cancha (+15,20): 16 peldaños sobre el patio. */
@@ -198,14 +233,6 @@ export const PELDANOS_NUEVO = 6;
 /** Giro del auditorio y la cancha, paralelos al lindero del oeste. */
 export const GIRO_OESTE = -2.01;
 
-// Edificio nuevo (CAMPUS-02): 13 m de frente y 37 de fondo, pegado al antiguo
-export const FRENTE_NUEVO = 13;
-export const FONDO_NUEVO = 37;
-/** Alto de la planta baja y de cada piso de arriba del edificio nuevo. */
-export const PB_NUEVO = 3.6;
-export const PISO_NUEVO = 3.7;
-/** Nivel de piso de cada uno de los 11 niveles del edificio nuevo (el 1 es la calle). */
-export const NIVELES_NUEVO: number[] = Array.from({ length: 11 }, (_, i) => (i === 0 ? 0 : PB_NUEVO + PISO_NUEVO * (i - 1)));
 /** Losa de la cubierta del edificio nuevo, sobre el último nivel. */
 export const ALTO_NUEVO = 38;
 /** Muro del antiguo del lado del nuevo (la culata), de x0 - 0,6 a x0. */
@@ -215,6 +242,12 @@ export const REVESTIMIENTO = 0.15;
 
 /** Puertas de las dos aulas de la buhardilla, sobre el muro del ala de la calle que da al pasillo. */
 export const X_PUERTAS_BUHARDILLA = [3, -4.2];
+
+/** Cuánto delante de la puerta del ascensor aparece quien llega (la cámara va 1,5 m detrás). */
+const LLEGADA_ASCENSOR = 2.2;
+
+/** Niveles donde para la escalera del nuevo: del 1 al 4. */
+const NIVELES_ESCALERA = NIVELES_NUEVO.slice(0, 4);
 
 /** Distancia del punto de espera a la puerta, en pasillos de 2,5 a 3 m: frente a frente, cada uno queda del lado de su puerta. */
 const FRENTE_PUERTA = 0.9;
@@ -279,7 +312,14 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   const edificioNuevo: Rect = { x0: X_INICIO_ANTIGUO - FRENTE_NUEVO, x1: X_INICIO_ANTIGUO, z0: FACHADA_Z - FONDO_NUEVO, z1: FACHADA_Z };
   const alaCalle: Rect = { x0: X_INICIO_ANTIGUO, x1: xFin, z0: zCorredor, z1: FACHADA_Z };
   const nucleo: Rect = { x0: xFin, x1: 27, z0: zCorredor - 3, z1: -4 };
-  const pasoRecepcion: Rect = { x0: 16.5, x1: 16.5 + ANCHO_PASO, z0: zCorredor - 0.5, z1: FACHADA_Z + 0.5 };
+
+  // Nivel 1 del antiguo: ingreso principal (el del letrero) hasta el pasillo
+  // de conexión, que corre por detrás hasta el hall del ingreso vidriado
+  const pasilloConexion: Rect = { x0: -1, x1: xFin, z0: -7.5, z1: -5 };
+  const pasoRecepcion: Rect = { x0: 16.5, x1: 16.5 + ANCHO_PASO, z0: pasilloConexion.z1, z1: FACHADA_Z + 0.5 };
+  const hallAntiguo: Rect = { x0: -9.4, x1: pasilloConexion.x0, z0: pasilloConexion.z0, z1: FACHADA_Z - 0.3 };
+  const entradaAntigua: Rect = { x0: -8.6, x1: -6.6, z0: hallAntiguo.z1, z1: FACHADA_Z + 0.5 };
+  const conexionNuevo: Rect = { x0: xCulata, x1: hallAntiguo.x0, z0: -7, z1: -5.4 };
 
   // Pasillo de las aulas: de la culata (por donde se pasa al pasillo del
   // nuevo) hasta el núcleo; la fila de aulas, del lado del patio
@@ -319,7 +359,20 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   const pasilloNuevo: Rect = { x0: -13.5, x1: xCulata, z0: bloqueCentral.z1, z1: hallNuevo.z0 };
   const escalonesNuevo: Rect = { x0: xCulata, x1: patio.x0, z0: -24, z1: -22 };
   const hallAlto: Rect = { x0: hallNuevo.x0, x1: xCulata, z0: hallNuevo.z0, z1: escaleraNuevo.z0 };
+  const hallesNuevo = NIVELES_ESCALERA.slice(1).map((y) => ({ rect: hallAlto, y }));
   const pasilloAlto: Rect = { x0: pasilloNuevo.x0, x1: xCulata, z0: -21, z1: hallNuevo.z0 };
+
+  // Ascensor: sus puertas, sobre el muro del núcleo, al final de cada pasillo
+  const parada = (nombre: string, z: number, y: number): ParadaAscensor => ({
+    nombre,
+    x: xFin,
+    z,
+    y,
+    giro: -Math.PI / 2,
+    frente: [xFin - FRENTE_PUERTA, z],
+    llegada: [xFin - LLEGADA_ASCENSOR, z],
+  });
+  const ascensor = [parada('la calle', (pasilloConexion.z0 + pasilloConexion.z1) / 2, 0), parada('el nivel 4', -12, NIVEL_4)];
 
   const fuente = { x: 13, z: -24, radio: 1 };
   const arbolesPatio: [number, number][] = [
@@ -339,34 +392,42 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   const puertas = ubicarPuertas(ordenarAulas(aulas), { corredor, filaAulas, alaCalle, pasilloNuevo, pasilloFondo });
 
   const calle: Rect = { x0: -34, x1: xFin + 10, z0: FACHADA_Z + 0.4, z1: FACHADA_Z + calleAncho - 0.4 };
-  // Escalera en U: primer tramo hacia la fachada, descanso y segundo tramo de vuelta
+  // Escalera en U: en cada piso, primer tramo hacia la fachada, descanso y segundo tramo de vuelta
   const medioU = (escaleraNuevo.x0 + escaleraNuevo.x1) / 2;
   const descansoU = escaleraNuevo.z1 - 1.2;
   const huellaU = (descansoU - escaleraNuevo.z0) / PELDANOS_U;
+  const pisosU = NIVELES_ESCALERA.slice(0, -1).map((y, i) => [y, NIVELES_ESCALERA[i + 1]]);
 
   const superficies: Superficie[] = [
-    // Piso 0: la calle, los pasillos y el nuevo por dentro
-    ...[calle, pasoRecepcion, corredor, pasoOeste, entradaNuevo, hallNuevo, pasilloNuevo].map((r) => plana(r)),
+    // Nivel 1: la calle, los ingresos y pasillos del antiguo y la entrada del nuevo
+    ...[calle, pasoRecepcion, entradaAntigua, hallAntiguo, pasilloConexion, conexionNuevo, entradaNuevo, hallNuevo].map((r) => plana(r)),
+    // Nivel 4: los dos pasillos y el paso al patio
+    ...[corredor, pasoOeste, pasilloNuevo].map((r) => plana(r, NIVEL_4)),
     // Patio
     ...[patio, patioOeste, patioEste, pasilloFondo, descanso].map((r) => plana(r, NIVEL_PATIO)),
-    tramo(escaleraPatio, 'z', escaleraPatio.z1, escaleraPatio.z0, PELDANOS_PATIO, 0, NIVEL_PATIO),
-    tramo(escalonesNuevo, 'x', escalonesNuevo.x0, escalonesNuevo.x1, PELDANOS_NUEVO, 0, NIVEL_PATIO),
+    tramo(escaleraPatio, 'z', escaleraPatio.z1, escaleraPatio.z0, PELDANOS_PATIO, NIVEL_4, NIVEL_PATIO),
+    tramo(escalonesNuevo, 'x', escalonesNuevo.x0, escalonesNuevo.x1, PELDANOS_NUEVO, NIVEL_4, NIVEL_PATIO),
     // Bloque central
     ...[cafeteria, hall, puertaCafeteria, puertaHall].map((r) => plana(r, NIVEL_BLOQUE)),
     // Área de esparcimiento y cancha
     tramo(escaleraEsparcimiento, 'x', escaleraEsparcimiento.x0, escaleraEsparcimiento.x1, PELDANOS_ESPARCIMIENTO, NIVEL_PATIO, NIVEL_ESPARCIMIENTO),
     ...[...esparcimiento, cancha].map((r) => plana(r, NIVEL_ESPARCIMIENTO)),
-    // Escalera en U del nuevo y su piso alto
-    tramo({ ...escaleraNuevo, x1: medioU - 0.05, z1: descansoU }, 'z', escaleraNuevo.z0, descansoU, PELDANOS_U, 0, NIVEL_ALTO / 2),
-    plana({ ...escaleraNuevo, z0: descansoU }, NIVEL_ALTO / 2),
-    tramo({ ...escaleraNuevo, x0: medioU + 0.05, z1: descansoU }, 'z', descansoU, escaleraNuevo.z0, PELDANOS_U, NIVEL_ALTO / 2, NIVEL_ALTO),
-    ...[hallAlto, pasilloAlto].map((r) => plana(r, NIVEL_ALTO)),
+    // Escalera en U del nuevo, piso a piso, con el descanso de cada nivel y el pasillo del nivel 2
+    ...pisosU.flatMap(([y0, y1]) => {
+      const medio = (y0 + y1) / 2;
+      return [
+        tramo({ ...escaleraNuevo, x1: medioU - 0.05, z1: descansoU }, 'z', escaleraNuevo.z0, descansoU, PELDANOS_U, y0, medio),
+        plana({ ...escaleraNuevo, z0: descansoU }, medio),
+        tramo({ ...escaleraNuevo, x0: medioU + 0.05, z1: descansoU }, 'z', descansoU, escaleraNuevo.z0, PELDANOS_U, medio, y1),
+      ];
+    }),
+    ...hallesNuevo.map((h) => plana(h.rect, h.y)),
+    plana(pasilloAlto, NIVEL_ALTO),
   ];
 
   // Árboles al borde de la vereda, sin tapar las dos entradas
   const zArbol = FACHADA_Z + ACERA - 0.6;
-  const libre = (x: number) =>
-    (x < entradaNuevo.x0 - 1.5 || x > entradaNuevo.x1 + 1.5) && (x < pasoRecepcion.x0 - 1.5 || x > pasoRecepcion.x1 + 1.5);
+  const libre = (x: number) => [entradaNuevo, entradaAntigua, pasoRecepcion].every((r) => x < r.x0 - 1.5 || x > r.x1 + 1.5);
   const arboles: [number, number][] = [];
   for (let x = -30; x <= xFin + 8; x += 9) if (libre(x)) arboles.push([x, zArbol]);
   // Autos y motos junto al cordón, como en la foto del frontis
@@ -379,8 +440,8 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
   for (let x = 12.5; x <= 15.2; x += 0.9) motos.push([x, FACHADA_Z + ACERA + 0.8]);
 
   const bloqueado: Bloqueo[] = [
-    // Muro entre los dos tramos de la escalera en U
-    { x0: medioU - 0.06, x1: medioU + 0.06, z0: escaleraNuevo.z0 + huellaU, z1: descansoU, y0: 0, y1: NIVEL_ALTO },
+    // Muro entre los dos tramos de la escalera en U, en cada piso
+    ...pisosU.map(([y0, y1]) => ({ x0: medioU - 0.06, x1: medioU + 0.06, z0: escaleraNuevo.z0 + huellaU, z1: descansoU, y0, y1 })),
     // Fuente, maceteros del patio y mesas de la cafetería
     obstaculo(fuente.x, fuente.z, fuente.radio, NIVEL_PATIO, NIVEL_PATIO + 0.6),
     ...arbolesPatio.map(([x, z]) => obstaculo(x, z, 0.6, NIVEL_PATIO, NIVEL_PATIO + 4)),
@@ -399,6 +460,11 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
     alaCalle,
     nucleo,
     pasoRecepcion,
+    entradaAntigua,
+    hallAntiguo,
+    pasilloConexion,
+    conexionNuevo,
+    ascensor,
     corredor,
     filaAulas,
     pasoOeste,
@@ -426,6 +492,7 @@ export function calcularPlanoCampus(aulas: AulaPlano[]): PlanoCampus {
     escalonesNuevo,
     escaleraNuevo,
     hallAlto,
+    hallesNuevo,
     pasilloAlto,
     arboles,
     autos,
@@ -452,11 +519,11 @@ function ubicarPuertas(
 ): PuertaAula[] {
   const lugares: Lugar[] = [
     // Las cinco aulas de la fila, con la puerta al corredor
-    ...[18, 12.2, 6.6, 1, -4.4].map((x): Lugar => ({ x, z: r.filaAulas.z1, y: 0, giro: 0, hacia: [0, 1] })),
+    ...[18, 12.2, 6.6, 1, -4.4].map((x): Lugar => ({ x, z: r.filaAulas.z1, y: NIVEL_4, giro: 0, hacia: [0, 1] })),
     // Las dos aulas de la buhardilla del ala de la calle, frente a la fila
-    ...X_PUERTAS_BUHARDILLA.map((x): Lugar => ({ x, z: r.alaCalle.z0, y: 0, giro: Math.PI, hacia: [0, -1] })),
+    ...X_PUERTAS_BUHARDILLA.map((x): Lugar => ({ x, z: r.alaCalle.z0, y: NIVEL_4, giro: Math.PI, hacia: [0, -1] })),
     // Aulas del nuevo sobre su pasillo (nivel 4)
-    ...[-10, -13, -16.4, -21.1].map((z): Lugar => ({ x: r.pasilloNuevo.x0, z, y: 0, giro: Math.PI / 2, hacia: [1, 0] })),
+    ...[-10, -13, -16.4, -21.1].map((z): Lugar => ({ x: r.pasilloNuevo.x0, z, y: NIVEL_4, giro: Math.PI / 2, hacia: [1, 0] })),
   ];
   // Genéricas: repartidas a lo largo del muro de contención, lo más separadas que se pueda
   const sobran = aulas.length - lugares.length;
@@ -558,4 +625,15 @@ export function puertaCercana(plano: PlanoCampus, x: number, z: number, maxima =
     }
   }
   return mejor;
+}
+
+/** Parada del ascensor frente a la que está el avatar (a menos de `maxima`, en su piso), o null. */
+export function paradaCercana(plano: PlanoCampus, x: number, z: number, y: number, maxima = 1.6): ParadaAscensor | null {
+  return plano.ascensor.find((p) => Math.abs(y - p.y) <= ESCALON && Math.hypot(x - p.frente[0], z - p.frente[1]) < maxima) ?? null;
+}
+
+/** Adónde lleva el ascensor desde una parada: a la siguiente (con dos, a la otra). */
+export function siguienteParada(plano: PlanoCampus, desde: ParadaAscensor): ParadaAscensor {
+  const i = plano.ascensor.indexOf(desde);
+  return plano.ascensor[(i + 1) % plano.ascensor.length];
 }
