@@ -7,9 +7,9 @@ import { AudioClient } from './AudioClient.js';
 
 // Componentes 3D unificados
 import { Campus, type AulaCampus } from './mundo3d/Campus.js';
-import { alturaEn, calcularPlanoCampus, puertaCercana, type PlanoCampus } from './mundo3d/planoCampus.js';
+import { alturaEn, calcularPlanoCampus, paradaCercana, puertaCercana, siguienteParada, type PlanoCampus } from './mundo3d/planoCampus.js';
 import { CameraRig, type AvatarEstadoRef } from './mundo3d/CameraRig.js';
-import { AvatarModel, type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
+import { AvatarModel, type PersonalizacionAvatar, type Teletransporte, PERSONALIZACION_POR_DEFECTO } from './mundo3d/AvatarModel.js';
 import { CustomizadorAvatar } from './mundo3d/CustomizadorAvatar.js';
 import { PupitresInstanciados, CajasInstanciadas, EscritorioProfesor, Sofa, Estanteria } from './mundo3d/Mobiliario.js';
 import { Letrero } from './mundo3d/Letrero.js';
@@ -67,6 +67,7 @@ const LocalPlayerController: React.FC<{
   spawnPosicion?: SpawnPosicion | null;
   estaSentado: boolean;
   posicionSentadoTarget: AsientoInteractive | null;
+  teletransporte: Teletransporte | null;
   planoCampus: PlanoCampus;
   onMove: (pos: [number, number, number], rot: [number, number, number]) => void;
 }> = ({
@@ -80,6 +81,7 @@ const LocalPlayerController: React.FC<{
   spawnPosicion,
   estaSentado,
   posicionSentadoTarget,
+  teletransporte,
   planoCampus,
   onMove,
 }) => {
@@ -137,6 +139,7 @@ const LocalPlayerController: React.FC<{
       isAula={isAula}
       estaSentado={estaSentado}
       posicionSentado={posicionSentadoTarget}
+      teletransporte={teletransporte}
       planoCampus={isAula ? undefined : planoCampus}
       onUpdatePosicion={handleUpdatePosicion}
       nivelVoz={audioClient ? () => audioClient.nivelLocal() : undefined}
@@ -538,6 +541,8 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
   const [estaSentado, setEstaSentado] = useState(false);
   const [asientoCercano, setAsientoCercano] = useState<AsientoInteractive | null>(null);
   const [posicionSentadoTarget, setPosicionSentadoTarget] = useState<AsientoInteractive | null>(null);
+  // Viaje en ascensor (CAMPUS-05): adónde reaparece el avatar
+  const [teletransporte, setTeletransporte] = useState<Teletransporte | null>(null);
 
   const ASIENTOS_AULA = React.useMemo(() => {
     const asientos: AsientoInteractive[] = [];
@@ -632,30 +637,46 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
       return;
     }
 
-    if (isAula || !onInteractuarAula || aulas.length === 0) return;
-
+    if (isAula) return;
     const pos = avatarEstadoRef.current.posicion;
     if (!pos) return;
 
+    // Ascensor: de una parada a la otra, mirando hacia afuera de la puerta
+    const parada = paradaCercana(plano, pos.x, pos.z, pos.y);
+    if (parada) {
+      const destino = siguienteParada(plano, parada);
+      const [x, z] = destino.llegada;
+      avatarEstadoRef.current.posicion.set(x, destino.y, z);
+      avatarEstadoRef.current.angulo = destino.giro;
+      avatarEstadoRef.current.solicitarSnapCamara = true;
+      setTeletransporte({ x, y: destino.y, z, angulo: destino.giro, vez: performance.now() });
+      return;
+    }
+
+    if (!onInteractuarAula || aulas.length === 0) return;
     const puerta = puertaCercana(plano, pos.x, pos.z, undefined, pos.y);
     const aula = puerta && aulas.find((a) => String(a.id) === puerta.id);
     if (aula) handleInteractuarAula(aula);
   }, [isAula, estaSentado, asientoCercano, aulas, plano, onInteractuarAula, handleInteractuarAula]);
 
-  // Puerta frente a la que está parado el avatar: ahí se muestra el aviso de la tecla E
+  // Puerta (de aula o de ascensor) frente a la que está parado el avatar: ahí se muestra el aviso de la tecla E
   const [puertaFrente, setPuertaFrente] = useState<string | null>(null);
+  const [paradaFrente, setParadaFrente] = useState<number | null>(null);
   useEffect(() => {
     if (isAula) {
       setPuertaFrente(null);
+      setParadaFrente(null);
       return;
     }
     const intervalo = setInterval(() => {
       const pos = avatarEstadoRef.current.posicion;
       setPuertaFrente(puertaCercana(planoRef.current, pos.x, pos.z, undefined, pos.y)?.id ?? null);
+      setParadaFrente(paradaCercana(planoRef.current, pos.x, pos.z, pos.y)?.y ?? null);
     }, 200);
     return () => clearInterval(intervalo);
   }, [isAula]);
   const puertaAviso = puertaFrente ? plano.puertas.find((p) => p.id === puertaFrente) : undefined;
+  const paradaAviso = paradaFrente !== null ? plano.ascensor.find((p) => p.y === paradaFrente) : undefined;
 
   useEffect(() => {
     const TECLAS_MOVIMIENTO = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
@@ -726,13 +747,27 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
           {puertaAviso && (
             <Letrero
               texto="Presiona [E] o toca 🚪 para entrar"
-              position={[puertaAviso.frente[0], 3.6, puertaAviso.frente[1]]}
+              // Bajo la losa del pasillo de las aulas (3 m sobre su piso)
+              position={[puertaAviso.frente[0], puertaAviso.y + 2.5, puertaAviso.frente[1]]}
               scale={[3.4, 0.62, 1]}
               ancho={560}
               alto={100}
               fondo="#0f172a"
               color="#7dd3fc"
               fuente="bold 32px sans-serif"
+            />
+          )}
+
+          {paradaAviso && (
+            <Letrero
+              texto={`[E] o 🚪: ascensor a ${siguienteParada(plano, paradaAviso).nombre}`}
+              position={[paradaAviso.frente[0], paradaAviso.y + 2.5, paradaAviso.frente[1]]}
+              scale={[4.2, 0.6, 1]}
+              ancho={720}
+              alto={100}
+              fondo="#0f172a"
+              color="#7dd3fc"
+              fuente="bold 30px sans-serif"
             />
           )}
 
@@ -760,6 +795,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
             spawnPosicion={spawnEfectivo}
             estaSentado={estaSentado}
             posicionSentadoTarget={posicionSentadoTarget}
+            teletransporte={teletransporte}
             planoCampus={plano}
             onMove={(pos, rot) => onPositionChange?.(pos, rot)}
           />
@@ -808,7 +844,7 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
             onPointerDown={(e) => { e.preventDefault(); interactuar(); }}
             onContextMenu={(e) => e.preventDefault()}
             aria-label={
-              estaSentado ? 'Levantarse' : isAula && asientoCercano ? 'Sentarse' : 'Ingresar al aula cercana'
+              estaSentado ? 'Levantarse' : isAula && asientoCercano ? 'Sentarse' : paradaAviso ? 'Usar el ascensor' : 'Ingresar al aula cercana'
             }
             style={{
               // El boton "Personalizar avatar" vive en bottom:20px/right:20px

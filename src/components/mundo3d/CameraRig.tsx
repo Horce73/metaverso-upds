@@ -5,6 +5,12 @@ import { actualizarRecorte } from './recorteVista.js';
 
 const LERP_CAMARA = 5;
 const MARGEN_PARED = 0.35;
+// Mirar hacia arriba (CAMPUS-05): con el ángulo vertical bajo cero la cámara
+// baja hasta casi el piso y la vista sube por las fachadas, para ver los
+// pisos altos desde la vereda. Cuántos metros sube la mira por radián.
+const PITCH_MINIMO = -0.7;
+const MIRAR_ARRIBA = 12;
+const ALTO_MINIMO_CAMARA = 0.3;
 
 export interface AvatarEstadoRef {
   posicion: THREE.Vector3;
@@ -56,7 +62,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
 
       const sensibilidad = 0.005;
       yawRef.current -= dx * sensibilidad;
-      pitchRef.current = Math.max(-0.15, Math.min(1.1, pitchRef.current + dy * sensibilidad));
+      pitchRef.current = Math.max(PITCH_MINIMO, Math.min(1.1, pitchRef.current + dy * sensibilidad));
     };
 
     const onPointerUp = () => {
@@ -140,13 +146,13 @@ export const CameraRig: React.FC<CameraRigProps> = ({ avatarEstadoRef }) => {
 
     posicionDeseada.current.set(
       posicion.x - dirX * distancia,
-      posicion.y + 1.4 + dirY * distancia,
+      Math.max(posicion.y + ALTO_MINIMO_CAMARA, posicion.y + 1.4 + dirY * distancia),
       posicion.z - dirZ * distancia
     );
 
     camera.position.lerp(posicionDeseada.current, Math.min(1, delta * LERP_CAMARA));
 
-    puntoMira.current.set(posicion.x, posicion.y + 1.4, posicion.z);
+    puntoMira.current.set(posicion.x, posicion.y + 1.4 + Math.max(0, -pitch) * MIRAR_ARRIBA, posicion.z);
     camera.lookAt(puntoMira.current);
     actualizarRecorte(posicion, camera.position, delta);
   });

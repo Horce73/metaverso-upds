@@ -1,7 +1,7 @@
 import React from 'react';
 import { Bloque, Piso, TechoDosAguas, type Cara } from './piezas.js';
 import { textura } from './texturasCampus.js';
-import { NIVEL_BLOQUE, NIVEL_ESPARCIMIENTO, NIVEL_PATIO, type PlanoCampus, type Rect } from './planoCampus.js';
+import { NIVEL_4, NIVEL_BLOQUE, NIVEL_ESPARCIMIENTO, NIVEL_PATIO, type PlanoCampus, type Rect } from './planoCampus.js';
 
 const X_INICIO_CALLE = -60;
 
@@ -141,6 +141,7 @@ const MACETERO: Cara = { color: '#8a4b2d' };
 const MADERA_MESA: Cara = { color: '#8b6a4a', rugosidad: 0.6 };
 const SILLA: Cara = { color: '#3a3f46' };
 const ALTO_MALLA = 2.6;
+const TIERRA: Cara = { color: '#8a7357' };
 
 /** Cancha en el techo del auditorio, girada con él: piso, muros del lindero y de las puntas, y aros. */
 const Cancha: React.FC<{ c: Rect }> = ({ c }) => {
@@ -224,6 +225,9 @@ export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
     <group>
       {/* Terreno, calzada, veredas y línea central */}
       <Piso x={[-260, 260]} z={[-260, 260]} y={-0.01} cara={{ textura: 'pasto', modulo: [6, 6] }} />
+      {/* El cerro: detrás del ala de la calle el terreno sube hasta el nivel 4,
+          donde está el patio del antiguo (un poco por debajo, para no titilar con sus pisos) */}
+      <Bloque x={[-80, 90]} y={[0, NIVEL_4 - 0.02]} z={[-160, plano.alaCalle.z0]} todas={TIERRA} arriba={{ textura: 'pasto', modulo: [6, 6] }} sombra={false} />
       <Piso x={[xIni, xFinCalle]} z={[zCalle0, zCalle1]} y={0.01} cara={{ textura: 'asfalto', modulo: [4, 4] }} />
       <Piso x={[xIni, xFinCalle]} z={[0, zCalle0]} y={0.02} cara={{ textura: 'vereda', modulo: [2, 2] }} />
       <Piso x={[xIni, xFinCalle]} z={[zCalle1, calleAncho]} y={0.02} cara={{ textura: 'vereda', modulo: [2, 2] }} />
