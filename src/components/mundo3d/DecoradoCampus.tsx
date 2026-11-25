@@ -1,14 +1,16 @@
 import React from 'react';
-import { Bloque, Piso, TechoDosAguas, Pasamanos, type Cara } from './piezas.js';
+import { Bloque, Piso, TechoDosAguas, type Cara } from './piezas.js';
 import { textura } from './texturasCampus.js';
-import { NIVEL_ALTO, PELDANOS_CANCHA, type PlanoCampus, type Rect } from './planoCampus.js';
+import { NIVEL_BLOQUE, NIVEL_ESPARCIMIENTO, NIVEL_PATIO, type PlanoCampus, type Rect } from './planoCampus.js';
 
 const X_INICIO_CALLE = -60;
 
 // Lo que rodea a la universidad (CAMPUS-01): la calle con sus veredas,
 // árboles, faroles y vehículos estacionados; las casas coloniales de
-// enfrente y de los costados; la cancha del fondo y los cerros de Sucre a lo
-// lejos. Estilo low-poly: pocas caras y sombreado plano.
+// enfrente y de los costados y los cerros de Sucre a lo lejos. Y lo que se
+// mueve poco dentro (CAMPUS-04): la fuente y los árboles del patio, las mesas
+// de la cafetería y la cancha sobre el auditorio. Estilo low-poly: pocas
+// caras y sombreado plano.
 
 const Arbol: React.FC<{ x: number; z: number; escala?: number }> = ({ x, z, escala = 1 }) => (
   <group position={[x, 0, z]} scale={escala}>
@@ -133,29 +135,72 @@ const Aro: React.FC<{ x: number; z: number; sentido: 1 | -1 }> = ({ x, z, sentid
   </group>
 );
 
-// Los muros de la cancha comparten color: un material (y una llamada de dibujo) menos
+// Los muros de la cancha comparten color (también con la fuente y los rellenos del patio): un material menos
 const MURO_CANCHA: Cara = { color: '#d8d4cb' };
-const BARANDA_CANCHA: Cara = { color: '#3a3f46', metalicidad: 0.6, rugosidad: 0.4 };
+const MACETERO: Cara = { color: '#8a4b2d' };
+const MADERA_MESA: Cara = { color: '#8b6a4a', rugosidad: 0.6 };
+const SILLA: Cara = { color: '#3a3f46' };
+const ALTO_MALLA = 2.6;
 
-// Gradas del ala del fondo a la cancha: suben hacia el fondo (-z), con un
-// pasamanos a cada lado. Mismos colores que la escalera del patio
-const GradasCancha: React.FC<{ g: Rect }> = ({ g }) => {
-  const huella = (g.z1 - g.z0) / PELDANOS_CANCHA;
-  const contra = NIVEL_ALTO / PELDANOS_CANCHA;
+/** Cancha en el techo del auditorio, girada con él: piso, muros del lindero y de las puntas, y aros. */
+const Cancha: React.FC<{ c: Rect }> = ({ c }) => {
+  const l = (c.x1 - c.x0) / 2;
+  const a = (c.z1 - c.z0) / 2;
+  const y = NIVEL_ESPARCIMIENTO;
   return (
-    <group>
-      {Array.from({ length: PELDANOS_CANCHA }, (_, i) => (
-        <Bloque key={i} x={[g.x0, g.x1]} y={[0, (i + 1) * contra]} z={[g.z1 - (i + 1) * huella, g.z1 - i * huella]} todas={{ color: '#c4c7cb' }} arriba={{ color: '#e8ebee' }} pared />
-      ))}
-      {[g.x0 + 0.05, g.x1 - 0.05].map((x) => (
-        <Pasamanos key={x} desde={[x, contra, g.z1 - huella / 2]} hasta={[x, NIVEL_ALTO, g.z0]} cara={BARANDA_CANCHA} />
-      ))}
+    <group position={[(c.x0 + c.x1) / 2, 0, (c.z0 + c.z1) / 2]} rotation={[0, c.giro ?? 0, 0]}>
+      <Piso x={[-l, l]} z={[-a, a]} y={y + 0.02} cara={{ mapa: textura('cancha') }} />
+      {/* Del lado del lindero (z propio negativo) y en las dos puntas; hacia el área de esparcimiento queda abierta */}
+      <Bloque x={[-l, l]} y={[y, y + ALTO_MALLA]} z={[-a - 0.3, -a]} todas={MURO_CANCHA} pared />
+      <Bloque x={[-l - 0.3, -l]} y={[y, y + ALTO_MALLA]} z={[-a - 0.3, a]} todas={MURO_CANCHA} pared />
+      <Bloque x={[l, l + 0.3]} y={[y, y + ALTO_MALLA]} z={[-a - 0.3, a]} todas={MURO_CANCHA} pared />
+      <group position={[0, y, 0]}>
+        <Aro x={-l + 1.2} z={0} sentido={1} />
+        <Aro x={l - 1.2} z={0} sentido={-1} />
+      </group>
     </group>
   );
 };
 
+/** Fuente de agua del patio: taza baja de piedra con el agua y un pilar al centro. */
+const Fuente: React.FC<{ x: number; z: number; radio: number }> = ({ x, z, radio }) => (
+  <group position={[x, NIVEL_PATIO, z]}>
+    <mesh position={[0, 0.27, 0]} castShadow receiveShadow>
+      <cylinderGeometry args={[radio, radio + 0.05, 0.55, 20]} />
+      <meshStandardMaterial color="#d8d4cb" roughness={0.85} />
+    </mesh>
+    <mesh position={[0, 0.5, 0]}>
+      <cylinderGeometry args={[radio - 0.12, radio - 0.12, 0.06, 20]} />
+      <meshStandardMaterial color="#4f9cc0" roughness={0.15} metalness={0.2} />
+    </mesh>
+    <mesh position={[0, 0.85, 0]} castShadow>
+      <cylinderGeometry args={[0.12, 0.16, 0.8, 8]} />
+      <meshStandardMaterial color="#d8d4cb" roughness={0.85} />
+    </mesh>
+    <mesh position={[0, 1.25, 0]} castShadow>
+      <cylinderGeometry args={[0.4, 0.2, 0.15, 12]} />
+      <meshStandardMaterial color="#d8d4cb" roughness={0.85} />
+    </mesh>
+  </group>
+);
+
+/** Mesa redonda de la cafetería con cuatro sillas. */
+const Mesa: React.FC<{ x: number; z: number }> = ({ x, z }) => (
+  <group position={[x, NIVEL_BLOQUE, z]}>
+    <mesh position={[0, 0.74, 0]} castShadow>
+      <cylinderGeometry args={[0.5, 0.5, 0.04, 16]} />
+      <meshStandardMaterial color={MADERA_MESA.color} roughness={MADERA_MESA.rugosidad} />
+    </mesh>
+    <Bloque x={[-0.04, 0.04]} y={[0, 0.72]} z={[-0.04, 0.04]} todas={SILLA} sombra={false} />
+    {[0, 1, 2, 3].map((i) => {
+      const [sx, sz] = [Math.cos((i * Math.PI) / 2) * 0.75, Math.sin((i * Math.PI) / 2) * 0.75];
+      return <Bloque key={i} x={[sx - 0.2, sx + 0.2]} y={[0.42, 0.46]} z={[sz - 0.2, sz + 0.2]} todas={SILLA} />;
+    })}
+  </group>
+);
+
 export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
-  const { xFin, calleAncho, cancha, gradasCancha, arboles, autos, motos } = plano;
+  const { xFin, calleAncho, cancha, arboles, autos, motos, fuente, arbolesPatio, mesas } = plano;
   const xIni = X_INICIO_CALLE;
   const xFinCalle = xFin + 50;
   const zCalle0 = 3;
@@ -209,27 +254,22 @@ export const DecoradoCampus: React.FC<{ plano: PlanoCampus }> = ({ plano }) => {
         <Casa key={c.x[0]} x={c.x} z={[calleAncho + 0.2, calleAncho + 10]} alto={c.alto} color={c.color} frenteHacia={-1} />
       ))}
       <Casa x={[-38, -24.2]} z={[-14, 0]} alto={11} frenteHacia={1} />
-      <Casa x={[xFin + 0.2, xFin + 14]} z={[-16, 0]} alto={9} color="#f3d9c4" frenteHacia={1} />
+      {/* Del otro lado del lindero del oeste, que se va abriendo hacia el fondo */}
+      <Casa x={[xFin + 0.5, xFin + 14]} z={[-4, 0]} alto={9} color="#f3d9c4" frenteHacia={1} />
 
-      {/* Cancha del fondo, elevada al nivel de las galerías (CAMPUS-03): muro de
-          contención, piso, muros a los costados y al fondo, muro bajo hacia las
-          gradas y aros */}
-      <Bloque x={[cancha.x0 - 0.4, cancha.x1 + 0.4]} y={[0, NIVEL_ALTO]} z={[cancha.z0 - 0.4, cancha.z1]} todas={MURO_CANCHA} pared />
-      <Piso x={[cancha.x0, cancha.x1]} z={[cancha.z0, cancha.z1]} y={NIVEL_ALTO + 0.02} cara={{ mapa: textura('cancha') }} />
-      <Bloque x={[cancha.x0 - 0.4, cancha.x0]} y={[NIVEL_ALTO, NIVEL_ALTO + 2.6]} z={[cancha.z0 - 0.4, cancha.z1]} todas={MURO_CANCHA} pared />
-      <Bloque x={[cancha.x1, cancha.x1 + 0.4]} y={[NIVEL_ALTO, NIVEL_ALTO + 2.6]} z={[cancha.z0 - 0.4, cancha.z1]} todas={MURO_CANCHA} pared />
-      <Bloque x={[cancha.x0 - 0.4, cancha.x1 + 0.4]} y={[NIVEL_ALTO, NIVEL_ALTO + 2.6]} z={[cancha.z0 - 0.4, cancha.z0]} todas={MURO_CANCHA} pared />
-      {[
-        [cancha.x0, gradasCancha.x0],
-        [gradasCancha.x1, cancha.x1],
-      ].map(([a, b]) => (
-        <Bloque key={a} x={[a, b]} y={[NIVEL_ALTO, NIVEL_ALTO + 1]} z={[cancha.z1 - 0.15, cancha.z1]} todas={MURO_CANCHA} pared />
+      <Cancha c={cancha} />
+      <Fuente {...fuente} />
+      {arbolesPatio.map(([x, z]) => (
+        <group key={`${x}:${z}`}>
+          <Bloque x={[x - 0.6, x + 0.6]} y={[NIVEL_PATIO, NIVEL_PATIO + 0.5]} z={[z - 0.6, z + 0.6]} todas={MACETERO} pared />
+          <group position={[0, NIVEL_PATIO + 0.5, 0]}>
+            <Arbol x={x} z={z} escala={0.75} />
+          </group>
+        </group>
       ))}
-      <group position={[0, NIVEL_ALTO, 0]}>
-        <Aro x={cancha.x0 + 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={1} />
-        <Aro x={cancha.x1 - 1.4} z={(cancha.z0 + cancha.z1) / 2} sentido={-1} />
-      </group>
-      <GradasCancha g={gradasCancha} />
+      {mesas.map(([x, z]) => (
+        <Mesa key={`${x}:${z}`} x={x} z={z} />
+      ))}
 
       <Cerros />
     </group>
