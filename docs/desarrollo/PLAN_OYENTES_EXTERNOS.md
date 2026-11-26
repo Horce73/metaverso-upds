@@ -270,7 +270,7 @@ La primera versión quedó integrada con estos valores y límites:
 - El oyente entra sin cuenta universitaria, solo recibe su aula autorizada, no genera asistencia y usa audio de recepción sin solicitar micrófono.
 - Los permisos de escritura se validan en API y Socket.IO; el cliente oculta los controles que no corresponden.
 
-Archivos principales de la entrega: `server/src/oyentes.ts`, `server/migrations/0010_acceso_oyentes.up.sql`, `server/src/socketHandler.ts`, `src/components/AccesoOyente.tsx` y `src/components/OyentesSesion.tsx`.
+Archivos principales de la entrega: `server/src/oyentes.ts`, `server/migrations/0011_acceso_oyentes.up.sql`, `server/src/socketHandler.ts`, `src/components/AccesoOyente.tsx` y `src/components/OyentesSesion.tsx`.
 
 La migración `0010_acceso_oyentes` ya se aplicó. La compilación del frontend, el typecheck del backend y los casos nuevos de oyentes pasan. La suite integrada completa registró 153 de 155 casos aprobados; los dos fallos restantes son de pruebas existentes de materiales y asistencia, fuera de esta funcionalidad. Falta validar el flujo visual en navegador.
 - Grabación especial de oyentes o almacenamiento de audio.

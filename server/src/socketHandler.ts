@@ -289,9 +289,11 @@ export function setupSockets(io: Server) {
       }
       // SEC-08: al aula entra el docente o el admin, el estudiante que
       // confirmó su inscripción con el código (ACCESO-02), o quien tiene un
-      // pase (código del curso o solicitud aprobada por el docente).
+      // pase (código del curso o solicitud aprobada por el docente). El oyente
+      // ya se validó arriba con su enlace y tiene su cupo reservado.
       if (
         espacioTipo === 'aula' &&
+        !identidad.esOyente &&
         !esDocenteOAdmin(identidad.roles) &&
         !pases.tiene(identidad.userId, nuevoEspacioId) &&
         !(await estaInscrito(identidad.userId, nuevoEspacioId))
