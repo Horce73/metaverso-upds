@@ -180,7 +180,7 @@ RF-19 en adelante salen del [PRD de la mejora](docs/producto/PRD.md) y se implem
 
 | Código | Requerimiento | Estado |
 |---|---|---|
-| **RF-19** | El usuario dispara gestos (saludar, aplaudir, asentir, negar, señalar) desde una rueda o atajos, y todos en el espacio los ven. | ⏳ Propuesto |
+| **RF-19** | El usuario dispara gestos (saludar, aplaudir, asentir, negar, señalar) desde una rueda o atajos, y todos en el espacio los ven. | 🟡 Parcial: gestos difundidos a los cercanos y atajos `1`–`5` (GESTO-01); faltan la rueda, el botón y el táctil (GESTO-02) |
 | **RF-20** | Reacciones efímeras sobre el avatar (👍 ❤️ 😂 👏 ❓) que flotan unos segundos, también para oyentes sin voz. | ⏳ Propuesto |
 | **RF-21** | El avatar mira a quien habla o al objetivo señalado, sin costo de red extra relevante. | ⏳ Propuesto |
 | **RF-22** | Interacción con objetos además de sentarse (pizarra, puertas, letreros) con la tecla `E` unificada. | ⏳ Propuesto |
