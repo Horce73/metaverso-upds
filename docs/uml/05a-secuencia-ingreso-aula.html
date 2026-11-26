@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Secuencia — conexión del socket e ingreso a un aula</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Diagrama de secuencia · UML 2.x</p>
+  <h1>Secuencia — conexión del socket e ingreso a un aula</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="secuencia-ingreso-aula" viewBox="0 0 720 984" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="secuencia-ingreso-aula-titulo secuencia-ingreso-aula-desc">
+    <title id="secuencia-ingreso-aula-titulo">Secuencia — conexión del socket e ingreso a un aula</title>
+    <desc id="secuencia-ingreso-aula-desc">Handshake de Socket.io con el JWT, canje opcional del código del curso por REST y evento join_space con la validación de acceso en el servidor.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="720" height="984"/>
+
+
+<g class="contenedor">
+  <rect class="marco" x="84" y="190" width="464" height="88"/>
+  <path class="marco" d="M 84 208 H 116 L 124 200 V 190"/>
+  <text class="operador" x="90" y="203">alt</text>
+  <line class="divisor" x1="84" y1="238" x2="548" y2="238"/>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="92" y="396" width="574" height="158"/>
+  <path class="marco" d="M 92 414 H 124 L 132 406 V 396"/>
+  <text class="operador" x="98" y="409">alt</text>
+  <line class="divisor" x1="92" y1="466" x2="666" y2="466"/>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="84" y="308" width="590" height="258"/>
+  <path class="marco" d="M 84 326 H 116 L 124 318 V 308"/>
+  <text class="operador" x="90" y="321">opt</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="468" y="682" width="206" height="70"/>
+  <path class="marco" d="M 468 700 H 500 L 508 692 V 682"/>
+  <text class="operador" x="474" y="695">opt</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="84" y="760" width="590" height="186"/>
+  <path class="marco" d="M 84 778 H 116 L 124 770 V 760"/>
+  <text class="operador" x="90" y="773">alt</text>
+  <line class="divisor" x1="84" y1="808" x2="674" y2="808"/>
+</g>
+<line class="linea-vida" x1="650" y1="48" x2="650" y2="966"/>
+<line class="linea-vida" x1="524" y1="60" x2="524" y2="966"/>
+<line class="linea-vida" x1="392" y1="60" x2="392" y2="966"/>
+<line class="linea-vida" x1="252" y1="60" x2="252" y2="966"/>
+<line class="linea-vida" x1="140" y1="60" x2="140" y2="966"/>
+<line class="linea-vida" x1="48" y1="92" x2="48" y2="966"/>
+<path class="linea mensaje" d="M 140 116 H 519" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 529 132 H 551 V 146 H 530" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 529 164 H 645" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 645 186 H 529" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="645" y="164" width="10" height="22"/>
+<path class="linea mensaje" d="M 519 230 H 140" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 519 270 H 140" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="519" y="116" width="10" height="172"/>
+<path class="linea mensaje" d="M 48 304 H 135" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 145 348 H 387" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 397 370 H 645" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 645 392 H 397" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="645" y="370" width="10" height="22"/>
+<path class="linea mensaje" d="M 397 436 H 650" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 387 458 H 145" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 397 498 H 650" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 397 514 H 419 V 528 H 398" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 387 546 H 145" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="387" y="348" width="10" height="198"/>
+<path class="linea mensaje" d="M 145 634 H 519" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 529 656 H 645" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 645 678 H 529" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="645" y="656" width="10" height="22"/>
+<path class="linea mensaje" d="M 529 722 H 645" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 645 744 H 529" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="645" y="722" width="10" height="22"/>
+<path class="linea mensaje" d="M 519 800 H 145" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 529 834 H 551 V 848 H 530" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 519 880 H 145" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 519 902 H 252" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 529 938 H 650" marker-end="url(#flecha-llena)"/>
+<rect class="activacion" x="519" y="634" width="10" height="322"/>
+<rect class="activacion" x="135" y="304" width="10" height="638"/>
+<g class="etiqueta">
+  <rect class="mascara" x="225.2" y="99" width="208.6" height="14"/>
+  <text class="rotulo" x="329.5" y="110" text-anchor="middle">io({ auth: { token } }): handshake</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="553" y="132" width="149.6" height="14"/>
+  <text class="rotulo" x="557" y="143" text-anchor="start">resolverIdentidad(token)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="497.45" y="147" width="179.1" height="14"/>
+  <text class="rotulo" x="587" y="158" text-anchor="middle">SELECT usuario activo y roles</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="532.85" y="169" width="108.3" height="14"/>
+  <text class="rotulo" x="587" y="180" text-anchor="middle">identidad | vacío</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="237" y="213" width="185" height="14"/>
+  <text class="rotulo" x="329.5" y="224" text-anchor="middle">connect_error('NO_AUTORIZADO')</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="304.85" y="253" width="49.3" height="14"/>
+  <text class="rotulo" x="329.5" y="264" text-anchor="middle">connect</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="128" y="192" width="236" height="14"/>
+  <text class="mult" x="132" y="203" text-anchor="start">[token inválido, inactivo o sin roles]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="88" y="240" width="116" height="14"/>
+  <text class="mult" x="92" y="251" text-anchor="start">[identidad válida]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="46.2" y="287" width="90.6" height="14"/>
+  <text class="rotulo" x="91.5" y="298" text-anchor="middle">entrar al aula</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="149.9" y="331" width="232.2" height="14"/>
+  <text class="rotulo" x="266" y="342" text-anchor="middle">POST /api/espacios/:id/acceso {codigo}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="422.6" y="353" width="196.8" height="14"/>
+  <text class="rotulo" x="521" y="364" text-anchor="middle">SELECT código del curso del aula</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="499.3" y="375" width="43.4" height="14"/>
+  <text class="rotulo" x="521" y="386" text-anchor="middle">codigo</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="398.55" y="419" width="249.9" height="14"/>
+  <text class="rotulo" x="523.5" y="430" text-anchor="middle">INSERT bitacora('codigo_aula_incorrecto')</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="200.05" y="441" width="131.9" height="14"/>
+  <text class="rotulo" x="266" y="452" text-anchor="middle">403 Código incorrecto</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="401.5" y="481" width="244" height="14"/>
+  <text class="rotulo" x="523.5" y="492" text-anchor="middle">UPSERT inscripciones (confirmada = TRUE)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="421" y="514" width="196.8" height="14"/>
+  <text class="rotulo" x="425" y="525" text-anchor="start">pases.otorgar(userId, espacioId)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="238.4" y="529" width="55.2" height="14"/>
+  <text class="rotulo" x="266" y="540" text-anchor="middle">200 {ok}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="136" y="398" width="122" height="14"/>
+  <text class="mult" x="140" y="409" text-anchor="start">[código incorrecto]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="96" y="468" width="110" height="14"/>
+  <text class="mult" x="100" y="479" text-anchor="start">[código correcto]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="128" y="310" width="224" height="14"/>
+  <text class="mult" x="132" y="321" text-anchor="start">[sin inscripción confirmada ni pase]</text>
+</g>
+<g class="ref">
+  <rect x="100" y="576" width="332" height="34" fill="#ffffff" stroke="rgba(45,49,66,.40)" stroke-width="1"/>
+  <path d="M 100 592 H 128 L 134 586 V 576" fill="none" stroke="rgba(45,49,66,.40)" stroke-width="1"/>
+  <text class="operador" x="106" y="588">ref</text>
+  <text class="rotulo" x="266" y="602" text-anchor="middle">handleJoinSpace(): conexión de voz (figura 05b)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="189.35" y="617" width="285.3" height="14"/>
+  <text class="rotulo" x="332" y="628" text-anchor="middle">emit join_space {espacioId, peerId, apariencia}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="509.25" y="639" width="155.5" height="14"/>
+  <text class="rotulo" x="587" y="650" text-anchor="middle">SELECT tipo FROM espacios</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="565.3" y="661" width="43.4" height="14"/>
+  <text class="rotulo" x="587" y="672" text-anchor="middle">'aula'</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="497.45" y="705" width="179.1" height="14"/>
+  <text class="rotulo" x="587" y="716" text-anchor="middle">SELECT inscripción confirmada</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="532.85" y="727" width="108.3" height="14"/>
+  <text class="rotulo" x="587" y="738" text-anchor="middle">inscrito: boolean</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="512" y="684" width="194" height="14"/>
+  <text class="mult" x="516" y="695" text-anchor="start">[sin rol docente/admin ni pase]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="227.7" y="783" width="208.6" height="14"/>
+  <text class="rotulo" x="332" y="794" text-anchor="middle">join_rechazado {motivo, sinAcceso}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="553" y="834" width="179.1" height="14"/>
+  <text class="rotulo" x="557" y="845" text-anchor="start">activeUsers.set(); join(sala)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="245.4" y="863" width="173.2" height="14"/>
+  <text class="rotulo" x="332" y="874" text-anchor="middle">space_users, estado del aula</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="215.9" y="849" width="232.2" height="14"/>
+  <text class="rotulo" x="332" y="860" text-anchor="middle">join_aceptado {roles}, chat_historial,</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="298.9" y="885" width="173.2" height="14"/>
+  <text class="rotulo" x="385.5" y="896" text-anchor="middle">user_joined {socketId, user}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="550.1" y="921" width="78.8" height="14"/>
+  <text class="rotulo" x="589.5" y="932" text-anchor="middle">(figura 06b)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="473.4" y="907" width="232.2" height="14"/>
+  <text class="rotulo" x="589.5" y="918" text-anchor="middle">registrarAsistencia(userId, espacioId)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="128" y="762" width="230" height="14"/>
+  <text class="mult" x="132" y="773" text-anchor="start">[invitado, o sin pase ni inscripción]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="88" y="810" width="116" height="14"/>
+  <text class="mult" x="92" y="821" text-anchor="start">[acceso permitido]</text>
+</g>
+<g class="nodo" id="E">
+  <rect x="4" y="12" width="88" height="80" fill="none"/>
+  <circle class="caja" cx="48" cy="22" r="8"/>
+  <path class="linea" d="M 48 30 V 54 M 34 38 H 62 M 48 54 L 37 70 M 48 54 L 59 70"/>
+  <text class="nombre" x="48" y="88" text-anchor="middle">Estudiante</text>
+</g>
+<g class="nodo" id="App">
+  <rect class="caja" x="106" y="16" width="68" height="44"/>
+  <text class="nombre" x="140" y="36" text-anchor="middle">App</text>
+  <text class="estereotipo" x="140" y="52" text-anchor="middle">App.tsx</text>
+</g>
+<g class="nodo" id="AppO">
+  <rect class="caja" x="196" y="16" width="112" height="44"/>
+  <text class="nombre" x="252" y="36" text-anchor="middle">App</text>
+  <text class="estereotipo" x="252" y="52" text-anchor="middle">otros del aula</text>
+</g>
+<g class="nodo" id="Ex">
+  <rect class="caja" x="328" y="16" width="128" height="44"/>
+  <text class="nombre" x="392" y="36" text-anchor="middle">app : Express</text>
+  <text class="estereotipo" x="392" y="52" text-anchor="middle">index.ts</text>
+</g>
+<g class="nodo" id="io">
+  <rect class="caja" x="462" y="16" width="124" height="44"/>
+  <text class="nombre" x="524" y="36" text-anchor="middle">io : Server</text>
+  <text class="estereotipo" x="524" y="52" text-anchor="middle">socketHandler.ts</text>
+</g>
+<g class="nodo" id="DB">
+  <rect class="caja" x="598" y="16" width="104" height="32"/>
+  <text class="nombre" x="650" y="36" text-anchor="middle">PostgreSQL</text>
+</g>
+
+  </svg>
+</body>
+</html>

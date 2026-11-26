@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Secuencia — conexión de voz en el aula</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Diagrama de secuencia · UML 2.x</p>
+  <h1>Secuencia — conexión de voz en el aula</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="secuencia-voz" viewBox="0 0 720 888" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="secuencia-voz-titulo secuencia-voz-desc">
+    <title id="secuencia-voz-titulo">Secuencia — conexión de voz en el aula</title>
+    <desc id="secuencia-voz-desc">Creación de AudioClient, micrófono, servidores ICE, registro en PeerServer y llamadas WebRTC con los participantes en alcance de voz.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="720" height="888"/>
+
+
+<g class="contenedor">
+  <rect class="marco" x="160" y="174" width="216" height="52"/>
+  <path class="marco" d="M 160 192 H 192 L 200 184 V 174"/>
+  <text class="operador" x="166" y="187">opt</text>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="168" y="520" width="488" height="248"/>
+  <path class="marco" d="M 168 538 H 200 L 208 530 V 520"/>
+  <text class="operador" x="174" y="533">alt</text>
+  <line class="divisor" x1="168" y1="648" x2="656" y2="648"/>
+</g>
+<g class="contenedor">
+  <rect class="marco" x="152" y="498" width="512" height="352"/>
+  <path class="marco" d="M 152 516 H 192 L 200 508 V 498"/>
+  <text class="operador" x="158" y="511">loop</text>
+</g>
+<line class="linea-vida" x1="216" y1="136" x2="216" y2="870"/>
+<line class="linea-vida" x1="640" y1="60" x2="640" y2="870"/>
+<line class="linea-vida" x1="488" y1="60" x2="488" y2="870"/>
+<line class="linea-vida" x1="352" y1="60" x2="352" y2="870"/>
+<line class="linea-vida" x1="40" y1="60" x2="40" y2="870"/>
+<path class="linea mensaje discontinua" d="M 45 114 H 160" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 221 160 H 243 V 174 H 222" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 221 208 H 243 V 222 H 222" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 221 252 H 347" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje discontinua" d="M 347 288 H 221" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="347" y="252" width="10" height="36"/>
+<path class="linea mensaje" d="M 221 310 H 483" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 483 332 H 221" marker-end="url(#flecha-abierta)"/>
+<rect class="activacion" x="483" y="310" width="10" height="28"/>
+<path class="linea mensaje" d="M 211 354 H 45" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 45 432 H 211" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 45 468 H 211" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 221 484 H 243 V 498 H 222" marker-end="url(#flecha-llena)"/>
+<path class="linea mensaje" d="M 221 560 H 488" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 488 582 H 640" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 640 618 H 488" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 488 640 H 221" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 640 694 H 488" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 488 716 H 221" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 221 738 H 488" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 488 760 H 640" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 221 794 H 640" marker-start="url(#flecha-abierta)" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 640 816 H 221" marker-end="url(#flecha-abierta)"/>
+<path class="linea mensaje" d="M 221 832 H 243 V 846 H 222" marker-end="url(#flecha-llena)"/>
+<rect class="activacion" x="211" y="136" width="10" height="724"/>
+<rect class="activacion" x="35" y="92" width="10" height="768"/>
+<g class="etiqueta">
+  <rect class="mascara" x="48.35" y="97" width="108.3" height="14"/>
+  <text class="rotulo" x="102.5" y="108" text-anchor="middle">new AudioClient()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="74.9" y="83" width="55.2" height="14"/>
+  <text class="rotulo" x="102.5" y="94" text-anchor="middle">«create»</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="245" y="160" width="131.9" height="14"/>
+  <text class="rotulo" x="249" y="171" text-anchor="start">getUserMedia({audio})</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="245" y="208" width="143.7" height="14"/>
+  <text class="rotulo" x="249" y="219" text-anchor="start">crearStreamSilencioso()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="204" y="176" width="212" height="14"/>
+  <text class="mult" x="208" y="187" text-anchor="start">[permiso denegado o sin micrófono]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="221" y="235" width="126" height="14"/>
+  <text class="rotulo" x="284" y="246" text-anchor="middle">GET /api/ice-servers</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="215.1" y="271" width="137.8" height="14"/>
+  <text class="rotulo" x="284" y="282" text-anchor="middle">[+ TURN si TURN_URLS]}</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="229.85" y="257" width="108.3" height="14"/>
+  <text class="rotulo" x="284" y="268" text-anchor="middle">{iceServers: STUN</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="250.65" y="293" width="202.7" height="14"/>
+  <text class="rotulo" x="352" y="304" text-anchor="middle">new Peer(peerId, {path: '/peer'})</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="312.6" y="315" width="78.8" height="14"/>
+  <text class="rotulo" x="352" y="326" text-anchor="middle">open(peerId)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="62.05" y="337" width="131.9" height="14"/>
+  <text class="rotulo" x="128" y="348" text-anchor="middle">onPeerIdReady(peerId)</text>
+</g>
+<g class="ref">
+  <rect x="8" y="360" width="384" height="34" fill="#ffffff" stroke="rgba(45,49,66,.40)" stroke-width="1"/>
+  <path d="M 8 376 H 36 L 42 370 V 360" fill="none" stroke="rgba(45,49,66,.40)" stroke-width="1"/>
+  <text class="operador" x="14" y="372">ref</text>
+  <text class="rotulo" x="200" y="386" text-anchor="middle">join_space y respuesta del servidor (figura 05a)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="73.85" y="415" width="108.3" height="14"/>
+  <text class="rotulo" x="128" y="426" text-anchor="middle">esDifusor(roles))</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="56.15" y="401" width="143.7" height="14"/>
+  <text class="rotulo" x="128" y="412" text-anchor="middle">configurarZonas('aula',</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="65" y="451" width="126" height="14"/>
+  <text class="rotulo" x="128" y="462" text-anchor="middle">peerRemoto, difunde)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="59.1" y="437" width="137.8" height="14"/>
+  <text class="rotulo" x="128" y="448" text-anchor="middle">registrarParticipante(</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="245" y="484" width="114.2" height="14"/>
+  <text class="rotulo" x="249" y="495" text-anchor="start">sincronizarZonas()</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="226.6" y="543" width="255.8" height="14"/>
+  <text class="rotulo" x="354.5" y="554" text-anchor="middle">peer.call(remoto, localStream): oferta SDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="521.65" y="565" width="84.7" height="14"/>
+  <text class="rotulo" x="564" y="576" text-anchor="middle">call (oferta)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="521.65" y="601" width="84.7" height="14"/>
+  <text class="rotulo" x="564" y="612" text-anchor="middle">respuesta SDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="489.2" y="587" width="149.6" height="14"/>
+  <text class="rotulo" x="564" y="598" text-anchor="middle">call.answer(localStream)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="312.15" y="623" width="84.7" height="14"/>
+  <text class="rotulo" x="354.5" y="634" text-anchor="middle">respuesta SDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="530.5" y="677" width="67" height="14"/>
+  <text class="rotulo" x="564" y="688" text-anchor="middle">oferta SDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="474.45" y="663" width="179.1" height="14"/>
+  <text class="rotulo" x="564" y="674" text-anchor="middle">peer.call(local, localStream)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="312.15" y="699" width="84.7" height="14"/>
+  <text class="rotulo" x="354.5" y="710" text-anchor="middle">call (oferta)</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="235.45" y="721" width="238.1" height="14"/>
+  <text class="rotulo" x="354.5" y="732" text-anchor="middle">call.answer(localStream): respuesta SDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="521.65" y="743" width="84.7" height="14"/>
+  <text class="rotulo" x="564" y="754" text-anchor="middle">respuesta SDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="212" y="522" width="194" height="14"/>
+  <text class="mult" x="216" y="533" text-anchor="start">[mi peerId es el menor del par]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="172" y="650" width="206" height="14"/>
+  <text class="mult" x="176" y="661" text-anchor="start">[el remoto tiene el peerId menor]</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="296.7" y="777" width="267.6" height="14"/>
+  <text class="rotulo" x="430.5" y="788" text-anchor="middle">ICE (STUN / TURN) y medios DTLS-SRTP por UDP</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="388.15" y="799" width="84.7" height="14"/>
+  <text class="rotulo" x="430.5" y="810" text-anchor="middle">stream remoto</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="245" y="832" width="208.6" height="14"/>
+  <text class="rotulo" x="249" y="843" text-anchor="start">handleIncomingStream(): PannerNode</text>
+</g>
+<g class="etiqueta">
+  <rect class="mascara" x="204" y="500" width="272" height="14"/>
+  <text class="mult" x="208" y="511" text-anchor="start">[cada participante en alcance o que difunde]</text>
+</g>
+<g class="nodo" id="App">
+  <rect class="caja" x="6" y="16" width="68" height="44"/>
+  <text class="nombre" x="40" y="36" text-anchor="middle">App</text>
+  <text class="estereotipo" x="40" y="52" text-anchor="middle">App.tsx</text>
+</g>
+<g class="nodo" id="Ex">
+  <rect class="caja" x="288" y="16" width="128" height="44"/>
+  <text class="nombre" x="352" y="36" text-anchor="middle">app : Express</text>
+  <text class="estereotipo" x="352" y="52" text-anchor="middle">index.ts</text>
+</g>
+<g class="nodo" id="PS">
+  <rect class="caja" x="436" y="16" width="104" height="44"/>
+  <text class="nombre" x="488" y="36" text-anchor="middle">PeerServer</text>
+  <text class="estereotipo" x="488" y="52" text-anchor="middle">/peer</text>
+</g>
+<g class="nodo" id="ACR">
+  <rect class="caja" x="576" y="16" width="128" height="44"/>
+  <text class="nombre" x="640" y="36" text-anchor="middle">AudioClient</text>
+  <text class="estereotipo" x="640" y="52" text-anchor="middle">otro participante</text>
+</g>
+<g class="nodo" id="AC">
+  <rect class="caja" x="160" y="92" width="112" height="44"/>
+  <text class="nombre" x="216" y="112" text-anchor="middle">AudioClient</text>
+  <text class="estereotipo" x="216" y="128" text-anchor="middle">local</text>
+</g>
+
+  </svg>
+</body>
+</html>

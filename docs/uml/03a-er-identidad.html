@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Entidad-relación — identidad y acceso</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Entidad-relación · apaisado · UML 2.x</p>
+  <h1>Entidad-relación — identidad y acceso</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="er-identidad" viewBox="0 0 1040 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="er-identidad-titulo er-identidad-desc">
+    <title id="er-identidad-titulo">Entidad-relación — identidad y acceso</title>
+    <desc id="er-identidad-desc">Tablas de identidad y acceso: usuarios, roles y su asignación, datos personales, consentimientos, avatares, bitácora y solicitudes de rol docente.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="680"/>
+
+
+<path class="linea conector" data-desde="roles" data-hacia="usuario_roles" d="M 238 136 V 240" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="usuario_roles" data-hacia="usuarios" d="M 340 285 H 468" marker-start="url(#er-cero-muchos)" marker-end="url(#er-uno)"/>
+<path class="linea conector" data-desde="usuario_roles" data-hacia="usuarios" d="M 340 339 H 468" marker-start="url(#er-cero-muchos)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="consentimientos" data-hacia="usuarios" d="M 520 172 V 230" marker-start="url(#er-cero-muchos)" marker-end="url(#er-uno)"/>
+<path class="linea conector" data-desde="bitacora" data-hacia="usuarios" d="M 680 172 V 230" marker-start="url(#er-cero-muchos)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="datos_personales" d="M 704 255 H 768" marker-start="url(#er-uno)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="avatares" d="M 500 450 V 504" marker-start="url(#er-uno)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="solicitudes_docente" d="M 680 450 V 504" marker-start="url(#er-uno)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="solicitudes_docente" d="M 704 430 H 890 Q 896 430 896 436 V 597 Q 896 603 890 603 H 868" marker-start="url(#er-cero-uno)" marker-end="url(#er-cero-muchos)"/>
+<g class="etiqueta">
+  <rect class="mascara" x="364.6" y="322" width="78.8" height="14"/>
+  <text class="rotulo" x="404" y="333" text-anchor="middle">asignado_por</text>
+</g>
+<text class="rotulo" x="902" y="520">resuelta_por</text>
+<g class="nodo" id="roles">
+  <rect class="caja" x="136" y="40" width="204" height="96"/>
+  <rect x="136" y="40" width="204" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="136" y1="68" x2="340" y2="68"/>
+  <text class="nombre" x="146" y="59">roles</text>
+  <text class="mult" x="144" y="89">PK</text>
+  <text class="miembro" x="172" y="89" text-decoration="underline">id</text>
+  <text class="mult" x="332" y="89" text-anchor="end">SERIAL</text>
+  <text class="mult" x="144" y="107">UK</text>
+  <text class="miembro" x="172" y="107">nombre</text>
+  <text class="mult" x="332" y="107" text-anchor="end">VARCHAR(30)</text>
+  <text class="miembro" x="172" y="125">descripcion</text>
+  <text class="mult" x="332" y="125" text-anchor="end">VARCHAR(200)</text>
+</g>
+<g class="nodo" id="usuario_roles">
+  <rect class="caja" x="128" y="240" width="212" height="112"/>
+  <rect x="128" y="240" width="212" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="128" y1="268" x2="340" y2="268"/>
+  <text class="nombre" x="138" y="259">usuario_roles</text>
+  <text class="mult" x="136" y="289">PK FK</text>
+  <text class="miembro" x="172" y="289" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="332" y="289" text-anchor="end">INT</text>
+  <text class="mult" x="136" y="307">PK FK</text>
+  <text class="miembro" x="172" y="307" text-decoration="underline">rol_id</text>
+  <text class="mult" x="332" y="307" text-anchor="end">INT</text>
+  <text class="miembro" x="164" y="325">asignado_en</text>
+  <text class="mult" x="332" y="325" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="mult" x="136" y="343">FK</text>
+  <text class="miembro" x="164" y="343" font-style="italic">asignado_por</text>
+  <text class="mult" x="332" y="343" text-anchor="end">INT</text>
+</g>
+<g class="nodo" id="usuarios">
+  <rect class="caja" x="468" y="230" width="236" height="220"/>
+  <rect x="468" y="230" width="236" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="468" y1="258" x2="704" y2="258"/>
+  <text class="nombre" x="478" y="249">usuarios</text>
+  <text class="mult" x="476" y="279">PK</text>
+  <text class="miembro" x="504" y="279" text-decoration="underline">id</text>
+  <text class="mult" x="696" y="279" text-anchor="end">SERIAL</text>
+  <text class="mult" x="476" y="297">UK</text>
+  <text class="miembro" x="504" y="297">email</text>
+  <text class="mult" x="696" y="297" text-anchor="end">VARCHAR(120)</text>
+  <text class="miembro" x="504" y="315">password_hash</text>
+  <text class="mult" x="696" y="315" text-anchor="end">TEXT</text>
+  <text class="miembro" x="504" y="333">nombre</text>
+  <text class="mult" x="696" y="333" text-anchor="end">VARCHAR(60)</text>
+  <text class="miembro" x="504" y="351">apellido</text>
+  <text class="mult" x="696" y="351" text-anchor="end">VARCHAR(60)</text>
+  <text class="miembro" x="504" y="369">activo</text>
+  <text class="mult" x="696" y="369" text-anchor="end">BOOLEAN</text>
+  <text class="miembro" x="504" y="387">intentos_fallidos</text>
+  <text class="mult" x="696" y="387" text-anchor="end">SMALLINT</text>
+  <text class="miembro" x="504" y="405" font-style="italic">bloqueado_hasta</text>
+  <text class="mult" x="696" y="405" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="504" y="423">creado_en</text>
+  <text class="mult" x="696" y="423" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="504" y="441" font-style="italic">ultimo_acceso</text>
+  <text class="mult" x="696" y="441" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="consentimientos">
+  <rect class="caja" x="360" y="24" width="232" height="148"/>
+  <rect x="360" y="24" width="232" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="360" y1="52" x2="592" y2="52"/>
+  <text class="nombre" x="370" y="43">consentimientos</text>
+  <text class="mult" x="368" y="73">PK</text>
+  <text class="miembro" x="396" y="73" text-decoration="underline">id</text>
+  <text class="mult" x="584" y="73" text-anchor="end">SERIAL</text>
+  <text class="mult" x="368" y="91">FK</text>
+  <text class="miembro" x="396" y="91">usuario_id</text>
+  <text class="mult" x="584" y="91" text-anchor="end">INT</text>
+  <text class="miembro" x="396" y="109">tipo</text>
+  <text class="mult" x="584" y="109" text-anchor="end">VARCHAR(30)</text>
+  <text class="miembro" x="396" y="127">otorgado</text>
+  <text class="mult" x="584" y="127" text-anchor="end">BOOLEAN</text>
+  <text class="miembro" x="396" y="145">fecha</text>
+  <text class="mult" x="584" y="145" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="396" y="163">version_politica</text>
+  <text class="mult" x="584" y="163" text-anchor="end">VARCHAR(20)</text>
+</g>
+<g class="nodo" id="bitacora">
+  <rect class="caja" x="632" y="24" width="204" height="148"/>
+  <rect x="632" y="24" width="204" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="632" y1="52" x2="836" y2="52"/>
+  <text class="nombre" x="642" y="43">bitacora</text>
+  <text class="mult" x="640" y="73">PK</text>
+  <text class="miembro" x="668" y="73" text-decoration="underline">id</text>
+  <text class="mult" x="828" y="73" text-anchor="end">BIGSERIAL</text>
+  <text class="mult" x="640" y="91">FK</text>
+  <text class="miembro" x="668" y="91" font-style="italic">usuario_id</text>
+  <text class="mult" x="828" y="91" text-anchor="end">INT</text>
+  <text class="miembro" x="668" y="109">evento</text>
+  <text class="mult" x="828" y="109" text-anchor="end">VARCHAR(50)</text>
+  <text class="miembro" x="668" y="127">detalle</text>
+  <text class="mult" x="828" y="127" text-anchor="end">VARCHAR(255)</text>
+  <text class="miembro" x="668" y="145">ip</text>
+  <text class="mult" x="828" y="145" text-anchor="end">VARCHAR(45)</text>
+  <text class="miembro" x="668" y="163">fecha</text>
+  <text class="mult" x="828" y="163" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="datos_personales">
+  <rect class="caja" x="768" y="210" width="264" height="204"/>
+  <rect x="768" y="210" width="264" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="768" y1="238" x2="1032" y2="238"/>
+  <text class="nombre" x="778" y="229">datos_personales</text>
+  <text class="mult" x="776" y="259">PK FK</text>
+  <text class="miembro" x="812" y="259" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="1024" y="259" text-anchor="end">INT</text>
+  <text class="mult" x="776" y="277">UK</text>
+  <text class="miembro" x="804" y="277" font-style="italic">documento_identidad</text>
+  <text class="mult" x="1024" y="277" text-anchor="end">VARCHAR(25)</text>
+  <text class="miembro" x="804" y="295" font-style="italic">fecha_nacimiento</text>
+  <text class="mult" x="1024" y="295" text-anchor="end">DATE</text>
+  <text class="miembro" x="804" y="313" font-style="italic">nacionalidad</text>
+  <text class="mult" x="1024" y="313" text-anchor="end">VARCHAR(40)</text>
+  <text class="miembro" x="804" y="331" font-style="italic">genero</text>
+  <text class="mult" x="1024" y="331" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="804" y="349" font-style="italic">domicilio</text>
+  <text class="mult" x="1024" y="349" text-anchor="end">VARCHAR(150)</text>
+  <text class="miembro" x="804" y="367" font-style="italic">tipo_sangre</text>
+  <text class="mult" x="1024" y="367" text-anchor="end">VARCHAR(5)</text>
+  <text class="miembro" x="804" y="385" font-style="italic">estado_civil</text>
+  <text class="mult" x="1024" y="385" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="804" y="403">actualizado_en</text>
+  <text class="mult" x="1024" y="403" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="avatares">
+  <rect class="caja" x="392" y="504" width="232" height="168"/>
+  <rect x="392" y="504" width="232" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="392" y1="532" x2="624" y2="532"/>
+  <text class="nombre" x="402" y="523">avatares</text>
+  <text class="mult" x="400" y="553">PK</text>
+  <text class="miembro" x="428" y="553" text-decoration="underline">id</text>
+  <text class="mult" x="616" y="553" text-anchor="end">SERIAL</text>
+  <text class="mult" x="400" y="571">FK UK</text>
+  <text class="miembro" x="436" y="571">usuario_id</text>
+  <text class="mult" x="616" y="571" text-anchor="end">INT</text>
+  <text class="miembro" x="428" y="589">nombre_visible</text>
+  <text class="mult" x="616" y="589" text-anchor="end">VARCHAR(40)</text>
+  <text class="miembro" x="428" y="607" font-style="italic">modelo_url</text>
+  <text class="mult" x="616" y="607" text-anchor="end">TEXT</text>
+  <text class="miembro" x="428" y="625">apariencia</text>
+  <text class="mult" x="616" y="625" text-anchor="end">JSONB</text>
+  <text class="miembro" x="428" y="643" font-style="italic">ultima_posicion</text>
+  <text class="mult" x="616" y="643" text-anchor="end">JSONB</text>
+  <text class="miembro" x="428" y="661">actualizado_en</text>
+  <text class="mult" x="616" y="661" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="solicitudes_docente">
+  <rect class="caja" x="656" y="504" width="212" height="132"/>
+  <rect x="656" y="504" width="212" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="656" y1="532" x2="868" y2="532"/>
+  <text class="nombre" x="666" y="523">solicitudes_docente</text>
+  <text class="mult" x="664" y="553">PK FK</text>
+  <text class="miembro" x="700" y="553" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="860" y="553" text-anchor="end">INT</text>
+  <text class="miembro" x="692" y="571">estado</text>
+  <text class="mult" x="860" y="571" text-anchor="end">VARCHAR(10)</text>
+  <text class="miembro" x="692" y="589">creada_en</text>
+  <text class="mult" x="860" y="589" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="mult" x="664" y="607">FK</text>
+  <text class="miembro" x="692" y="607" font-style="italic">resuelta_por</text>
+  <text class="mult" x="860" y="607" text-anchor="end">INT</text>
+  <text class="miembro" x="692" y="625" font-style="italic">resuelta_en</text>
+  <text class="mult" x="860" y="625" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+
+  </svg>
+</body>
+</html>

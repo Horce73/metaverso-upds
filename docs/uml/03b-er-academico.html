@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Entidad-relación — académico</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Entidad-relación · apaisado · UML 2.x</p>
+  <h1>Entidad-relación — académico</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="er-academico" viewBox="0 0 1040 672" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="er-academico-titulo er-academico-desc">
+    <title id="er-academico-titulo">Entidad-relación — académico</title>
+    <desc id="er-academico-desc">Tablas académicas: perfiles de estudiante y docente, carreras, asignaturas, inscripciones y materiales, con usuarios como tabla externa.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="672"/>
+
+
+<path class="linea conector" data-desde="usuarios" data-hacia="perfiles_estudiante" d="M 440 54 H 158 Q 152 54 152 60 V 136" marker-start="url(#er-uno)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="perfiles_docente" d="M 600 54 H 892 Q 898 54 898 60 V 136" marker-start="url(#er-uno)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="usuarios" data-hacia="materiales" d="M 600 72 H 734 Q 740 72 740 78 V 440" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="perfiles_docente" data-hacia="asignaturas" d="M 776 317 H 744 A 4 4 0 0 0 736 317 H 620" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="asignaturas" data-hacia="materiales" d="M 620 340 H 704 Q 710 340 710 346 V 440" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="perfiles_estudiante" data-hacia="carreras" d="M 80 320 V 480" marker-start="url(#er-cero-muchos)" marker-end="url(#er-cero-uno)"/>
+<path class="linea conector" data-desde="carreras" data-hacia="asignaturas" d="M 276 600 H 584 Q 590 600 590 594 V 368" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="perfiles_estudiante" data-hacia="inscripciones" d="M 272 280 H 334 Q 340 280 340 286 V 420" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="asignaturas" data-hacia="inscripciones" d="M 480 368 V 420" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<text class="rotulo" x="734" y="190" text-anchor="end">subido_por</text>
+<g class="nodo" id="usuarios">
+  <rect class="caja externa" x="440" y="24" width="160" height="60"/>
+  <rect x="440" y="24" width="160" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="440" y1="52" x2="600" y2="52"/>
+  <text class="nombre" x="450" y="43">usuarios</text>
+  <text class="mult" x="448" y="73">PK</text>
+  <text class="miembro" x="476" y="73" text-decoration="underline">id</text>
+  <text class="mult" x="592" y="73" text-anchor="end">SERIAL</text>
+</g>
+<g class="nodo" id="perfiles_estudiante">
+  <rect class="caja" x="40" y="136" width="232" height="184"/>
+  <rect x="40" y="136" width="232" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="40" y1="164" x2="272" y2="164"/>
+  <text class="nombre" x="50" y="155">perfiles_estudiante</text>
+  <text class="mult" x="48" y="185">PK FK</text>
+  <text class="miembro" x="84" y="185" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="264" y="185" text-anchor="end">INT</text>
+  <text class="mult" x="48" y="203">UK</text>
+  <text class="miembro" x="76" y="203" font-style="italic">registro_upds</text>
+  <text class="mult" x="264" y="203" text-anchor="end">VARCHAR(20)</text>
+  <text class="mult" x="48" y="221">FK</text>
+  <text class="miembro" x="76" y="221" font-style="italic">carrera_id</text>
+  <text class="mult" x="264" y="221" text-anchor="end">INT</text>
+  <text class="miembro" x="76" y="239" font-style="italic">fecha_inicio</text>
+  <text class="mult" x="264" y="239" text-anchor="end">DATE</text>
+  <text class="miembro" x="76" y="257" font-style="italic">sistema_estudio</text>
+  <text class="mult" x="264" y="257" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="76" y="275" font-style="italic">turno</text>
+  <text class="mult" x="264" y="275" text-anchor="end">VARCHAR(10)</text>
+  <text class="miembro" x="76" y="293">estado</text>
+  <text class="mult" x="264" y="293" text-anchor="end">VARCHAR(15)</text>
+  <text class="miembro" x="76" y="311" font-style="italic">semestre</text>
+  <text class="mult" x="264" y="311" text-anchor="end">SMALLINT</text>
+</g>
+<g class="nodo" id="perfiles_docente">
+  <rect class="caja" x="776" y="136" width="244" height="204"/>
+  <rect x="776" y="136" width="244" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="776" y1="164" x2="1020" y2="164"/>
+  <text class="nombre" x="786" y="155">perfiles_docente</text>
+  <text class="mult" x="784" y="185">PK FK</text>
+  <text class="miembro" x="820" y="185" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="1012" y="185" text-anchor="end">INT</text>
+  <text class="mult" x="784" y="203">UK</text>
+  <text class="miembro" x="812" y="203" font-style="italic">codigo_docente</text>
+  <text class="mult" x="1012" y="203" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="812" y="221" font-style="italic">titulo_academico</text>
+  <text class="mult" x="1012" y="221" text-anchor="end">VARCHAR(80)</text>
+  <text class="miembro" x="812" y="239" font-style="italic">grado_academico</text>
+  <text class="mult" x="1012" y="239" text-anchor="end">VARCHAR(60)</text>
+  <text class="miembro" x="812" y="257" font-style="italic">especialidad</text>
+  <text class="mult" x="1012" y="257" text-anchor="end">VARCHAR(120)</text>
+  <text class="miembro" x="812" y="275" font-style="italic">fecha_ingreso</text>
+  <text class="mult" x="1012" y="275" text-anchor="end">DATE</text>
+  <text class="miembro" x="812" y="293" font-style="italic">tipo_contrato</text>
+  <text class="mult" x="1012" y="293" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="812" y="311" font-style="italic">turno</text>
+  <text class="mult" x="1012" y="311" text-anchor="end">VARCHAR(10)</text>
+  <text class="miembro" x="812" y="329">estado</text>
+  <text class="mult" x="1012" y="329" text-anchor="end">VARCHAR(15)</text>
+</g>
+<g class="nodo" id="asignaturas">
+  <rect class="caja" x="420" y="200" width="200" height="168"/>
+  <rect x="420" y="200" width="200" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="420" y1="228" x2="620" y2="228"/>
+  <text class="nombre" x="430" y="219">asignaturas</text>
+  <text class="mult" x="428" y="249">PK</text>
+  <text class="miembro" x="456" y="249" text-decoration="underline">id</text>
+  <text class="mult" x="612" y="249" text-anchor="end">SERIAL</text>
+  <text class="mult" x="428" y="267">UK</text>
+  <text class="miembro" x="456" y="267">codigo</text>
+  <text class="mult" x="612" y="267" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="456" y="285">nombre</text>
+  <text class="mult" x="612" y="285" text-anchor="end">VARCHAR(120)</text>
+  <text class="mult" x="428" y="303">FK</text>
+  <text class="miembro" x="456" y="303">carrera_id</text>
+  <text class="mult" x="612" y="303" text-anchor="end">INT</text>
+  <text class="mult" x="428" y="321">FK</text>
+  <text class="miembro" x="456" y="321">docente_id</text>
+  <text class="mult" x="612" y="321" text-anchor="end">INT</text>
+  <text class="miembro" x="456" y="339">gestion</text>
+  <text class="mult" x="612" y="339" text-anchor="end">VARCHAR(10)</text>
+  <text class="miembro" x="456" y="357">activa</text>
+  <text class="mult" x="612" y="357" text-anchor="end">BOOLEAN</text>
+</g>
+<g class="nodo" id="inscripciones">
+  <rect class="caja" x="296" y="420" width="220" height="112"/>
+  <rect x="296" y="420" width="220" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="296" y1="448" x2="516" y2="448"/>
+  <text class="nombre" x="306" y="439">inscripciones</text>
+  <text class="mult" x="304" y="469">PK FK</text>
+  <text class="miembro" x="340" y="469" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="508" y="469" text-anchor="end">INT</text>
+  <text class="mult" x="304" y="487">PK FK</text>
+  <text class="miembro" x="340" y="487" text-decoration="underline">asignatura_id</text>
+  <text class="mult" x="508" y="487" text-anchor="end">INT</text>
+  <text class="miembro" x="332" y="505">inscrito_en</text>
+  <text class="mult" x="508" y="505" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="332" y="523">confirmada</text>
+  <text class="mult" x="508" y="523" text-anchor="end">BOOLEAN</text>
+</g>
+<g class="nodo" id="carreras">
+  <rect class="caja" x="40" y="480" width="236" height="168"/>
+  <rect x="40" y="480" width="236" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="40" y1="508" x2="276" y2="508"/>
+  <text class="nombre" x="50" y="499">carreras</text>
+  <text class="mult" x="48" y="529">PK</text>
+  <text class="miembro" x="76" y="529" text-decoration="underline">id</text>
+  <text class="mult" x="268" y="529" text-anchor="end">SERIAL</text>
+  <text class="mult" x="48" y="547">UK</text>
+  <text class="miembro" x="76" y="547">sigla</text>
+  <text class="mult" x="268" y="547" text-anchor="end">VARCHAR(10)</text>
+  <text class="mult" x="48" y="565">UK</text>
+  <text class="miembro" x="76" y="565">nombre</text>
+  <text class="mult" x="268" y="565" text-anchor="end">VARCHAR(80)</text>
+  <text class="miembro" x="76" y="583">titulo_academico</text>
+  <text class="mult" x="268" y="583" text-anchor="end">VARCHAR(60)</text>
+  <text class="miembro" x="76" y="601">sistema_ensenanza</text>
+  <text class="mult" x="268" y="601" text-anchor="end">VARCHAR(20)</text>
+  <text class="miembro" x="76" y="619">modelo_estudio</text>
+  <text class="mult" x="268" y="619" text-anchor="end">VARCHAR(40)</text>
+  <text class="miembro" x="76" y="637">activa</text>
+  <text class="mult" x="268" y="637" text-anchor="end">BOOLEAN</text>
+</g>
+<g class="nodo" id="materiales">
+  <rect class="caja" x="680" y="440" width="216" height="184"/>
+  <rect x="680" y="440" width="216" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="680" y1="468" x2="896" y2="468"/>
+  <text class="nombre" x="690" y="459">materiales</text>
+  <text class="mult" x="688" y="489">PK</text>
+  <text class="miembro" x="716" y="489" text-decoration="underline">id</text>
+  <text class="mult" x="888" y="489" text-anchor="end">SERIAL</text>
+  <text class="mult" x="688" y="507">FK</text>
+  <text class="miembro" x="716" y="507">asignatura_id</text>
+  <text class="mult" x="888" y="507" text-anchor="end">INT</text>
+  <text class="mult" x="688" y="525">FK</text>
+  <text class="miembro" x="716" y="525">subido_por</text>
+  <text class="mult" x="888" y="525" text-anchor="end">INT</text>
+  <text class="miembro" x="716" y="543">tipo</text>
+  <text class="mult" x="888" y="543" text-anchor="end">VARCHAR(10)</text>
+  <text class="miembro" x="716" y="561">titulo</text>
+  <text class="mult" x="888" y="561" text-anchor="end">VARCHAR(150)</text>
+  <text class="miembro" x="716" y="579">archivo_url</text>
+  <text class="mult" x="888" y="579" text-anchor="end">TEXT</text>
+  <text class="miembro" x="716" y="597" font-style="italic">tamano_bytes</text>
+  <text class="mult" x="888" y="597" text-anchor="end">BIGINT</text>
+  <text class="miembro" x="716" y="615">subido_en</text>
+  <text class="mult" x="888" y="615" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+
+  </svg>
+</body>
+</html>

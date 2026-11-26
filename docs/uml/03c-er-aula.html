@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Entidad-relación — espacios, sesiones y asistencia</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Sólo para la vista previa en el navegador; la exportación toma el <svg>. */
+    body { margin: 0; padding: 2rem; background: #f5f5f5; font-family: 'Geist', 'Noto Sans', sans-serif; color: #2d3142; }
+    .eyebrow { font-family: 'Geist Mono', monospace; font-size: .7rem; letter-spacing: .18em; text-transform: uppercase; color: #4f5d75; margin: 0 0 .4rem; }
+    h1 { font-family: 'Instrument Serif', serif; font-weight: 400; font-size: 1.9rem; margin: 0 0 1.2rem; }
+    svg[data-uml] { display: block; background: #fff; border: 1px solid rgba(45,49,66,.12); max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Entidad-relación · apaisado · UML 2.x</p>
+  <h1>Entidad-relación — espacios, sesiones y asistencia</h1>
+
+  <!-- Un <svg data-uml="slug"> por diagrama. El slug es el nombre del archivo exportado. -->
+  <svg data-uml="er-aula" viewBox="0 0 1040 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="er-aula-titulo er-aula-desc">
+    <title id="er-aula-titulo">Entidad-relación — espacios, sesiones y asistencia</title>
+    <desc id="er-aula-desc">Tablas de espacios, sesiones de clase, asistencia con sus tramos, materiales mostrados y capturas de pizarra, con las tablas académicas como externas.</desc>
+    <style>
+      text { font-family: 'Geist', 'Noto Sans', sans-serif; fill: #2d3142; }
+      .nombre { font-size: 13px; font-weight: 600; }
+      .abstracta { font-style: italic; }
+      .estereotipo { font-size: 11px; fill: #4f5d75; }
+      .miembro { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10.5px; }
+      .estatico { text-decoration: underline; }
+      .rotulo { font-size: 10.5px; fill: #4f5d75; }
+      .mult { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; fill: #4f5d75; }
+      .operador { font-family: 'Geist Mono', 'Noto Sans Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .06em; }
+      .titulo-marco { font-size: 11px; font-weight: 600; }
+      .nota-texto { font-size: 10.5px; fill: #4f5d75; }
+
+      .fondo { fill: #ffffff; }
+      .caja { fill: #ffffff; stroke: #2d3142; stroke-width: 1; }
+      .caja.focal { fill: rgba(235,108,54,.08); stroke: #eb6c36; }
+      .caja.externa { fill: rgba(45,49,66,.03); stroke: rgba(45,49,66,.45); }
+      .separador { stroke: #2d3142; stroke-width: .8; }
+      .marco { fill: rgba(45,49,66,.025); stroke: rgba(45,49,66,.40); stroke-width: 1; }
+      .nota { fill: #ffffff; stroke: #4f5d75; stroke-width: .8; }
+      .mascara { fill: #ffffff; }
+
+      .linea { fill: none; stroke: #2d3142; stroke-width: 1; }
+      .discontinua { stroke-dasharray: 5 4; }
+      .linea-vida { stroke: rgba(45,49,66,.40); stroke-width: 1; stroke-dasharray: 4 4; }
+      .activacion { fill: #ffffff; stroke: #2d3142; stroke-width: .8; }
+      .divisor { stroke: rgba(45,49,66,.45); stroke-width: .8; stroke-dasharray: 5 4; }
+      .solido { fill: #2d3142; }
+    </style>
+    <defs>
+      <!-- Punta abierta: navegabilidad, dependencia, mensaje asíncrono, transición -->
+      <marker id="flecha-abierta" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polyline points="0 0.5, 10 5, 0 9.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Punta llena: mensaje síncrono y su respuesta -->
+      <marker id="flecha-llena" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 1, 10 5, 0 9" fill="#2d3142"/>
+      </marker>
+      <!-- Triángulo hueco: generalización (línea continua) y realización (discontinua) -->
+      <marker id="triangulo" viewBox="0 0 14 14" refX="14" refY="7" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 0.5, 13.5 7, 0.5 13.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Rombos: van en el extremo del TODO. Sirven como marker-start (path que sale del todo) o marker-end (path que llega al todo). -->
+      <marker id="rombo-lleno" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0 5, 9 0.5, 18 5, 9 9.5" fill="#2d3142"/>
+      </marker>
+      <marker id="rombo-hueco" viewBox="0 0 18 10" refX="18" refY="5" markerWidth="18" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <polygon points="0.5 5, 9 0.5, 17.5 5, 9 9.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <!-- Pata de gallo (ER). Se dibujan con la entidad a la derecha (x = 20):
+           sirven como marker-end y, por auto-start-reverse, también como marker-start. -->
+      <marker id="er-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="10" y1="2" x2="10" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-uno" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="6" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <line x1="14" y1="2" x2="14" y2="14" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-cero-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <circle cx="5" cy="8" r="3.5" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+      <marker id="er-uno-muchos" viewBox="0 0 20 16" refX="20" refY="8" markerWidth="20" markerHeight="16" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+        <line x1="7" y1="2" x2="7" y2="14" stroke="#2d3142" stroke-width="1"/>
+        <polyline points="20 1.5, 11 8, 20 14.5" fill="none" stroke="#2d3142" stroke-width="1"/>
+      </marker>
+    </defs>
+
+    <rect class="fondo" x="0" y="0" width="1040" height="680"/>
+
+
+<path class="linea conector" data-desde="asignaturas" data-hacia="espacios" d="M 200 123 H 414" marker-start="url(#er-cero-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="asignaturas" data-hacia="sesiones_clase" d="M 120 148 V 333 Q 120 339 126 339 H 398" marker-start="url(#er-cero-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="espacios" data-hacia="sesiones_clase" d="M 520 192 V 240" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="perfiles_docente" data-hacia="sesiones_clase" d="M 800 321 H 642" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="sesiones_clase" data-hacia="asistencias" d="M 398 427 H 324" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="asistencias" data-hacia="asistencia_tramos" d="M 160 512 V 560" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="asistencias" data-hacia="perfiles_estudiante" d="M 300 512 V 540 Q 300 546 306 546 H 444 Q 450 546 450 552 V 600" marker-start="url(#er-cero-muchos)" marker-end="url(#er-uno)"/>
+<path class="linea conector" data-desde="sesiones_clase" data-hacia="sesion_materiales" d="M 620 480 V 552" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="materiales" data-hacia="sesion_materiales" d="M 860 615 H 808" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<path class="linea conector" data-desde="sesiones_clase" data-hacia="pizarra_snapshots" d="M 642 443 H 800" marker-start="url(#er-uno)" marker-end="url(#er-cero-muchos)"/>
+<g class="nodo" id="espacios">
+  <rect class="caja" x="414" y="24" width="212" height="168"/>
+  <rect x="414" y="24" width="212" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="414" y1="52" x2="626" y2="52"/>
+  <text class="nombre" x="424" y="43">espacios</text>
+  <text class="mult" x="422" y="73">PK</text>
+  <text class="miembro" x="450" y="73" text-decoration="underline">id</text>
+  <text class="mult" x="618" y="73" text-anchor="end">SERIAL</text>
+  <text class="miembro" x="450" y="91">nombre</text>
+  <text class="mult" x="618" y="91" text-anchor="end">VARCHAR(80)</text>
+  <text class="miembro" x="450" y="109">tipo</text>
+  <text class="mult" x="618" y="109" text-anchor="end">VARCHAR(10)</text>
+  <text class="mult" x="422" y="127">FK</text>
+  <text class="miembro" x="450" y="127" font-style="italic">asignatura_id</text>
+  <text class="mult" x="618" y="127" text-anchor="end">INT</text>
+  <text class="miembro" x="450" y="145">escena_url</text>
+  <text class="mult" x="618" y="145" text-anchor="end">TEXT</text>
+  <text class="miembro" x="450" y="163">capacidad_max</text>
+  <text class="mult" x="618" y="163" text-anchor="end">SMALLINT</text>
+  <text class="miembro" x="450" y="181">activo</text>
+  <text class="mult" x="618" y="181" text-anchor="end">BOOLEAN</text>
+</g>
+<g class="nodo" id="sesiones_clase">
+  <rect class="caja" x="398" y="240" width="244" height="240"/>
+  <rect x="398" y="240" width="244" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="398" y1="268" x2="642" y2="268"/>
+  <text class="nombre" x="408" y="259">sesiones_clase</text>
+  <text class="mult" x="406" y="289">PK</text>
+  <text class="miembro" x="434" y="289" text-decoration="underline">id</text>
+  <text class="mult" x="634" y="289" text-anchor="end">SERIAL</text>
+  <text class="mult" x="406" y="307">FK</text>
+  <text class="miembro" x="434" y="307">espacio_id</text>
+  <text class="mult" x="634" y="307" text-anchor="end">INT</text>
+  <text class="mult" x="406" y="325">FK</text>
+  <text class="miembro" x="434" y="325">docente_id</text>
+  <text class="mult" x="634" y="325" text-anchor="end">INT</text>
+  <text class="mult" x="406" y="343">FK</text>
+  <text class="miembro" x="434" y="343" font-style="italic">asignatura_id</text>
+  <text class="mult" x="634" y="343" text-anchor="end">INT</text>
+  <text class="miembro" x="434" y="361" font-style="italic">tema</text>
+  <text class="mult" x="634" y="361" text-anchor="end">VARCHAR(200)</text>
+  <text class="miembro" x="434" y="379">inicio_programado</text>
+  <text class="mult" x="634" y="379" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="434" y="397">fin_programado</text>
+  <text class="mult" x="634" y="397" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="434" y="415" font-style="italic">inicio_real</text>
+  <text class="mult" x="634" y="415" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="434" y="433" font-style="italic">fin_real</text>
+  <text class="mult" x="634" y="433" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="434" y="451">estado</text>
+  <text class="mult" x="634" y="451" text-anchor="end">VARCHAR(15)</text>
+  <text class="miembro" x="434" y="469">tolerancia_min</text>
+  <text class="mult" x="634" y="469" text-anchor="end">SMALLINT</text>
+</g>
+<g class="nodo" id="asignaturas">
+  <rect class="caja externa" x="40" y="88" width="160" height="60"/>
+  <rect x="40" y="88" width="160" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="40" y1="116" x2="200" y2="116"/>
+  <text class="nombre" x="50" y="107">asignaturas</text>
+  <text class="mult" x="48" y="137">PK</text>
+  <text class="miembro" x="76" y="137" text-decoration="underline">id</text>
+  <text class="mult" x="192" y="137" text-anchor="end">SERIAL</text>
+</g>
+<g class="nodo" id="perfiles_docente">
+  <rect class="caja externa" x="800" y="290" width="176" height="60"/>
+  <rect x="800" y="290" width="176" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="800" y1="318" x2="976" y2="318"/>
+  <text class="nombre" x="810" y="309">perfiles_docente</text>
+  <text class="mult" x="808" y="339">PK</text>
+  <text class="miembro" x="836" y="339" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="968" y="339" text-anchor="end">INT</text>
+</g>
+<g class="nodo" id="asistencias">
+  <rect class="caja" x="120" y="364" width="204" height="148"/>
+  <rect x="120" y="364" width="204" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="120" y1="392" x2="324" y2="392"/>
+  <text class="nombre" x="130" y="383">asistencias</text>
+  <text class="mult" x="128" y="413">PK</text>
+  <text class="miembro" x="156" y="413" text-decoration="underline">id</text>
+  <text class="mult" x="316" y="413" text-anchor="end">SERIAL</text>
+  <text class="mult" x="128" y="431">FK</text>
+  <text class="miembro" x="156" y="431">sesion_id</text>
+  <text class="mult" x="316" y="431" text-anchor="end">INT</text>
+  <text class="mult" x="128" y="449">FK</text>
+  <text class="miembro" x="156" y="449">usuario_id</text>
+  <text class="mult" x="316" y="449" text-anchor="end">INT</text>
+  <text class="miembro" x="156" y="467">hora_ingreso</text>
+  <text class="mult" x="316" y="467" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="156" y="485" font-style="italic">hora_salida</text>
+  <text class="mult" x="316" y="485" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="156" y="503">estado</text>
+  <text class="mult" x="316" y="503" text-anchor="end">VARCHAR(10)</text>
+</g>
+<g class="nodo" id="asistencia_tramos">
+  <rect class="caja" x="40" y="560" width="212" height="112"/>
+  <rect x="40" y="560" width="212" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="40" y1="588" x2="252" y2="588"/>
+  <text class="nombre" x="50" y="579">asistencia_tramos</text>
+  <text class="mult" x="48" y="609">PK</text>
+  <text class="miembro" x="76" y="609" text-decoration="underline">id</text>
+  <text class="mult" x="244" y="609" text-anchor="end">SERIAL</text>
+  <text class="mult" x="48" y="627">FK</text>
+  <text class="miembro" x="76" y="627">asistencia_id</text>
+  <text class="mult" x="244" y="627" text-anchor="end">INT</text>
+  <text class="miembro" x="76" y="645">entrada</text>
+  <text class="mult" x="244" y="645" text-anchor="end">TIMESTAMPTZ</text>
+  <text class="miembro" x="76" y="663" font-style="italic">salida</text>
+  <text class="mult" x="244" y="663" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="perfiles_estudiante">
+  <rect class="caja externa" x="360" y="600" width="184" height="60"/>
+  <rect x="360" y="600" width="184" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="360" y1="628" x2="544" y2="628"/>
+  <text class="nombre" x="370" y="619">perfiles_estudiante</text>
+  <text class="mult" x="368" y="649">PK</text>
+  <text class="miembro" x="396" y="649" text-decoration="underline">usuario_id</text>
+  <text class="mult" x="536" y="649" text-anchor="end">INT</text>
+</g>
+<g class="nodo" id="sesion_materiales">
+  <rect class="caja" x="600" y="552" width="208" height="96"/>
+  <rect x="600" y="552" width="208" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="600" y1="580" x2="808" y2="580"/>
+  <text class="nombre" x="610" y="571">sesion_materiales</text>
+  <text class="mult" x="608" y="601">PK FK</text>
+  <text class="miembro" x="644" y="601" text-decoration="underline">sesion_id</text>
+  <text class="mult" x="800" y="601" text-anchor="end">INT</text>
+  <text class="mult" x="608" y="619">PK FK</text>
+  <text class="miembro" x="644" y="619" text-decoration="underline">material_id</text>
+  <text class="mult" x="800" y="619" text-anchor="end">INT</text>
+  <text class="miembro" x="636" y="637">mostrado_en</text>
+  <text class="mult" x="800" y="637" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+<g class="nodo" id="materiales">
+  <rect class="caja externa" x="860" y="585" width="160" height="60"/>
+  <rect x="860" y="585" width="160" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="860" y1="613" x2="1020" y2="613"/>
+  <text class="nombre" x="870" y="604">materiales</text>
+  <text class="mult" x="868" y="634">PK</text>
+  <text class="miembro" x="896" y="634" text-decoration="underline">id</text>
+  <text class="mult" x="1012" y="634" text-anchor="end">SERIAL</text>
+</g>
+<g class="nodo" id="pizarra_snapshots">
+  <rect class="caja" x="800" y="380" width="200" height="112"/>
+  <rect x="800" y="380" width="200" height="28" fill="rgba(45,49,66,.06)"/>
+  <line class="separador" x1="800" y1="408" x2="1000" y2="408"/>
+  <text class="nombre" x="810" y="399">pizarra_snapshots</text>
+  <text class="mult" x="808" y="429">PK</text>
+  <text class="miembro" x="836" y="429" text-decoration="underline">id</text>
+  <text class="mult" x="992" y="429" text-anchor="end">SERIAL</text>
+  <text class="mult" x="808" y="447">FK</text>
+  <text class="miembro" x="836" y="447">sesion_id</text>
+  <text class="mult" x="992" y="447" text-anchor="end">INT</text>
+  <text class="miembro" x="836" y="465">trazos</text>
+  <text class="mult" x="992" y="465" text-anchor="end">JSONB</text>
+  <text class="miembro" x="836" y="483">guardado_en</text>
+  <text class="mult" x="992" y="483" text-anchor="end">TIMESTAMPTZ</text>
+</g>
+
+  </svg>
+</body>
+</html>
