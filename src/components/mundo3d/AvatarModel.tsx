@@ -12,6 +12,7 @@ import { CuerpoAvatar } from './CuerpoAvatar.js';
 import { fueFusionada } from './reemplazadas.js';
 import { texturaRostro } from './rostroAvatar.js';
 import { caminar, type PlanoCampus } from './planoCampus.js';
+import { GESTO_LOCAL, crearPose, gestoEn, poseGesto } from './gestos.js';
 
 export { type PersonalizacionAvatar, PERSONALIZACION_POR_DEFECTO };
 
@@ -105,6 +106,7 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
   const brazoDerRef = useRef<THREE.Group>(null);
   const piernaIzqRef = useRef<THREE.Group>(null);
   const piernaDerRef = useRef<THREE.Group>(null);
+  const pose = useMemo(crearPose, []);
 
   // Apariencia completa y válida (AVATAR-01), venga de la versión que venga.
   // La clave evita recalcular cuando llega el mismo objeto con otra identidad.
@@ -214,6 +216,13 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
     }
 
     rostro.offset.x = estaPestaneandoRef.current ? 0.5 : 0;
+
+    // Gesto en curso (GESTO-01): manda sobre los brazos que usa; las piernas
+    // siguen caminando o sentadas. Se parte de la pose del cuadro anterior.
+    const gesto = gestoEn(isLocal ? GESTO_LOCAL : socketId ?? '');
+    if (gesto) poseGesto(gesto.id, (performance.now() - gesto.desde) / 1000, pose);
+    const derPrevia = brazoDerRef.current?.rotation.x ?? 0;
+    const izqPrevia = brazoIzqRef.current?.rotation.x ?? 0;
 
     let estaCaminando = false;
 
@@ -334,6 +343,22 @@ export const AvatarModel: React.FC<AvatarModelProps> = ({
         if (piernaDerRef.current) piernaDerRef.current.rotation.x = THREE.MathUtils.lerp(piernaDerRef.current.rotation.x, 0, suavizado);
         if (piernaIzqRef.current) piernaIzqRef.current.rotation.x = THREE.MathUtils.lerp(piernaIzqRef.current.rotation.x, 0, suavizado);
       }
+    }
+
+    const suavizadoGesto = Math.min(1, delta * 14);
+    const brazoDer = brazoDerRef.current;
+    const brazoIzq = brazoIzqRef.current;
+    if (brazoDer) {
+      if (gesto && pose.der) brazoDer.rotation.x = THREE.MathUtils.lerp(derPrevia, pose.derX, suavizadoGesto);
+      brazoDer.rotation.z = THREE.MathUtils.lerp(brazoDer.rotation.z, gesto && pose.der ? pose.derZ : 0, suavizadoGesto);
+    }
+    if (brazoIzq) {
+      if (gesto && pose.izq) brazoIzq.rotation.x = THREE.MathUtils.lerp(izqPrevia, pose.izqX, suavizadoGesto);
+      brazoIzq.rotation.z = THREE.MathUtils.lerp(brazoIzq.rotation.z, gesto && pose.izq ? pose.izqZ : 0, suavizadoGesto);
+    }
+    if (cuerpoRef.current) {
+      cuerpoRef.current.rotation.x = THREE.MathUtils.lerp(cuerpoRef.current.rotation.x, gesto ? pose.cuerpoX : 0, suavizadoGesto);
+      cuerpoRef.current.rotation.y = THREE.MathUtils.lerp(cuerpoRef.current.rotation.y, gesto ? pose.cuerpoY : 0, suavizadoGesto);
     }
 
     // 2. Ajuste de Cadera al Sentarse / Respiración Idle / Caminata Waddle

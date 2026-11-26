@@ -23,6 +23,7 @@ import { debeRecibirMovimiento } from './relevanciaPosicion.js';
 import { log } from './registro.js';
 import { pases } from './accesoAula.js';
 import { sanearApariencia } from './apariencia.js';
+import { esGesto } from './gestos.js';
 import {
   accesoOyenteVigente,
   liberarConexionOyente,
@@ -412,6 +413,18 @@ export function setupSockets(io: Server) {
       if (!user) return;
       user.apariencia = sanearApariencia(data);
       socket.to(String(user.espacioId)).emit('apariencia_actualizada', { socketId: socket.id, apariencia: user.apariencia });
+    });
+
+    // Gestos (GESTO-01): efímeros, a quien tiene cerca, como 'user_moved'.
+    // El oyente no tiene gestos, solo reacciones (APPFLOW §2).
+    on('gesto', 'gesto', (data: { id?: unknown }) => {
+      const user = activeUsers.get(socket.id);
+      if (!user || identidad.esOyente || !esGesto(data?.id)) return;
+      for (const [otroSocketId, otro] of activeUsers) {
+        if (otroSocketId === socket.id || otro.espacioId !== user.espacioId) continue;
+        if (!debeRecibirMovimiento(user.espacioTipo, user.position, otro.position)) continue;
+        io.to(otroSocketId).emit('gesto_difundido', { socketId: socket.id, id: data.id });
+      }
     });
 
     on('move', 'move', (data: {

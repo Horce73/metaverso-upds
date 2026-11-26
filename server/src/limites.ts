@@ -96,5 +96,7 @@ export const CUPOS_SOCKET: Record<string, [max: number, ventanaMs: number]> = {
   encuestas: [20, 60_000],
   grabacion: [10, 60_000],
   // Cambios de apariencia desde el panel ✨ (el cliente los agrupa)
-  apariencia: [20, 60_000]
+  apariencia: [20, 60_000],
+  // Cada gesto dura 1,5 s y el cliente espera 0,5 s más entre uno y otro
+  gesto: [5, 5_000]
 };

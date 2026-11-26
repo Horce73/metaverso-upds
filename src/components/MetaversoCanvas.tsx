@@ -15,6 +15,7 @@ import { PupitresInstanciados, CajasInstanciadas, EscritorioProfesor, Sofa, Esta
 import { Letrero } from './mundo3d/Letrero.js';
 import { useEsTactil } from './mundo3d/useEsTactil.js';
 import { esTeclaDelMundo3D } from './teclado.js';
+import { GESTOS, gestoLocal, registrarGesto } from './mundo3d/gestos.js';
 import { AJUSTES_CALIDAD, bajarNivel, subirNivel, nivelInicial, type NivelCalidad } from './mundo3d/calidad.js';
 import { CalidadContexto, useCalidad } from './mundo3d/useCalidad.js';
 import { VirtualJoystick } from './mundo3d/VirtualJoystick.js';
@@ -686,6 +687,13 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
 
       const esTeclaE = e.code === 'KeyE' || e.key === 'e' || e.key === 'E';
 
+      // Atajos de gestos (GESTO-01): 1 a 5, en el orden de GESTOS
+      const gesto = e.code.startsWith('Digit') ? GESTOS[Number(e.code.slice(5)) - 1] : undefined;
+      if (gesto) {
+        if (!e.repeat && gestoLocal(gesto)) socket.emit('gesto', { id: gesto });
+        return;
+      }
+
       // Caminar (sin tocar E) tambien levanta de la silla; es un atajo de
       // teclado sin equivalente tactil (el joystick no "camina" si el
       // boton de interactuar ya cubre pararse). interactuar() se encarga
@@ -704,7 +712,17 @@ export const MetaversoCanvas: React.FC<MetaversoCanvasProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [estaSentado, interactuar]);
+  }, [estaSentado, interactuar, socket]);
+
+  useEffect(() => {
+    const alRecibir = (data: { socketId?: string; id?: unknown }) => {
+      if (typeof data?.socketId === 'string') registrarGesto(data.socketId, data.id);
+    };
+    socket.on('gesto_difundido', alRecibir);
+    return () => {
+      socket.off('gesto_difundido', alRecibir);
+    };
+  }, [socket]);
 
   return (
     <div className="canvas-container" style={{ position: 'relative', width: '100%', height: '100vh' }}>
